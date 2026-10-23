@@ -55,7 +55,8 @@ occ config:app:set onlyoffice jwt_header --value="AuthorizationJwt"
 occ config:app:set onlyoffice verify_peer_off --value="false"
 # Read from the secret file on the server; never typed or printed.
 occ config:app:set onlyoffice jwt_secret --value="$(cat "$(secret_path onlyoffice_jwt_secret)")" --sensitive >/dev/null
-occ onlyoffice:documentserver --check
+occ onlyoffice:documentserver --check \
+	|| log "WARNING: ONLYOFFICE check failed. It needs https://${OFFICE_HOST} reachable (Tunnel + DNS); run configure.sh again then."
 
 log "theming: name, colours, logo"
 occ theming:config name "Nourax Workspace"
