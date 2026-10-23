@@ -12,6 +12,7 @@ OWNER_IP="${1:?usage: bootstrap-server.sh <owner-ip> [repo-url]}"
 REPO_URL="${2:-https://github.com/NouraX-ORG/basic-office-infra.git}"
 ADMIN_USER=nourax
 INSTALL_DIR=/opt/nourax/basic-office-infra
+RCLONE_VERSION=v1.75.2
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
 . /etc/os-release
@@ -28,7 +29,20 @@ APT_OPTS=(-y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-co
 echo "== packages"
 apt-get update -q
 apt-get "${APT_OPTS[@]}" full-upgrade
-apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg ufw unattended-upgrades git jq rclone age zstd
+apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg ufw unattended-upgrades git jq age zstd
+
+echo "== rclone $RCLONE_VERSION (Ubuntu's 1.60 reports false errors against R2)"
+(
+	cd /tmp
+	curl -fsSLO "https://downloads.rclone.org/$RCLONE_VERSION/rclone-$RCLONE_VERSION-linux-amd64.deb"
+	curl -fsSL "https://downloads.rclone.org/$RCLONE_VERSION/SHA256SUMS" -o rclone-SHA256SUMS
+	grep " rclone-$RCLONE_VERSION-linux-amd64.deb\$" rclone-SHA256SUMS | sha256sum -c -
+	apt-get "${APT_OPTS[@]}" install "./rclone-$RCLONE_VERSION-linux-amd64.deb"
+	rm -f "rclone-$RCLONE_VERSION-linux-amd64.deb" rclone-SHA256SUMS
+)
+
+echo "== prefer IPv4 for outgoing connections (R2 keys are IP-filtered; containers use IPv4)"
+grep -q '^precedence ::ffff:0:0/96  100' /etc/gai.conf || echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
 
 echo "== docker (official repository)"
 install -m 0755 -d /etc/apt/keyrings
