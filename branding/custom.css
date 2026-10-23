@@ -1,0 +1,53 @@
+/*
+ * Nourax Workspace theme, loaded by the app-store "Custom CSS" app (theming_customcss).
+ * scripts/configure.sh fills in the font data and stores this file in the app's settings.
+ * Colours come from nourax/docs/THEME_BIBLE.md; the logo, name and primary colour are set
+ * through Nextcloud's own Theming settings, not here.
+ * SPDX-License-Identifier: AGPL-3.0-or-later (Geist font: SIL OFL 1.1, see branding/fonts/)
+ */
+
+/* Geist, embedded because Nextcloud's content security policy only allows fonts from itself. */
+@font-face {
+	font-family: "Geist";
+	font-style: normal;
+	font-weight: 300 800;
+	font-display: swap;
+	src: url(data:font/woff2;base64,__GEIST_WOFF2_BASE64__) format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root,
+body {
+	--font-face: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Light theme: brand page background behind panels */
+body[data-theme-light],
+body[data-theme-default] {
+	--color-background-dark: #F8FAFC;
+	--color-main-text: #0F172A;
+}
+
+/* Dark theme: Nourax deep slate instead of Nextcloud's neutral grey */
+body[data-theme-dark],
+body[data-theme-dark-highcontrast] {
+	--color-main-background: #0F172A;
+	--color-main-background-rgb: 15, 23, 42;
+	--color-background-dark: #0B1220;
+	--color-background-darker: #0B1220;
+	--color-background-hover: #1E293B;
+	--color-main-text: #F8FAFC;
+}
+@media (prefers-color-scheme: dark) {
+	body[data-theme-default] {
+		--color-main-background: #0F172A;
+		--color-main-background-rgb: 15, 23, 42;
+		--color-background-dark: #0B1220;
+		--color-background-darker: #0B1220;
+		--color-background-hover: #1E293B;
+		--color-main-text: #F8FAFC;
+	}
+}
+
+/* Product names in the top app bar (the apps keep their technical ids). */
+__APP_LABELS__

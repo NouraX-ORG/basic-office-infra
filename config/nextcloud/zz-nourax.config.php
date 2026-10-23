@@ -54,4 +54,10 @@ $CONFIG = [
 
 	// Heavy daily background jobs run between 01:00 and 05:00 UTC.
 	'maintenance_window_start' => 1,
+
+	// The ONLYOFFICE connector talks to the editor over the Docker network (http://onlyoffice/);
+	// since connector 10.2.0 the admin page refuses such a local address without this.
+	'onlyoffice' => [
+		'allow_local_address' => true,
+	],
 ];

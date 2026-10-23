@@ -36,8 +36,8 @@ x-nextcloud-env: &nextcloud-env
   TRUSTED_PROXIES: 172.30.10.10
   FORWARDED_FOR_HEADERS: HTTP_CF_CONNECTING_IP
   APACHE_DISABLE_REWRITE_IP: "1"
+  # No OVERWRITEHOST: ONLYOFFICE calls back on http://app/, and that Host must be kept.
   OVERWRITEPROTOCOL: https
-  OVERWRITEHOST: ${DRIVE_HOST}
   OVERWRITECLIURL: https://${DRIVE_HOST}
   PHP_MEMORY_LIMIT: 1024M
   PHP_UPLOAD_LIMIT: 1024M
@@ -119,11 +119,15 @@ services:
   onlyoffice:
     image: ${ONLYOFFICE_IMAGE}
     restart: unless-stopped
+    # Community Edition keeps open documents in memory; a graceful stop saves them first.
+    stop_grace_period: 5m
     env_file:
-      - ${SECRETS_DIR}/onlyoffice.env
+      - ${SECRETS_DIR}/onlyoffice.env   # JWT_SECRET=... (the image has no *_FILE support)
     environment:
       JWT_ENABLED: "true"
+      # Own header name so it never clashes with Nextcloud's Authorization header.
       JWT_HEADER: AuthorizationJwt
+      WOPI_ENABLED: "false"
     volumes:
       - onlyoffice_data:/var/www/onlyoffice/Data
       - onlyoffice_lib:/var/lib/onlyoffice
