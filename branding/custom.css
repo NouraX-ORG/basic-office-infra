@@ -49,5 +49,5 @@ body[data-theme-dark-highcontrast] {
 	}
 }
 
-/* Product names in the top app bar (the apps keep their technical ids). */
+/* Product names in the app menu and beside its button (the apps keep their technical ids). */
 __APP_LABELS__

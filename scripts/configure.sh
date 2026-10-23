@@ -88,7 +88,8 @@ font_b64="$(base64 -w0 "$REPO_DIR/branding/fonts/Geist-latin.woff2")"
 css="$(sed -e "s|__GEIST_WOFF2_BASE64__|$font_b64|" "$REPO_DIR/branding/custom.css")"
 css="${css/__APP_LABELS__/$labels}"
 # Not lazy: the app reads it with the legacy getAppValue(), which does not see lazy values.
-occ config:app:set theming_customcss customcss --value="$css" --no-lazy >/dev/null
+# --no-interaction confirms the switch when an older run stored it as lazy.
+occ config:app:set theming_customcss customcss --value="$css" --no-lazy --no-interaction >/dev/null
 occ config:app:set theming_customcss cachebuster --value="$(date +%s)"
 
 if have_secret oidc_client_id && have_secret oidc_client_secret; then
