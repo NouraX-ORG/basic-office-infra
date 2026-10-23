@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # First-boot hardening for a fresh Ubuntu 24.04 server. Run once, as root:
-#   bash bootstrap-server.sh <owner-ip> [repo-url]
+#   sudo bash bootstrap-server.sh <owner-ip> [repo-url]
 # It installs Docker, creates the admin user "nourax" (SSH key only), firewalls everything
 # except SSH from the owner's IP, turns on automatic security updates and adds swap.
 # Root login is switched off by a separate step (lock-root.sh) after the new user is tested.
@@ -17,14 +17,18 @@ INSTALL_DIR=/opt/nourax/basic-office-infra
 . /etc/os-release
 [ "${VERSION_ID:-}" = "24.04" ] || { echo "expected Ubuntu 24.04, found ${PRETTY_NAME:-unknown}" >&2; exit 1; }
 [[ "$OWNER_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "owner IP must be an IPv4 address" >&2; exit 1; }
-[ -s /root/.ssh/authorized_keys ] || { echo "no SSH key in /root/.ssh/authorized_keys - refusing to continue" >&2; exit 1; }
+# Providers differ: Hetzner puts the key on root, OVHcloud on the "ubuntu" user (run with sudo).
+KEY_FILE=/root/.ssh/authorized_keys
+if [ ! -s "$KEY_FILE" ] && [ -n "${SUDO_USER:-}" ]; then KEY_FILE="/home/$SUDO_USER/.ssh/authorized_keys"; fi
+[ -s "$KEY_FILE" ] || { echo "no SSH key found for root or the sudo user - refusing to continue" >&2; exit 1; }
 
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+APT_OPTS=(-y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 
 echo "== packages"
 apt-get update -q
-apt-get -y -q full-upgrade
-apt-get -y -q install ca-certificates curl gnupg ufw unattended-upgrades git jq rclone age zstd
+apt-get "${APT_OPTS[@]}" full-upgrade
+apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg ufw unattended-upgrades git jq rclone age zstd
 
 echo "== docker (official repository)"
 install -m 0755 -d /etc/apt/keyrings
@@ -33,7 +37,7 @@ chmod a+r /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
 	> /etc/apt/sources.list.d/docker.list
 apt-get update -q
-apt-get -y -q install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+apt-get "${APT_OPTS[@]}" install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 cat > /etc/docker/daemon.json <<'JSON'
 {
   "live-restore": true,
@@ -49,7 +53,7 @@ if ! id "$ADMIN_USER" >/dev/null 2>&1; then
 fi
 usermod -aG sudo,docker "$ADMIN_USER"
 install -d -m 0700 -o "$ADMIN_USER" -g "$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
-install -m 0600 -o "$ADMIN_USER" -g "$ADMIN_USER" /root/.ssh/authorized_keys "/home/$ADMIN_USER/.ssh/authorized_keys"
+install -m 0600 -o "$ADMIN_USER" -g "$ADMIN_USER" "$KEY_FILE" "/home/$ADMIN_USER/.ssh/authorized_keys"
 echo "$ADMIN_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-nourax
 chmod 0440 /etc/sudoers.d/90-nourax
 visudo -cq
