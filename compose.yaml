@@ -136,6 +136,8 @@ services:
       - onlyoffice_data:/var/www/onlyoffice/Data
       - onlyoffice_lib:/var/lib/onlyoffice
       - onlyoffice_logs:/var/log/onlyoffice
+      # The official AI plugin ("AI Tools" tab), put there by scripts/onlyoffice-plugins.sh.
+      - ${ONLYOFFICE_PLUGINS_DIR:-/opt/nourax/onlyoffice-plugins}/ai:/var/www/onlyoffice/documentserver/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}:ro
     logging: *logging
 
   cloudflared:

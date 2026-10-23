@@ -10,6 +10,7 @@ modify their source code; the Docker images are pulled unchanged from their offi
 | Nextcloud Calendar, Contacts, Deck, Mail | NoCalendar, NoContacts, NoBoard, Mail | AGPL-3.0-or-later | https://github.com/nextcloud |
 | Custom CSS (`theming_customcss`) | Theme CSS from the app store | AGPL-3.0-or-later | https://github.com/juliushaertl/theming_customcss |
 | ONLYOFFICE Docs Community Edition 10 | Document, spreadsheet and presentation editors | AGPL-3.0 with additional terms | https://github.com/ONLYOFFICE/DocumentServer |
+| ONLYOFFICE AI plugin | The "AI Tools" tab in the editors (downloaded unchanged by `scripts/onlyoffice-plugins.sh`) | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice.github.io |
 | ONLYOFFICE connector for Nextcloud | Links Nextcloud and ONLYOFFICE Docs | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice-nextcloud |
 | PostgreSQL 18 | Database | PostgreSQL Licence | https://www.postgresql.org |
 | Redis 8 | Cache and file locking | AGPL-3.0 / RSALv2 / SSPLv1 (tri-licence) | https://github.com/redis/redis |

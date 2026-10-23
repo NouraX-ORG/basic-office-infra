@@ -10,7 +10,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoContacts** | Address book, synced to phones (CardDAV) | Nextcloud Contacts |
 | **NoBoard** | Kanban boards with a Gantt view | Nextcloud Deck |
 | Mail | Webmail client for other mailboxes (for example Gmail over IMAP) | Nextcloud Mail |
-| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx) | ONLYOFFICE Docs Community Edition |
+| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with the AI Tools tab (each user brings an AI provider key) | ONLYOFFICE Docs Community Edition + the official AI plugin |
 
 Nourax Workspace runs the **official, unmodified [Nextcloud](https://nextcloud.com) server**
 (AGPL-3.0) and the **official [ONLYOFFICE Docs](https://www.onlyoffice.com) Community Edition**

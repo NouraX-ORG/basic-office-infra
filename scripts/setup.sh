@@ -28,6 +28,9 @@ dc up -d app
 wait_for_nextcloud
 occ status
 
+log "editor plugins (AI Tools)"
+"$REPO_DIR/scripts/onlyoffice-plugins.sh"
+
 log "starting cron, ONLYOFFICE and the tunnel"
 dc up -d cron onlyoffice cloudflared
 

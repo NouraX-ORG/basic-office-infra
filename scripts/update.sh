@@ -5,6 +5,8 @@
 #   sudo scripts/update.sh --apps                      update the store apps only
 # Other images (Postgres minor, Redis, ONLYOFFICE, cloudflared): edit the tag in .env, then
 #   sudo scripts/backup.sh && sudo docker compose pull && sudo docker compose up -d
+# Editor plugins: change the pinned release in scripts/onlyoffice-plugins.sh, run it, then
+#   sudo docker compose up -d --force-recreate onlyoffice
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 . "$(dirname "$0")/lib.sh"

@@ -29,7 +29,7 @@ APT_OPTS=(-y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-co
 echo "== packages"
 apt-get update -q
 apt-get "${APT_OPTS[@]}" full-upgrade
-apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg ufw unattended-upgrades git jq age zstd
+apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg ufw unattended-upgrades git jq age zstd rsync python3
 
 echo "== rclone $RCLONE_VERSION (Ubuntu's 1.60 reports false errors against R2)"
 (
