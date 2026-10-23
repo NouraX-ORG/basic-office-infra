@@ -38,7 +38,12 @@ log "white label: switch off the upstream intro, news, survey, support, update a
 enabled="$(occ app:list --output=json | jq -r '.enabled | keys[]')"
 for app in firstrunwizard nextcloud_announcements survey_client support updatenotification \
 	lookup_server_connector dashboard weather_status app_api; do
-	if printf '%s\n' "$enabled" | grep -qx "$app"; then occ app:disable "$app"; else log "  $app already off"; fi
+	if ! printf '%s\n' "$enabled" | grep -qx "$app"; then
+		log "  $app already off"
+	elif ! occ app:disable "$app"; then
+		# Some apps are "always enabled"; for the lookup connector 'lookup_server' => '' stops its calls.
+		log "  $app is always on - left as it is"
+	fi
 done
 
 log "thumbnails: JPEG quality 60 (default 80); the size limit is in zz-nourax.config.php"
