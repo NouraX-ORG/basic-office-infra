@@ -8,6 +8,7 @@
 #   sudo scripts/secrets.sh backup-r2   R2 key for the backups bucket
 #   sudo scripts/secrets.sh tunnel      Cloudflare Tunnel token
 #   sudo scripts/secrets.sh age         public key (age1...) that backups are encrypted to
+#   sudo scripts/secrets.sh oidc        "Log in with Nourax" OAuth client (from NoMail's Supabase)
 #   sudo scripts/secrets.sh status      show which secrets exist (never their values)
 #
 # The directory is root-only (0700). Files inside are 0644 because the containers read them
@@ -80,6 +81,14 @@ case "${1:-status}" in
 		[ "${#token}" -gt 100 ] || die "that does not look like a tunnel token (too short)"
 		write_secret tunnel_token "$token"
 		;;
+	oidc)
+		# "Log in with Nourax": the OAuth client NoMail's Supabase project issues for NoDrive.
+		IFS= read -r -p "OAuth Client ID for NoDrive (visible): " client_id </dev/tty
+		[ -n "$client_id" ] || die "empty client id - nothing saved"
+		client_secret="$(ask_hidden "OAuth Client Secret for NoDrive (hidden)")"
+		write_secret oidc_client_id "$client_id"
+		write_secret oidc_client_secret "$client_secret"
+		;;
 	age)
 		IFS= read -r -p "Backup public key (starts with age1): " key </dev/tty
 		[[ "$key" =~ ^age1[0-9a-z]{58}$ ]] || die "not an age public key"
@@ -89,7 +98,8 @@ case "${1:-status}" in
 		printf '%-30s %s\n' SECRET STATE
 		for name in postgres_password redis_password onlyoffice_jwt_secret onlyoffice.env \
 			nextcloud_admin_user nextcloud_admin_password r2_access_key_id r2_secret_access_key \
-			backup_r2_access_key_id backup_r2_secret_access_key tunnel_token backup_age_recipient; do
+			backup_r2_access_key_id backup_r2_secret_access_key tunnel_token backup_age_recipient \
+			oidc_client_id oidc_client_secret; do
 			if have_secret "$name"; then printf '%-30s set\n' "$name"; else printf '%-30s MISSING\n' "$name"; fi
 		done
 		;;

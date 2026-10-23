@@ -83,6 +83,26 @@ css="${css/__APP_LABELS__/$labels}"
 occ config:app:set theming_customcss customcss --value="$css" --lazy >/dev/null
 occ config:app:set theming_customcss cachebuster --value="$(date +%s)"
 
+if have_secret oidc_client_id && have_secret oidc_client_secret; then
+	log "unified sign-in: 'Log in with Nourax' through NoMail's Supabase Auth (OpenID Connect)"
+	occ app:install user_oidc >/dev/null 2>&1 || occ app:enable user_oidc
+	# The secret goes in through stdin into a temporary file, so it never shows in a process list.
+	dc exec -T app sh -c 'umask 077; cat > /tmp/oidc_client_secret; chown www-data /tmp/oidc_client_secret' \
+		< "$(secret_path oidc_client_secret)"
+	occ user_oidc:provider Nourax \
+		--clientid="$(cat "$(secret_path oidc_client_id)")" \
+		--clientsecret-file=/tmp/oidc_client_secret \
+		--discoveryuri="${SUPABASE_AUTH_URL}/.well-known/openid-configuration" \
+		--scope="openid email profile" \
+		--mapping-uid=sub --unique-uid=0 \
+		--mapping-email=email --mapping-display-name=name
+	dc exec -T app rm -f /tmp/oidc_client_secret
+	# Keep the normal login form too: the emergency admin signs in without Supabase.
+	occ config:app:set --type=string --value=1 user_oidc allow_multiple_user_backends
+else
+	log "unified sign-in not configured yet (run secrets.sh oidc when NoMail's OAuth client exists)"
+fi
+
 log "sharing: link shares allowed, uploads into public folders allowed for file drops"
 occ config:app:set core shareapi_allow_links --value=yes
 occ config:app:set core shareapi_allow_public_upload --value=yes
