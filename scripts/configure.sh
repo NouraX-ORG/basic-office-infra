@@ -75,13 +75,20 @@ labels=""
 for pair in "${APP_LABELS[@]}"; do
 	app="${pair%%=*}"
 	name="${pair#*=}"
-	labels+=".app-menu-entry[data-app-id=\"$app\"] .app-menu-entry--label { font-size: 0; }"$'\n'
-	labels+=".app-menu-entry[data-app-id=\"$app\"] .app-menu-entry--label::after { content: \"$name\"; font-size: var(--default-font-size, 15px); }"$'\n'
+	# Nextcloud 35 app menu: grid entries are links to /apps/<id>/ (12px labels, full size in the
+	# compact list); the name beside the menu button belongs to the page's #content.app-<id>.
+	item="a.app-item[href*=\"/apps/$app/\"] .app-item__label"
+	current="body:has(#content.app-$app) .app-menu__current-app-name"
+	labels+="$item, $current { font-size: 0; }"$'\n'
+	labels+="$item::after { content: \"$name\"; font-size: 12px; }"$'\n'
+	labels+="a.app-item--compact[href*=\"/apps/$app/\"] .app-item__label::after { font-size: var(--default-font-size); }"$'\n'
+	labels+="$current::after { content: \"$name\"; font-size: var(--default-font-size); }"$'\n'
 done
 font_b64="$(base64 -w0 "$REPO_DIR/branding/fonts/Geist-latin.woff2")"
 css="$(sed -e "s|__GEIST_WOFF2_BASE64__|$font_b64|" "$REPO_DIR/branding/custom.css")"
 css="${css/__APP_LABELS__/$labels}"
-occ config:app:set theming_customcss customcss --value="$css" --lazy >/dev/null
+# Not lazy: the app reads it with the legacy getAppValue(), which does not see lazy values.
+occ config:app:set theming_customcss customcss --value="$css" --no-lazy >/dev/null
 occ config:app:set theming_customcss cachebuster --value="$(date +%s)"
 
 if have_secret oidc_client_id && have_secret oidc_client_secret; then
