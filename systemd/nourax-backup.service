@@ -1,0 +1,10 @@
+[Unit]
+Description=Nourax Workspace nightly backup (database + config to R2)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nourax/basic-office-infra/scripts/backup.sh
+Nice=10
+IOSchedulingClass=idle

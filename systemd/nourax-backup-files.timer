@@ -1,0 +1,10 @@
+[Unit]
+Description=Mirror the R2 file bucket every Sunday at 04:00
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

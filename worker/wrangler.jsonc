@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nodrive-upload",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Only this path on the Drive hostname runs the Worker; everything else goes straight to Nextcloud.
+  "routes": [{ "pattern": "drive.nourax.org/nomail-upload/*", "zone_name": "nourax.org" }],
+  "observability": { "enabled": true },
+  "vars": {
+    "ORIGIN_BASE": "https://drive.nourax.org",
+    "ALLOWED_ORIGINS": "https://mail.nourax.org",
+    "MAX_CHUNK_BYTES": "52428800",
+    "MAX_UPLOAD_BYTES": "10737418240"
+  }
+  // Secret (set with `wrangler secret put`, never committed):
+  //   UPLOAD_TICKET_KEY   32 random bytes, base64url. NoMail holds the same value as DRIVE_UPLOAD_TICKET_KEY.
+}

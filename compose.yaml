@@ -1,0 +1,174 @@
+# Nourax Workspace - Nextcloud + ONLYOFFICE Docs behind Cloudflare Tunnel, files in Cloudflare R2.
+# Nothing here publishes a port: the only way in is the Cloudflare Tunnel (service "cloudflared").
+# Settings come from .env (copy of .env.example). Secrets are files in ${SECRETS_DIR}.
+
+name: nourax-workspace
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Shared by the Nextcloud web container and its cron container. They must match exactly,
+# otherwise cron silently falls back to stale values saved in config.php.
+x-nextcloud-env: &nextcloud-env
+  POSTGRES_HOST: db
+  POSTGRES_DB: nextcloud
+  POSTGRES_USER: nextcloud
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  REDIS_HOST: redis
+  REDIS_HOST_PASSWORD_FILE: /run/secrets/redis_password
+  NEXTCLOUD_ADMIN_USER_FILE: /run/secrets/nextcloud_admin_user
+  NEXTCLOUD_ADMIN_PASSWORD_FILE: /run/secrets/nextcloud_admin_password
+  # "app" lets ONLYOFFICE call Nextcloud inside the Docker network. Only read at first install.
+  NEXTCLOUD_TRUSTED_DOMAINS: "${DRIVE_HOST} app"
+  # Primary object storage: Cloudflare R2 (extra R2 tuning lives in config/nextcloud/zz-nourax.config.php)
+  OBJECTSTORE_S3_BUCKET: ${R2_BUCKET}
+  OBJECTSTORE_S3_HOST: ${CF_ACCOUNT_ID}.r2.cloudflarestorage.com
+  OBJECTSTORE_S3_REGION: auto
+  OBJECTSTORE_S3_PORT: "443"
+  OBJECTSTORE_S3_SSL: "true"
+  OBJECTSTORE_S3_USEPATH_STYLE: "true"
+  OBJECTSTORE_S3_KEY_FILE: /run/secrets/r2_access_key_id
+  OBJECTSTORE_S3_SECRET_FILE: /run/secrets/r2_secret_access_key
+  # Reverse proxy: only the cloudflared container may set the client IP (CF-Connecting-IP)
+  TRUSTED_PROXIES: 172.30.10.10
+  FORWARDED_FOR_HEADERS: HTTP_CF_CONNECTING_IP
+  APACHE_DISABLE_REWRITE_IP: "1"
+  OVERWRITEPROTOCOL: https
+  OVERWRITEHOST: ${DRIVE_HOST}
+  OVERWRITECLIURL: https://${DRIVE_HOST}
+  PHP_MEMORY_LIMIT: 1024M
+  PHP_UPLOAD_LIMIT: 1024M
+
+x-nextcloud-secrets: &nextcloud-secrets
+  - postgres_password
+  - redis_password
+  - nextcloud_admin_user
+  - nextcloud_admin_password
+  - r2_access_key_id
+  - r2_secret_access_key
+
+x-nextcloud-volumes: &nextcloud-volumes
+  - nextcloud:/var/www/html
+  - ./config/nextcloud/zz-nourax.config.php:/var/www/html/config/zz-nourax.config.php:ro
+  - ./branding:/opt/nourax/branding:ro
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud -d nextcloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  redis:
+    image: ${REDIS_IMAGE}
+    restart: unless-stopped
+    user: redis
+    # Cache and file locks only, so nothing is written to disk.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$(cat /run/secrets/redis_password)\" --save '' --appendonly no"]
+    secrets: [redis_password]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  app:
+    image: ${NEXTCLOUD_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment: *nextcloud-env
+    secrets: *nextcloud-secrets
+    volumes: *nextcloud-volumes
+    healthcheck:
+      # The image has no curl, so PHP fetches status.php.
+      test: ["CMD", "php", "-r", "$$c = stream_context_create(['http' => ['header' => 'Host: ${DRIVE_HOST}']]); $$s = (string) @file_get_contents('http://localhost/status.php', false, $$c); exit(str_contains($$s, '\"installed\":true') ? 0 : 1);"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    logging: *logging
+
+  cron:
+    image: ${NEXTCLOUD_IMAGE}
+    restart: unless-stopped
+    entrypoint: /cron.sh
+    depends_on:
+      app: { condition: service_started }
+    environment: *nextcloud-env
+    secrets: *nextcloud-secrets
+    volumes: *nextcloud-volumes
+    logging: *logging
+
+  onlyoffice:
+    image: ${ONLYOFFICE_IMAGE}
+    restart: unless-stopped
+    env_file:
+      - ${SECRETS_DIR}/onlyoffice.env
+    environment:
+      JWT_ENABLED: "true"
+      JWT_HEADER: AuthorizationJwt
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_lib:/var/lib/onlyoffice
+      - onlyoffice_logs:/var/log/onlyoffice
+    logging: *logging
+
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
+    secrets: [tunnel_token]
+    depends_on:
+      app: { condition: service_started }
+    networks:
+      default:
+        ipv4_address: 172.30.10.10
+    logging: *logging
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+
+volumes:
+  nextcloud:
+  db:
+  onlyoffice_data:
+  onlyoffice_lib:
+  onlyoffice_logs:
+
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR}/postgres_password
+  redis_password:
+    file: ${SECRETS_DIR}/redis_password
+  nextcloud_admin_user:
+    file: ${SECRETS_DIR}/nextcloud_admin_user
+  nextcloud_admin_password:
+    file: ${SECRETS_DIR}/nextcloud_admin_password
+  r2_access_key_id:
+    file: ${SECRETS_DIR}/r2_access_key_id
+  r2_secret_access_key:
+    file: ${SECRETS_DIR}/r2_secret_access_key
+  tunnel_token:
+    file: ${SECRETS_DIR}/tunnel_token

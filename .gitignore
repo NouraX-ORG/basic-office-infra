@@ -1,0 +1,16 @@
+# Real settings and secrets never enter git. Only .env.example is committed.
+.env
+secrets/
+*.key
+*.pem
+*.age
+age-identity*.txt
+
+# Local test output
+tests/out/
+*.bin
+
+# Worker build output
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars

@@ -1,0 +1,18 @@
+{
+  "_comment": "Ingress for the remotely-managed tunnel 'nourax-workspace'. Applied with PUT /accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations. Each hostname also needs a proxied CNAME to <tunnel_id>.cfargotunnel.com.",
+  "config": {
+    "ingress": [
+      {
+        "hostname": "drive.nourax.org",
+        "service": "http://app:80",
+        "originRequest": { "httpHostHeader": "drive.nourax.org", "connectTimeout": 30 }
+      },
+      {
+        "hostname": "office.nourax.org",
+        "service": "http://onlyoffice:80",
+        "originRequest": { "httpHostHeader": "office.nourax.org", "connectTimeout": 30 }
+      },
+      { "service": "http_status:404" }
+    ]
+  }
+}

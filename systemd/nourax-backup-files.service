@@ -1,0 +1,10 @@
+[Unit]
+Description=Nourax Workspace weekly mirror of the R2 file bucket
+Wants=network-online.target
+After=network-online.target nourax-backup.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nourax/basic-office-infra/scripts/backup-files.sh
+Nice=10
+IOSchedulingClass=idle
