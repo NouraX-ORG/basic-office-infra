@@ -2,11 +2,11 @@
  * Nourax Workspace theme, loaded by the app-store "Custom CSS" app (theming_customcss).
  * scripts/configure.sh fills in the font data and stores this file in the app's settings.
  * Colours come from nourax/docs/THEME_BIBLE.md; the logo, name and primary colour are set
- * through Nextcloud's own Theming settings, not here.
+ * through the server's own Theming settings, not here.
  * SPDX-License-Identifier: AGPL-3.0-or-later (Geist font: SIL OFL 1.1, see branding/fonts/)
  */
 
-/* Geist, embedded because Nextcloud's content security policy only allows fonts from itself. */
+/* Geist, embedded because the server's content security policy only allows fonts from itself. */
 @font-face {
 	font-family: "Geist";
 	font-style: normal;
@@ -28,7 +28,7 @@ body[data-theme-default] {
 	--color-main-text: #0F172A;
 }
 
-/* Dark theme: Nourax deep slate instead of Nextcloud's neutral grey */
+/* Dark theme: Nourax deep slate instead of the default neutral grey */
 body[data-theme-dark],
 body[data-theme-dark-highcontrast] {
 	--color-main-background: #0F172A;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Apply all Nourax Workspace settings to a running Nextcloud. Safe to run again at any time.
 #   sudo scripts/configure.sh
-# Only configuration and app-store apps are used (no custom code), so the install stays an
-# unmodified Nextcloud - see docs/branding.md for why that matters.
+# Nourax Workspace is white-labelled: some apps that ship switched on are switched off, so it is a
+# modified Nextcloud and must show no Nextcloud name or logo - see docs/branding.md.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 . "$(dirname "$0")/lib.sh"
@@ -25,13 +25,24 @@ occ background:cron
 occ db:add-missing-indices
 
 log "apps (all from the Nextcloud app store)"
-for app in calendar contacts deck mail onlyoffice theming_customcss; do
+for app in calendar contacts deck onlyoffice theming_customcss; do
 	if occ app:list --output=json | jq -e --arg a "$app" '.enabled[$a] != null' >/dev/null; then
 		log "  $app already enabled"
 	else
 		occ app:install "$app" || occ app:enable "$app"
 	fi
 done
+
+log "white label: switch off the upstream intro, news, survey, support, update and lookup apps"
+# Also the Dashboard (NoDrive opens after login) and External Apps (not used, it only warns).
+enabled="$(occ app:list --output=json | jq -r '.enabled | keys[]')"
+for app in firstrunwizard nextcloud_announcements survey_client support updatenotification \
+	lookup_server_connector dashboard weather_status app_api; do
+	if printf '%s\n' "$enabled" | grep -qx "$app"; then occ app:disable "$app"; else log "  $app already off"; fi
+done
+
+log "thumbnails: JPEG quality 60 (default 80); the size limit is in zz-nourax.config.php"
+occ config:app:set preview jpeg_quality --value=60
 
 log "two-factor login required for admins"
 occ app:enable twofactor_totp
@@ -60,6 +71,8 @@ occ onlyoffice:documentserver --check \
 
 log "theming: name, colours, logo"
 occ theming:config name "Nourax Workspace"
+# The product name is separate from the name; upstream it shows e.g. "Add to your Nextcloud".
+occ config:app:set theming productName --value="Nourax Workspace"
 occ theming:config slogan "Files, calendar, contacts, documents and boards"
 occ theming:config url "https://nourax.io"
 occ theming:config primary_color "#2563EB"

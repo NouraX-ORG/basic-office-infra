@@ -3,20 +3,20 @@
 Everything needed to rebuild **Nourax Workspace**: Nourax's self-hosted files, calendar, contacts,
 office documents and boards at `https://drive.nourax.org`.
 
-| Product | What it is | Built on |
-|---|---|---|
-| **NoDrive** | Files, folders, share links, version history | Nextcloud Files |
-| **NoCalendar** | Calendars, synced to phones (CalDAV) | Nextcloud Calendar |
-| **NoContacts** | Address book, synced to phones (CardDAV) | Nextcloud Contacts |
-| **NoBoard** | Kanban boards with a Gantt view | Nextcloud Deck |
-| Mail | Webmail client for other mailboxes (for example Gmail over IMAP) | Nextcloud Mail |
-| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with the AI Tools tab (each user brings an AI provider key) | ONLYOFFICE Docs Community Edition + the official AI plugin |
+| Product | What it is |
+|---|---|
+| **NoDrive** | Files, folders, share links, version history |
+| **NoCalendar** | Calendars, synced to phones (CalDAV) |
+| **NoContacts** | Address book, synced to phones (CardDAV) |
+| **NoBoard** | Kanban boards with a Gantt view |
+| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with the AI Tools tab |
 
-Nourax Workspace runs the **official, unmodified [Nextcloud](https://nextcloud.com) server**
-(AGPL-3.0) and the **official [ONLYOFFICE Docs](https://www.onlyoffice.com) Community Edition**
-(AGPL-3.0), configured and themed for Nourax. This repository contains no copy of their source
-code: it holds the deployment files, the theme settings, the scripts and the docs.
-See [NOTICE.md](NOTICE.md) for credits and [docs/branding.md](docs/branding.md) for the trademark rules we follow.
+Nourax Workspace is an independently branded, white-label deployment built from open-source
+software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the
+authors of that software. This repository holds the deployment files, the theme settings, the
+scripts and the docs; the Docker images come unchanged from their publishers.
+See [NOTICE.md](NOTICE.md) for the licensed software and [docs/branding.md](docs/branding.md) for the
+naming rules we follow.
 
 ## How it fits together
 
@@ -27,7 +27,7 @@ Browser · phone and desktop apps · NoMail · email recipients (share links)
 Cloudflare Tunnel ──► cloudflared container (the server opens no inbound ports)
         ▼
 Server (Ubuntu 24.04, Docker Compose):
-  Nextcloud 35 (apache) · cron · PostgreSQL 18 · Redis 8 · ONLYOFFICE Docs 10
+  file server (PHP, Apache) · cron · PostgreSQL 18 · Redis 8 · ONLYOFFICE Docs 10
         ▼  primary object storage (S3 API)
 Cloudflare R2 bucket "nourax-drive"     (nightly encrypted backups → "nourax-workspace-backups")
 ```
@@ -59,6 +59,5 @@ Follow [docs/operations.md](docs/operations.md#first-install). In short:
 
 ## Licence
 
-[AGPL-3.0](LICENSE). Nextcloud and ONLYOFFICE keep their own copyright and licences.
-"Nextcloud" and "ONLYOFFICE" are trademarks of their owners and are used here only to say what
-this deployment runs; Nourax Workspace is not affiliated with or endorsed by them.
+[AGPL-3.0](LICENSE). The software listed in [NOTICE.md](NOTICE.md) keeps its own copyright and
+licences. Trademarks belong to their owners.

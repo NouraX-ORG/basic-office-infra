@@ -42,6 +42,20 @@ $CONFIG = [
 	// No "get your own free account" advert on public share pages.
 	'simpleSignUpLink.shown' => false,
 
+	// Open NoDrive after login (the Dashboard app is switched off).
+	'defaultapp' => 'files',
+
+	// Smaller thumbnails: less CPU to make them and less R2 space to keep them (default 4096).
+	'preview_max_x' => 2048,
+	'preview_max_y' => 2048,
+
+	// White label: no help links to the upstream manual, and no update checks or lookups at the
+	// upstream project's servers. Updates come as new Docker images (scripts/update.sh).
+	'knowledgebaseenabled' => false,
+	'updatechecker' => false,
+	'upgrade.disable-web' => true,
+	'lookup_server' => '',
+
 	// New accounts start with the Nourax welcome files instead of the stock sample files.
 	'skeletondirectory' => '/opt/nourax/branding/skeleton',
 	'templatedirectory' => '',
