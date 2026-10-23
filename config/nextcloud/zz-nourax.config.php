@@ -4,7 +4,8 @@
  *
  * Nextcloud merges config.php and then every *.config.php in natural sort order
  * (array_replace_recursive), so this file wins over s3.config.php and redis.config.php.
- * It is mounted read-only from the repo: change it here, commit, then `docker compose up -d`.
+ * It is mounted read-only at /opt/nourax/config and copied into place by config/hooks/10-nourax-config.sh
+ * on every container start: change it here, commit, pull on the server, then `docker compose up -d`.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */

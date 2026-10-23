@@ -52,7 +52,11 @@ x-nextcloud-secrets: &nextcloud-secrets
 
 x-nextcloud-volumes: &nextcloud-volumes
   - nextcloud:/var/www/html
-  - ./config/nextcloud/zz-nourax.config.php:/var/www/html/config/zz-nourax.config.php:ro
+  # Settings are copied into /var/www/html/config by the hook below (never mounted there directly).
+  - ./config/nextcloud:/opt/nourax/config:ro
+  - ./config/hooks/10-nourax-config.sh:/docker-entrypoint-hooks.d/pre-installation/10-nourax-config.sh:ro
+  - ./config/hooks/10-nourax-config.sh:/docker-entrypoint-hooks.d/pre-upgrade/10-nourax-config.sh:ro
+  - ./config/hooks/10-nourax-config.sh:/docker-entrypoint-hooks.d/before-starting/10-nourax-config.sh:ro
   - ./branding:/opt/nourax/branding:ro
 
 services:
