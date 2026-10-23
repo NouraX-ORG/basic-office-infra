@@ -7,7 +7,7 @@ modify their source code; the Docker images are pulled unchanged from their offi
 |---|---|---|---|
 | Nextcloud Server 35 | Files, sharing, WebDAV/CalDAV/CardDAV, web interface | AGPL-3.0-or-later | https://github.com/nextcloud/server |
 | Nextcloud Docker image | Container build of Nextcloud | AGPL-3.0 | https://github.com/nextcloud/docker |
-| Nextcloud Calendar, Contacts, Deck | NoCalendar, NoContacts, NoBoard | AGPL-3.0-or-later | https://github.com/nextcloud |
+| Nextcloud Calendar, Contacts, Deck, Mail | NoCalendar, NoContacts, NoBoard, Mail | AGPL-3.0-or-later | https://github.com/nextcloud |
 | Custom CSS (`theming_customcss`) | Theme CSS from the app store | AGPL-3.0-or-later | https://github.com/juliushaertl/theming_customcss |
 | ONLYOFFICE Docs Community Edition 10 | Document, spreadsheet and presentation editors | AGPL-3.0 with additional terms | https://github.com/ONLYOFFICE/DocumentServer |
 | ONLYOFFICE connector for Nextcloud | Links Nextcloud and ONLYOFFICE Docs | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice-nextcloud |

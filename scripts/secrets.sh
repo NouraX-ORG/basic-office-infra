@@ -77,8 +77,10 @@ case "${1:-status}" in
 		write_secret "${prefix}r2_secret_access_key" "$key_secret"
 		;;
 	tunnel)
-		token="$(ask_hidden "Cloudflare Tunnel token (hidden)")"
-		[ "${#token}" -gt 100 ] || die "that does not look like a tunnel token (too short)"
+		raw="$(ask_hidden "Cloudflare Tunnel token, or the whole install command that contains it (hidden)")"
+		# The dashboard shows e.g. "docker run ... --token eyJh..."; keep only the token itself.
+		token="$(printf '%s' "$raw" | grep -oE 'eyJ[A-Za-z0-9+/=_-]{50,}' | head -n1 || true)"
+		[ "${#token}" -gt 100 ] || die "no tunnel token found in what was pasted"
 		write_secret tunnel_token "$token"
 		;;
 	oidc)

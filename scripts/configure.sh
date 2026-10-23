@@ -25,7 +25,7 @@ occ background:cron
 occ db:add-missing-indices
 
 log "apps (all from the Nextcloud app store)"
-for app in calendar contacts deck onlyoffice theming_customcss; do
+for app in calendar contacts deck mail onlyoffice theming_customcss; do
 	if occ app:list --output=json | jq -e --arg a "$app" '.enabled[$a] != null' >/dev/null; then
 		log "  $app already enabled"
 	else

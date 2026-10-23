@@ -9,6 +9,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoCalendar** | Calendars, synced to phones (CalDAV) | Nextcloud Calendar |
 | **NoContacts** | Address book, synced to phones (CardDAV) | Nextcloud Contacts |
 | **NoBoard** | Kanban boards with a Gantt view | Nextcloud Deck |
+| Mail | Webmail client for other mailboxes (for example Gmail over IMAP) | Nextcloud Mail |
 | **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx) | ONLYOFFICE Docs Community Edition |
 
 Nourax Workspace runs the **official, unmodified [Nextcloud](https://nextcloud.com) server**
