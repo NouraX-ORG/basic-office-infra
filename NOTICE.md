@@ -16,7 +16,7 @@ this repository.
 | Nextcloud Calendar, Contacts, Deck | NoCalendar, NoContacts, NoBoard | AGPL-3.0-or-later | https://github.com/nextcloud |
 | Custom CSS (`theming_customcss`) | Theme CSS from the app store | AGPL-3.0-or-later | https://github.com/juliushaertl/theming_customcss |
 | ONLYOFFICE Docs Community Edition 10 | Document, spreadsheet and presentation editors | AGPL-3.0 with additional terms | https://github.com/ONLYOFFICE/DocumentServer |
-| ONLYOFFICE AI plugin | The "AI Tools" tab in the editors (`scripts/onlyoffice-plugins.sh`) | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice.github.io |
+| ONLYOFFICE AI plugin | The AI tab in the editors (`scripts/onlyoffice-plugins.sh`), modified to use Nourax AI only (`scripts/patch-ai-plugin.py`) | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice.github.io |
 | ONLYOFFICE connector | Links the file server and ONLYOFFICE Docs | AGPL-3.0 | https://github.com/ONLYOFFICE/onlyoffice-nextcloud |
 | PostgreSQL 18 | Database | PostgreSQL Licence | https://www.postgresql.org |
 | Redis 8 | Cache and file locking | AGPL-3.0 / RSALv2 / SSPLv1 (tri-licence) | https://github.com/redis/redis |

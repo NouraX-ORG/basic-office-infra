@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nourax-office-ai",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Only this path on the editor hostname runs the Worker; everything else goes straight to ONLYOFFICE.
+  // It is the same site as the editors' AI plugin, so the browser needs no CORS.
+  "routes": [{ "pattern": "office.nourax.org/nourax-ai/*", "zone_name": "nourax.org" }],
+  "observability": { "enabled": true },
+  "vars": {
+    // NIG runs on a Custom Domain, so a Worker on the same zone may fetch it.
+    "NIG_URL": "https://nig.nourax.org/v1/chat/completions",
+    "ALLOWED_MODELS": "nourax-smart,nourax-long-context,nourax-fast",
+    "FEATURE": "office",
+    "MAX_BODY_BYTES": "4194304"
+  }
+  // Secrets (set with `wrangler secret put`, never committed):
+  //   EDITOR_SESSION_KEY     the key ONLYOFFICE signs editor sessions with (tools/set-secrets.sh reads it from the server)
+  //   NEXTCLOUD_INSTANCE_ID  Nextcloud's instanceid (same script)
+  //   NIG_SERVICE_KEY        NIG's key for the "office" service; NIG holds the same value as SERVICE_KEY_OFFICE
+}

@@ -9,7 +9,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoCalendar** | Calendars, synced to phones (CalDAV) |
 | **NoContacts** | Address book, synced to phones (CardDAV) |
 | **NoBoard** | Kanban boards with a Gantt view |
-| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with the AI Tools tab |
+| **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with Nourax AI in the AI tab |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the
@@ -23,7 +23,7 @@ naming rules we follow.
 ```
 Browser · phone and desktop apps · NoMail · email recipients (share links)
         │  https://drive.nourax.org  and  https://office.nourax.org
-        ▼  Cloudflare (DNS, proxy, WAF; Worker on /nomail-upload/*)
+        ▼  Cloudflare (DNS, proxy, WAF; Workers on /nomail-upload/* and office /nourax-ai/*)
 Cloudflare Tunnel ──► cloudflared container (the server opens no inbound ports)
         ▼
 Server (Ubuntu 24.04, Docker Compose):
@@ -44,6 +44,8 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `scripts/` | Server hardening, secrets, first setup, backup, restore, update |
 | `systemd/` | Timers for the nightly backup and the weekly file mirror |
 | `worker/` | `nodrive-upload`, the Cloudflare Worker that takes big uploads from NoMail |
+| `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
+| `config/onlyoffice/` | The editors' Nourax AI settings |
 | `cloudflare/` | Tunnel routes and the WAF rule, as applied |
 | `tests/` | `curl` tests for the NoMail contract (attach, share links, save, images, cancel) |
 | `docs/` | Architecture, operations, upgrades, restore, security, branding, NoMail contract |

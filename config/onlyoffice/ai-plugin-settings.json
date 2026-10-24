@@ -1,0 +1,28 @@
+{
+  "version": 4,
+  "proxy": "/nourax-ai/proxy",
+  "providers": {
+    "Nourax AI": {
+      "name": "Nourax AI",
+      "url": "/nourax-ai/v1",
+      "key": "",
+      "models": [
+        { "id": "nourax-smart", "name": "nourax-smart", "endpoints": [], "options": { "max_input_tokens": 131072 } },
+        { "id": "nourax-long-context", "name": "nourax-long-context", "endpoints": [], "options": { "max_input_tokens": 262144 } },
+        { "id": "nourax-fast", "name": "nourax-fast", "endpoints": [], "options": { "max_input_tokens": 32768 } }
+      ]
+    }
+  },
+  "models": [
+    { "name": "Nourax Smart", "id": "nourax-smart", "provider": "Nourax AI", "capabilities": 1 },
+    { "name": "Nourax Long", "id": "nourax-long-context", "provider": "Nourax AI", "capabilities": 1 },
+    { "name": "Nourax Fast", "id": "nourax-fast", "provider": "Nourax AI", "capabilities": 1 }
+  ],
+  "customProviders": {},
+  "actions": {
+    "Chat": { "model": "nourax-smart" },
+    "Summarization": { "model": "nourax-long-context" },
+    "Translation": { "model": "nourax-long-context" },
+    "TextAnalyze": { "model": "nourax-long-context" }
+  }
+}

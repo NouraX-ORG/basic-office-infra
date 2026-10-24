@@ -14,3 +14,6 @@ tests/out/
 worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
+office-ai/node_modules/
+office-ai/.wrangler/
+office-ai/.dev.vars
