@@ -15,13 +15,13 @@
 #   theming  manifests, theme CSS, custom CSS, favicon, touch and mask icons
 #   share    a test folder, file and four public links of the QA user, opened signed out
 #   dav      the text shown when /remote.php/dav is opened in a browser
-#   errors   404, 403, missing share, unsupported browser, status.php
+#   errors   404, 403, a missing path in a link, unsupported browser, status.php
 #   config   (--server) theme, customclient_* and the apps that must be off
 #   mail     (--server) a sample e-mail rendered on the server, never sent
 #   css      every other stylesheet the pages link, for hard-coded blues
-# --server (sudo, on the server, read only) adds config and mail, and makes l10n also merge every
-# enabled app's translation files with the theme's, for every language including en, and compare
-# sweep-state.json with the installed versions.
+# --server (sudo, on the server, read only) adds config and mail, renders the page of a deleted or
+# expired link (errors), and makes l10n also merge every enabled app's translation files with the
+# theme's, for every language including en, and compare sweep-state.json with the installed versions.
 #
 # Output: "FAIL <area> <url> <where>: <snippet>" for each hit, then a summary per area. Exit code 0
 # when clean, 1 on any hit, 2 when the check could not run. The rules are shared with the sweep and
@@ -875,8 +875,9 @@ def run_http(http, cred):
 		jobs.append(('errors', page_req('/settings/admin/overview', lang, True), 'page'))
 		jobs.append(('errors', page_req('/index.php/unsupported', lang, False), 'page'))
 		if 'file' in tokens:
-			# Same page as an expired or deleted link, without counting as a guessed link: a path
-			# inside a file link is "not found" after the link itself was accepted.
+			# A missing path inside a link (the general "Page not found" page). The page of a deleted
+			# or expired link is rendered by --server: opening a made-up link here would count as a
+			# guessed link and slow down share pages for this IP (brute-force protection).
 			jobs.append(('errors', page_req('/index.php/s/%s?path=/missing' % tokens['file'], lang, False), 'page'))
 		for kind, token in sorted(tokens.items()):
 			jobs.append(('share', page_req('/index.php/s/%s' % token, lang, False), 'page'))
@@ -1177,6 +1178,14 @@ if ($in['l10n']) {
 	}
 }
 
+if ($in['errors']) {
+	// The page of a deleted or expired link, as PublicShareMiddleware renders it.
+	$l = \OCP\Server::get(\OCP\L10N\IFactory::class)->get('files_sharing');
+	$r = new \OCP\AppFramework\Http\TemplateResponse('files_sharing', 'sharenotfound',
+		['message' => $l->t('This share does not exist or is no longer available')], 'guest', 404);
+	out(['kind' => 'page', 'area' => 'errors', 'name' => 'share-not-found page (rendered on the server)', 'html' => $r->render()]);
+}
+
 if ($in['mail']) {
 	$mailer = \OCP\Server::get(\OCP\Mail\IMailer::class);
 	$urls = \OCP\Server::get(\OCP\IURLGenerator::class);
@@ -1196,7 +1205,7 @@ out(['kind' => 'done']);
 
 
 def run_server(http, upstream):
-	want = {'config': 'config' in AREAS, 'l10n': 'l10n' in AREAS, 'mail': 'mail' in AREAS}
+	want = {'config': 'config' in AREAS, 'l10n': 'l10n' in AREAS, 'mail': 'mail' in AREAS, 'errors': 'errors' in AREAS}
 	if not any(want.values()):
 		return
 	inp = dict(want, names=[r['re'] for r in RULES['name_patterns']], langs=LANGS, limit=LIMIT,
@@ -1237,6 +1246,8 @@ def run_server(http, upstream):
 				hits = name_hits(v)
 				a, b = (hits[0][0], hits[0][1]) if hits else (0, 0)
 				rep.fail('l10n', url, where, around(v, a, b))
+		elif k == 'page':
+			check_html(o['area'], o['name'], BASE + '/', o['html'])
 		elif k == 'l10n_count':
 			rep.checked('l10n', o['langs'])
 			rep.more('l10n', o['dir'], o['values'] + o['missing'] - o['sent'])
