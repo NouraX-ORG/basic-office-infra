@@ -33,6 +33,9 @@ this repository.
 | Suspicious Login (`suspicious_login`) 13, shipped with the server | Warns people about sign-ins from unusual addresses (`scripts/configure.d/50-audit.sh`); bundles Rubix ML and other libraries under MIT, and joomla/string under GPL-2.0-or-later | AGPL-3.0-or-later | https://github.com/nextcloud/suspicious_login |
 | Retention (`files_retention`) 6.0 | Deletes files with a given tag after a set time; installed with no rules (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_retention |
 | Files automated tagging (`files_automatedtagging`) 6.0 | Tags files by rules as they are written; installed with no rules (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_automatedtagging |
+| Assistant (`assistant`) 4.0 | Nourax AI, the Assistant in the top bar, NoDrive and the text editor (`scripts/configure.d/50-assistant.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/assistant |
+| OpenAI and LocalAI integration (`integration_openai`) 5.0 | The Assistant's AI provider, pointed at the Nourax AI relay; **modified**: one line changed so it sends the account id to the relay on every request (`scripts/configure.d/50-assistant.sh`, docs/assistant.md) | AGPL-3.0-or-later | https://github.com/nextcloud/integration_openai |
+| Python 3.13 (official `python` image, Alpine) | Runs the Nourax AI relay (compose service `ai-relay`, `ai-relay/relay.py`, standard library only) | PSF-2.0 (Python); image parts under their own licences | https://github.com/python/cpython |
 | Playwright (`playwright-core`) 1.64.0 | Drives Google Chrome for the browser audit of the branding (`branding/audit/`); a test tool on the admin's PC, not part of the site | Apache-2.0 | https://github.com/microsoft/playwright |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.

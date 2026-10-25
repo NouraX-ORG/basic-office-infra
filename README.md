@@ -22,6 +22,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoForms** | Forms, surveys and polls, shared with people, groups or a public link; answers export to a spreadsheet ([docs/apps.md](docs/apps.md#noforms)) |
 | **Suspicious login and audit log** | People get a notification when their account is signed in from an unusual address; sign-ins, file actions, shares and account changes go to an audit log on the server ([docs/apps.md](docs/apps.md#suspicious-login)) |
 | **Retention and automatic tagging** | Rules that tag files as they arrive (for example NoMail attachments) and delete files with a given tag after a set time; installed with no rules, each rule needs the owner's yes ([docs/apps.md](docs/apps.md#retention)) |
+| **Nourax AI** | The Assistant (top bar, NoDrive, text editor): chat, summaries, headlines, rewording, translation; Nourax AI models only, no keys or AI settings for anyone, each request charged to the person's Nourax AI budget in NIG; "not available yet" until NIG's key is in ([docs/assistant.md](docs/assistant.md)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the
@@ -59,6 +60,7 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `nextcloud-apps/nourax_api/` | The NoMail API (health, accounts, virus scan) at `https://drive.nourax.org/apps/nourax_api`, and the admin-only teams API (never an MCP tool), as an app inside the file server ([docs/nomail-api.md](docs/nomail-api.md), [docs/teams.md](docs/teams.md), [docs/nomail-contract.md](docs/nomail-contract.md)) |
 | `nextcloud-apps/nourax_antivirus/` | Makes the virus scanner work fully with files in R2: the plain refusal message, scans of uploads in parts, a stored-file scan that is never stuck ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#the-helper-app-nourax_antivirus)) |
 | `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
+| `ai-relay/` | The Nourax AI relay for the Assistant (compose service `ai-relay`, Python standard library) and the AI task worker (`ai-worker`), with tests against a stand-in for NIG ([docs/assistant.md](docs/assistant.md)) |
 | `config/onlyoffice/` | The editors' Nourax AI settings |
 | `cloudflare/` | Tunnel routes and the WAF rule, as applied |
 | `tests/` | `curl` tests, run on the server: the NoMail API (health, accounts, virus scan), the admin teams API, privacy between organisations, the NoMail contract U1–U5 with a 1.1 GB upload, and the upload Worker; `qa-wrapup.sh` archives and disables the QA objects after a round ([tests/README.md](tests/README.md)) |

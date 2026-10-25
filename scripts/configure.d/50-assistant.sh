@@ -136,6 +136,16 @@ nourax_assistant() {
 	done
 	occ config:app:set assistant chat_user_instructions --value="$ASSISTANT_CHAT_INSTRUCTIONS" --type=string --lazy --no-interaction >/dev/null
 	occ config:app:set assistant chat_user_instructions_title --value="$ASSISTANT_TITLE_INSTRUCTIONS" --type=string --lazy --no-interaction >/dev/null
+	#    Task types that need speech, pictures, files or tools: the two apps offer them whatever the
+	#    settings above say (speech, stickers, voice chat), and the Assistant's chat would send its
+	#    messages as "multimodal chat with tools" when that is offered. They are switched off with the
+	#    server's own task-type switch (Administration settings > Artificial intelligence), so the
+	#    chat sends plain text and nobody picks a tool that cannot answer. The server keeps its list
+	#    of task types for up to a minute. Back on: occ taskprocessing:task-type:set-enabled TYPE 1
+	for key in core:text2speech core:audio2audio:chat core:audio2audio:translate core:contextagent:audio-interaction \
+		assistant:text2sticker core:text2text:chatwithtools core:text2text:multimodal-chatwithtools; do
+		occ taskprocessing:task-type:set-enabled "$key" 0 >/dev/null
+	done
 	log "  assistant: text tools only, the chat calls itself Nourax AI"
 
 	# 6. The patch (see the top of this file).
