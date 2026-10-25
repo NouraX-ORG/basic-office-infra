@@ -8,6 +8,7 @@ cd /opt/nourax/basic-office-infra
 sudo tests/nomail-api-health.sh
 sudo tests/api-provision.sh
 sudo tests/admin-api.sh      # after api-provision.sh, which makes qa-t6-1
+sudo tests/admin-people.sh   # after admin-api.sh, which makes the QA organisations and teams
 ```
 
 Each prints one `PASS` or `FAIL` line per check and exits 0 only when every check passed.
@@ -17,7 +18,8 @@ Each prints one `PASS` or `FAIL` line per check and exits 0 only when every chec
 | `nomail-api-health.sh` | `GET /v1/health`: no key and a wrong key give 401, the right key gives 200 with `status`, `clamav` and `signatures`; `Cache-Control: no-store` |
 | `api-provision.sh` | `POST /v1/provision`: a new "Log in with Nourax" account with the four `/NoMail` folders and a 72-character app password; a second call rotates the password (the old one gets 401) and leaves exactly one `NoMail` app password; refused ids (`nodrive`, `admin`, uppercase), bad bodies, a local account, a disabled account; 413 over 16 KB; 429 with `Retry-After` past 60 calls a minute. Runs `provision-request.php` first. |
 | `provision-request.php` | The input rules of `/v1/provision` on their own, inside the app container: `sudo docker compose exec -T app php < tests/provision-request.php` |
-| `admin-api.sh` | The admin API, part 1 ([docs/teams.md](../docs/teams.md)): signing (no, wrong, old, reused signatures give 401), 413 over 2 MB, input rules, organisations and teams with every step, "Sales" and "Sales 2" in one organisation, renames that keep every id, stale versions, 423 while a call runs, a member's cards and what they can reach, the audit. QA organisations and teams `qa-t6-*` only. |
+| `admin-api.sh` | The admin API, part 1 ([docs/teams.md](../docs/teams.md)): signing (no, wrong, old, reused signatures give 401), 413 over 2 MB, input rules, organisations and teams with every step, "Sales" and "Sales 2" in one organisation, renames that keep every id, stale versions, 423 while a call runs, a member's cards and what they can reach (`qa-t6-5`, added with occ), the audit. QA organisations and teams `qa-t6-*` only. |
+| `admin-people.sh` | The admin API, part 2: people PUT and GET (input rules, joins, a lead's rights, stale versions), what a member reaches, leaving a team (the shares, the lock, the ONLYOFFICE drop, access gone at once, files stay), a move, an email change that keeps the uid, the last member leaving (team archived, nothing deleted), leaving the organisation (disabled, refused logins, links gone, kept 30 days, the delete job off and harmless) and coming back, the reconcile call (dry run and fix), the drift repair, 423 for parallel PUTs, the audit. |
 
 `lib.sh` holds the shared helpers (`check`, `api`, `provision`, `propfind`, `save_netrc`, `qa_local_user`, `take_lock`).
 
@@ -39,7 +41,11 @@ Kept in `/etc/nourax/qa/` (root, folder 0700, files 0600), never in the repo:
 | Account | Made by | File | Used for |
 |---|---|---|---|
 | `qa-t6-1` | `api-provision.sh`, through the API | `qa-t6-1.netrc` (its newest `NoMail` app password) | U1–U5 and the other contract tests |
-| `qa-t6-2` | `api-provision.sh`, through the API | none | The disabled-account check; left disabled |
+| `qa-t6-2` | `api-provision.sh` (part 1), now the people API | `qa-t6-2.netrc` | A team lead in `admin-people.sh` |
+| `qa-t6-3` | the people API | `qa-t6-3.netrc` | Leaves its last team and the organisation, then comes back, in `admin-people.sh` |
+| `qa-t6-4` | `admin-people.sh`, through `/v1/provision` | none | Added to a team with occ: the drift the reconcile takes out again |
+| `qa-t6-5` | `admin-api.sh`, through `/v1/provision` | `qa-t6-5.netrc` | Added with occ in part 1's member checks; the drift job takes it out again |
+| `qa-t6-8` | `api-provision.sh`, through the API | none | The disabled-account check; left disabled |
 | `qa-t6-9` | `api-provision.sh`, as a local account | `qa-t6-9.pass` | The local-account check; left disabled |
 
 Running `api-provision.sh` again gives `qa-t6-1` a new app password and updates its netrc file.

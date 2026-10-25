@@ -156,7 +156,8 @@ Change with `occ config:app:set nourax_api <key> --value=<value>` (no `--type`).
 | `oidc_provider` | `Nourax` | The "Log in with Nourax" provider new accounts belong to |
 | `rate_limit_health`, `rate_limit_provision`, `rate_limit_scan`, `rate_limit_admin` | 120, 60, 60, 120 | Calls per minute; 0 switches a limit off |
 | `scan_concurrency` | 2 | Scans at the same time |
-| `leaver_deletion_enabled` | `no` | The daily deletion of people who left 30+ days ago. Stays `no` until the owner says yes. |
+| `scheduled_delete` | `off` | The daily deletion of people who left their organisation 30+ days ago ([docs/teams.md](teams.md)). Only `on` switches it on; it stays `off` until the owner says yes. The configure step writes `off` when the key is missing and never changes it otherwise. |
+| `leaver_deletion_last_run` | — | Written by the daily job: `{"at","mode","due","deleted"}` of its last run |
 
 `occ nourax_api:status` prints all of this as JSON (keys only as `set` or `missing`), with the
 ClamAV state and the row counts.
@@ -171,11 +172,13 @@ ClamAV state and the row counts.
 | `lib/Http/ApiKeyAuth.php`, `lib/Http/RateLimiter.php` | Key check; global rate limits and scan slots |
 | `lib/Controller/NomailController.php` | The NoMail endpoints |
 | `lib/Controller/AdminController.php`, `lib/Http/HmacAuth.php` | The admin API and its request signing ([docs/teams.md](teams.md)) |
+| `lib/Service/OrgService.php`, `TeamService.php`, `PeopleService.php`, `LeaveService.php`, `ReconcileService.php` | Organisations, teams, people, leaving a team, reconcile and drift repair |
+| `lib/Service/OnlyofficeCommand.php` | The signed ONLYOFFICE "drop" command that ends a leaver's editing sessions |
 | `lib/Service/ClamdClient.php`, `HealthService.php` | clamd `PING` and `VERSION` (NUL-framed commands), the health answer |
 | `lib/Migration/Version1000Date20261025000000.php` | All tables: `nourax_api_orgs`, `_teams`, `_people`, `_members`, `_nonces`, `_drift`, `_audit` |
 | `lib/Listener/GroupDriftListener.php` | Notes changes to `org:*` and `team:*` groups made outside the API |
 | Commands | `nourax_api:secret`, `:status`, `:service-account`, `:reconcile` |
-| Background jobs | `NonceCleanup` (hourly), `DriftReconcile` (every 15 minutes), `LeaverDeletion` (daily, switched off) |
+| Background jobs | `NonceCleanup` (hourly), `DriftReconcile` (every 15 minutes: puts `org:*` and `team:*` groups back), `LeaverDeletion` (daily, switched off: it only counts) |
 
 ## Test
 
@@ -186,8 +189,8 @@ with `status` ok, a valid `clamav` and `signatures`, `Cache-Control: no-store`).
 account `qa-t6-1` (created true, backend `user_oidc`, the four folders, a 72-character password
 that passes NoMail's `validCredentials`), a second call (created false, a new password, the old
 one now 401, exactly one `NoMail` app password), the refusals (`nodrive`, `admin`, an uppercase
-UUID, a missing email, a local account, a disabled account that stays disabled, 16 KB+), and the
-rate limit (70 calls in a minute give 429 with `Retry-After`).
+UUID, a missing email, a local account, a disabled account `qa-t6-8` that stays disabled, 16 KB+),
+and the rate limit (70 calls in a minute give 429 with `Retry-After`).
 
 ## Deploying a change to the app
 
