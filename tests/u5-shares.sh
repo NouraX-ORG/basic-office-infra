@@ -34,6 +34,22 @@ while read -r what id _; do
 		"$(jq --arg id "$id" '[.ocs.data[] | select((.id | tostring) == $id and .share_type == 3)] | length' "$T_OUT/list.json")"
 done < "$state"
 
+# NoMail's "update-share" (updatePublicShare()): a new end date and a password, then the
+# password taken off again, on the first link (a form body in a PUT, as NoMail sends it)
+read -r what id _ < "$state"
+days90="$(date -u -d '+90 days' +%F)"
+(umask 077 && openssl rand -base64 15 | tr -d '\n' > "$T_OUT/link.pw") # never printed
+check "U5 PUT the $what link: 90 days and a password -> HTTP 200" 200 \
+	"$(ocs PUT "/$id" --data-urlencode "expireDate=$days90" --data-urlencode "password@$T_OUT/link.pw")"
+check "U5 ... statuscode 200" 200 "$(ocs_code)"
+check "U5 ... expiration $days90" "$days90" "$(share_field expiration | cut -c1-10)"
+check "U5 ... has a password" yes "$(jq -e '.ocs.data.password | type == "string" and . != ""' "$T_OUT/ocs.json" >/dev/null && echo yes || echo no)"
+check "U5 PUT the $what link: password '' (taken off) -> HTTP 200" 200 "$(ocs PUT "/$id" --data-urlencode 'password=')"
+check "U5 ... statuscode 200" 200 "$(ocs_code)"
+check "U5 ... no password (NoMail: hasPassword false)" yes \
+	"$(jq -e '(.ocs.data.password // "") == ""' "$T_OUT/ocs.json" >/dev/null && echo yes || echo no)"
+check "U5 ... the end date stays" "$days90" "$(share_field expiration | cut -c1-10)"
+
 # Only the first link's page is opened after the delete: every request for a link that is gone
 # is a brute-force attempt for the caller's address (12 hours; the delay doubles each time), and
 # the server's address is shared by every test. The others are checked through the API.
