@@ -67,9 +67,10 @@ team() { jq -cn --arg t "$1" --arg r "$2" '[{team_id: $t, role: $r}]'; }
 
 # "ok" when the last answer is ok and these steps did not fail; else what failed.
 steps_ok() { # step...
-	jq -r --args '. as $a | [$ARGS.positional[] as $s | ($a.steps[] | select(.step == $s) | .result) // "missing"
+	# --args takes every word after the filter, so the body comes in on stdin.
+	jq -r --args '. as $a | [$ARGS.positional[] as $s | (($a.steps[] | select(.step == $s) | .result) // "missing")
 		| select(. == "failed" or . == "missing")] | if length == 0 and $a.ok == true then "ok" else "not ok: \(.)" end' \
-		"$T_OUT/body" "$@"
+		"$@" < "$T_OUT/body"
 }
 # The count of the leave step for this team, e.g. leave_count qa-t6-team-a1 group_shares_removed
 leave_count() { jq -r --arg t "$1" --arg c "$2" '[.steps[] | select(.step == "leave" and .team_id == $t)][0].counts[$c]' "$T_OUT/body"; }
@@ -277,7 +278,11 @@ check "team B1 status: archived, folder and group still there" "true true true" 
 check "PUT $QA3 active false -> 200" 200 "$(put_person "$QA3" "$QA3@example.invalid" "QA t6 3" "$ORG_B" '[]' false)"
 check "$QA3: the disable step ok" ok "$(steps_ok account org disable directories)"
 check "$QA3 is disabled" false "$(occ user:info "$QA3" --output=json </dev/null | jq -r .enabled)"
-check "$QA3's app password -> 401" 401 "$(propfind "$NETRC3" "$QA3/" 0)"
+# The server refuses a disabled account's app password: WebDAV answers 503 (its DisabledUserException),
+# never any data; OCS answers 401.
+check "$QA3's app password on WebDAV -> refused (401 or 503)" yes \
+	"$(case "$(propfind "$NETRC3" "$QA3/" 0)" in 401 | 503) echo yes ;; *) echo no ;; esac)"
+check "$QA3's app password on OCS -> refused (401)" 401 "$(ocs "$NETRC3" GET /cloud/user)"
 check "/v1/provision for $QA3 -> 409 account_disabled" "409 account_disabled" \
 	"$(provision "$QA3" "$QA3@example.invalid" "QA t6 3") $(jq -r .error "$T_OUT/body")"
 check "$QA3's public link -> 404" 404 "$(curl -sS -o /dev/null -w '%{http_code}' "https://${DRIVE_HOST}/s/$T3")"
