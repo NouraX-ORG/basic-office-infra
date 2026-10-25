@@ -43,6 +43,12 @@ cgroup_line() {
 			lim = (max == "max") ? "none" : sprintf("%d", max / m)
 			printf "%-14s limit %5s  now %5d  highest %5d  program %5d  file cache %4d  swap %4d  at limit %s times  OOM kills %s\n",
 				svc, lim, cur / m, peak / m, anon / m, file / m, swap / m, atmax, oom
+			# Program memory near the limit: the container swaps and slows down before the kernel
+			# would stop it (at its limit plus as much swap again).
+			if (max != "max" && anon + swap > 0.9 * max)
+				printf "%-14s WARNING: program memory and swap are over 90%% of the limit - see docs/search-and-antivirus.md, Memory\n", svc
+			if (oom > 0)
+				printf "%-14s WARNING: stopped by the kernel %s times at its limit\n", svc, oom
 		}' "$dir/memory.stat"
 }
 
@@ -98,7 +104,8 @@ log "indexing all files again, in jobs"
 for try in 1 2 3; do
 	sleep 20
 	start=$SECONDS
-	if dc exec -T -u www-data jobs timeout 10m php occ fulltextsearch:index --no-readline >/dev/null; then
+	# Its progress panel goes to stderr; the exit code says whether it ran.
+	if dc exec -T -u www-data jobs timeout 10m php occ fulltextsearch:index --no-readline >/dev/null 2>&1; then
 		log "  done in $((SECONDS - start)) seconds; index nourax_drive: $(es_api GET /nourax_drive/_count </dev/null | jq -r '.count') documents"
 		break
 	fi

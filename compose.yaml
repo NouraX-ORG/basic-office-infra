@@ -244,7 +244,10 @@ services:
       - ./config/elasticsearch/index-queue.sh:/opt/nourax/jobs/index-queue.sh:ro
     mem_limit: ${JOBS_MEM_LIMIT:-384m}
     oom_score_adj: 500
-    stop_grace_period: 2m              # a run that has started is finished first
+    # The image's own stop signal (SIGWINCH) is for Apache; the script stops on SIGTERM and
+    # finishes a run that has started first.
+    stop_signal: SIGTERM
+    stop_grace_period: 2m
     healthcheck:
       # The script touches this file before every run; older than 65 minutes means it is stuck.
       test: ["CMD-SHELL", "find /tmp/nourax-jobs.alive -mmin -65 | grep -q ."]

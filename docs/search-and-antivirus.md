@@ -302,7 +302,8 @@ health check says *unhealthy* only when no run has started for 65 minutes (a run
 an hour).
 
 Two runs never overlap: the app lets only one indexing run work at a time, and another one stops
-at once.
+at once. Measured: three new files were found 92–93 seconds after their upload; the longest wait
+is about two and a half minutes (the 2-minute pause plus the run).
 
 ```
 sudo docker compose ps jobs                     # running, healthy
@@ -318,8 +319,10 @@ until the owner deletes them.
 ### The first index, and indexing everything again
 
 `50-search.sh` starts a full index of all stored files once, in the background, when the index
-`nourax_drive` does not exist yet (in `jobs` when it runs, otherwise in the file server). On 2026-10-25 that took 30 seconds for the 104 files and cards
-on the server. To index everything again (after a problem, or after changing what is indexed):
+`nourax_drive` does not exist yet (in `jobs` when it runs, otherwise in the file server). On
+2026-10-25 that took 30 seconds for the 104 files and cards on the server; indexing all 123 again
+in `jobs` took 11 seconds. To index everything again (after a problem, or after changing what is
+indexed):
 
 ```
 sudo docker compose exec -T jobs php occ fulltextsearch:index --no-readline   # every person's files and NoBoard cards again, in jobs' memory limit
@@ -394,34 +397,80 @@ sudo docker compose up -d --force-recreate elasticsearch   # the image reads the
 
 ### Memory
 
-Measured on 2026-10-25 on the 3.7 GB server, before Elasticsearch (04:48) and after it was running
-with the first index done and the tests below (05:07):
+`config/elasticsearch/memory-report.sh` shows the memory of the server and of the add-ons:
+`free -m`, `/proc/swaps`, `docker stats`, and for `elasticsearch`, `clamav` and `jobs` what the
+kernel counts for each container (limit, use now, highest use, *program* memory that is not file
+cache, swap, how often it was at its limit, OOM kills), plus Elasticsearch's Java heap. It prints
+a WARNING when a container's program memory and swap pass 90% of its limit, or when the kernel
+stopped one.
 
-| | Used | Available | Swap used |
-|---|---|---|---|
-| Before | 1925 MB | 1894 MB | 193 MB |
-| After | 1905 MB | 1914 MB | 1170 MB |
+```
+sudo config/elasticsearch/memory-report.sh                  # a report now; reads only
+# Before and after Elasticsearch (search inside files is off for about 3 minutes), under the lock:
+sudo flock -w 1800 /run/nourax-deploy.lock config/elasticsearch/memory-report.sh --around-start qa-t5-1 WORD1 WORD2
+```
 
-| Elasticsearch container | |
-|---|---|
-| Memory (container) | 964 MiB of the 1 GiB limit |
-| Of that, the process's own memory | 926 MB: Java heap 410 of 512 MB in use, 291 MB outside the heap; the rest is file cache |
-| OOM kills | 0 |
+`--around-start` stops `elasticsearch` and `jobs`, waits a minute and reports *before*; then starts
+both, indexes every file again in `jobs`, searches each word as the given person and reports
+*after*. Measured that way on 2026-10-25 (05:43–05:47 UTC) on the 3.7 GB server:
 
-Starting Elasticsearch made the kernel move memory that was rarely used to swap: about 810 MB of
-ClamAV's signatures and 270 MB of the editors. Both keep working (clamd answered `VERSION` in
-0.4 seconds and a clean upload was scanned and stored in 0.9 seconds afterwards); the first scans
-after a quiet time are a little slower while the signatures come back from swap.
+| `free -m` | Used | Free | Buffers and cache | Available | Swap used |
+|---|---|---|---|---|---|
+| Before: Elasticsearch and `jobs` stopped for a minute (05:44:53) | 1024 MB | 1330 MB | 1892 MB | 2795 MB | 1169 MB |
+| After: both running, all 123 documents indexed again (11 seconds), 2 searches (05:46:55) | 1854 MB | 397 MB | 1995 MB | 1965 MB | 1169 MB |
 
-If Elasticsearch reaches its limit, it is not stopped at once: Docker lets a container use as much
-swap as its limit, so it slows down first. If memory runs out on the whole server, the kernel stops
-Elasticsearch first (`oom_score_adj` 600, ClamAV 400), never the database or the file server. The
-search box then shows no full-text results until it is back; nothing else stops.
+| `docker stats` | Before | After |
+|---|---|---|
+| elasticsearch (limit 1 GiB) | stopped | 873.8 MiB |
+| jobs (limit 384 MiB) | stopped | 1.3 MiB |
+| clamav (limit 1.56 GiB) | 102.4 MiB | 102.4 MiB |
+| app | 350.1 MiB | 343.7 MiB |
+| onlyoffice | 125.1 MiB | 125.5 MiB |
+| db | 37.2 MiB | 37.2 MiB |
+| cloudflared | 33.5 MiB | 32.7 MiB |
+| redis | 4.8 MiB | 4.8 MiB |
+| cron | 1.5 MiB | 1.5 MiB |
 
-**After the upgrade to 8 GB:** in `.env` set `ES_JAVA_HEAP=1g` and `ES_MEM_LIMIT=2g`, then
-`sudo docker compose up -d elasticsearch` (about a minute without full-text results). With more
-than about 100,000 documents, or files much bigger than 20 MB, give it more heap (at most half of
-the limit).
+`/proc/swaps` both times: `/swapfile`, size 4194300 kB, used 1198044 kB. So search inside files
+takes about 830 MB of the server's memory, nearly all of it Elasticsearch. Swap does not go down
+when it stops: it was filled at 04:50, the first time Elasticsearch started, when the kernel moved
+memory that was rarely used there, mostly ClamAV's signatures (851 MiB of ClamAV is in swap) and
+part of the editors. Both keep working (clamd answered `VERSION` in 0.4 seconds and a clean upload
+was scanned and stored in 0.9 seconds afterwards); the first scans after a quiet time are a little
+slower while the signatures come back from swap.
+
+**What fills Elasticsearch's 1 GiB.** The Java heap (512 MiB) is taken in full at the start
+(`-XX:+AlwaysPreTouch`, Elastic's default), so it never grows. Outside the heap Java keeps the
+loaded classes and compiled code (about 260–300 MiB) and about 100–150 MiB of C memory (threads,
+garbage collector). Together that is the *program* memory, about 880–950 MiB; the rest of the
+limit is file cache for the index files, which the kernel gives back first.
+
+| Elasticsearch container | Before this fix (05:30, 37 minutes after its start) | After (05:51, 6 minutes after its start) |
+|---|---|---|
+| Program memory | 946 MiB | 879 MiB |
+| Times at the limit (the kernel took back file cache) | 279 | 0 |
+| Java threads | 75 | 61 |
+| OOM kills, swap | 0, 0 | 0, 0 |
+
+The fix of 2026-10-25 took two things out of that limit: the GC log files (their writes filled
+the file cache and pushed the container to its limit again and again) and part of the C memory
+(`MALLOC_ARENA_MAX=2`).
+
+**Why it is not stopped before the upgrade.** The heap cannot grow, so only the part outside it
+grows a little as more code is compiled. If the program memory ever reaches the limit, the kernel
+first moves Elasticsearch's own rarely used memory to swap (Docker lets a container use as much
+swap as its limit), so search gets slower; it would be stopped only at 2 GiB. If memory runs out
+on the whole server, the kernel stops Elasticsearch first (`oom_score_adj` 600, `jobs` 500,
+ClamAV 400), never the database or the file server. The search box then shows no full-text results
+until it is back; nothing else stops. Watch for the report's WARNING lines and its *swap* column.
+
+**`jobs`:** 1–2 MiB between runs; 89 MiB at the most while it indexed every file again and the
+test uploads below (`memory.peak`), never at its limit.
+
+**After the upgrade to 8 GB:** in `.env` set `ES_JAVA_HEAP=1g` and `ES_MEM_LIMIT=2g`
+(`JOBS_MEM_LIMIT` can stay `384m`), then `sudo docker compose up -d --no-deps elasticsearch jobs`
+(about a minute without full-text results). With more than about 100,000 documents, or files much
+bigger than 20 MB, give Elasticsearch more heap (at most half of its limit).
 
 ### Licences and versions
 
@@ -458,5 +507,7 @@ the search box's API, `GET /ocs/v2.php/search/providers/fulltextsearch/search?te
 | A file deleted | 0 results at once; at the next run its index entry was gone (`found: false`) |
 | A result's link (`/f/611`) | 303 to the file in NoDrive with `openfile=true` |
 | Settings | `occ config:list` shows `elastic_host` as `***REMOVED SENSITIVE VALUE***`; in the database it starts with `$AppConfigEncryption$`; `occ fulltextsearch:check` shows `http://nourax_drive:********@elasticsearch:9200` |
-| Timer | Runs every 2 minutes 10 seconds (runs at 04:56:11, 04:58:21, 05:00:31, 05:02:39) |
 | Container settings | `docker inspect`: memory 1073741824 (1g), OOM score 600 |
+| The service `jobs` (fix of 2026-10-25) | `docker compose ps jobs`: *Up (healthy)*; `docker inspect`: memory 402653184 (384m), swap limit 805306368, OOM score 500, user `www-data`, program `/bin/bash /opt/nourax/jobs/index-queue.sh`; between runs only `bash` (3 MB) and `sleep` run in it. The host timer is disabled and inactive |
+| New files through `jobs` (fix of 2026-10-25) | A `.docx` and a `.pdf` (`qa-t5-1`) and a `.docx` in the team folder, each with a new word: all three found 92–93 seconds after the upload, each with its sentence (*(files) Fix round check: the word … is only inside this document.*, *(files) Invoice note for the fix round: … appears on page one.*, *(files) Team plan for the fix round: … belongs to the team folder.*). The team file found by `qa-t5-2` too; all three words 0 results for `qa-t5-3`; the `.docx` and `.pdf` words 0 results for `qa-t5-2` |
+| Memory before and after (fix of 2026-10-25) | `memory-report.sh --around-start`, see Memory above |
