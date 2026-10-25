@@ -21,7 +21,7 @@ login and opens nothing new to the internet: `/apps/nourax_api/...` is the only 
 |---|---|---|
 | `GET /v1/health` | `{"status":"ok","clamav":"ok"\|"unavailable","signatures":"YYYY-MM-DD"\|null}` | Live |
 | `POST /v1/provision` | `{"uid","login","app_password","created"}` | Live |
-| `POST /v1/scan` | `{"status":"clean"}` or `{"status":"infected","signature"}`, 413, 503 | Coming (T6-4) |
+| `POST /v1/scan` | `{"status":"clean"}` or `{"status":"infected","signature"}`; 413, 422, 429, 503 | Live |
 
 `status` is always `ok` while the API answers. ClamAV being down only changes `clamav` to
 `unavailable` (and `signatures` to `null`): NoMail's account set-up needs `status` only, and its
@@ -31,8 +31,11 @@ from clamd's `VERSION` answer (`ClamAV 1.x/<db>/<date>`). The ClamAV check gives
 ```
 curl -sS https://drive.nourax.org/apps/nourax_api/v1/health \
   -H "Authorization: Bearer $NODRIVE_API_KEY"
-{"status":"ok","clamav":"unavailable","signatures":null}
+{"status":"ok","clamav":"ok","signatures":"2026-10-24"}
 ```
+
+Tested 2026-10-25 09:41 UTC (clamd `ClamAV 1.5.4/28163/Sat Oct 24 06:26:10 2026`). With ClamAV
+pointed at a missing host the answer was `{"status":"ok","clamav":"unavailable","signatures":null}`.
 
 ### `POST /v1/provision`
 
@@ -90,6 +93,76 @@ well under a second.
 and would never stop asking; 400, 409 and 413 count as failed tries, retried after 2, 4, 8 and
 16 minutes, then every 6 hours.
 
+### `POST /v1/scan`
+
+Virus-scans one file with ClamAV (the `clamav` service, clamd on `clamav:3310` inside the compose
+network) and forgets it.
+
+```
+curl -sS https://drive.nourax.org/apps/nourax_api/v1/scan \
+  -H "Authorization: Bearer $NODRIVE_API_KEY" -H 'Content-Type: application/octet-stream' \
+  -H 'X-File-Name: report%20Q3.pdf' --data-binary @report.pdf
+{"status":"clean"}
+```
+
+**Request:** the raw file bytes as the body, at most **99,614,720 bytes** (95 MiB, NoMail's
+`MAX_SCAN_BYTES`; Cloudflare refuses bodies over 100 MB). `X-File-Name` is optional and used for
+the debug log only: it is URL-decoded, cut to 200 characters and never logged at the normal log
+level. `Content-Type` is not checked.
+
+| Status | Body | When | NoMail reads it as |
+|---|---|---|---|
+| 200 | `{"status":"clean"}` | clamd found nothing | clean |
+| 200 | `{"status":"infected","signature":"Eicar-Test-Signature"}` | clamd found something. The name is clamd's, at most 200 characters, without control characters. | infected |
+| 413 | `{"error":"too_large","max_bytes":99614720}` | `Content-Length` over the limit (refused before clamd is asked), a chunked body that goes over it while it streams, or clamd's own size limit | "Too big for the virus scanner" (not retried) |
+| 422 | `{"error":"scan_error"}` | clamd failed part-way: an `ERROR` answer, a closed connection, or no answer within 60 seconds of a wait (90 seconds in all) | a failed try for this file: retried after 2, 4, 8 and 16 minutes |
+| 429 | `{"error":"scanner_busy"}`, `Retry-After: 30` | 2 scans are already running (`scan_concurrency`) | "not ready": the run stops and tries again next minute |
+| 429 | `{"error":"rate_limited"}`, `Retry-After: 30` | over 60 scans this minute | the same |
+| 503 | `{"error":"scanner_unavailable"}`, `Retry-After: 60` | clamd cannot be reached within 5 seconds (ClamAV is down or starting) | the same |
+
+NoMail scans one file at a time, so it only meets `scanner_busy` when something else scans at
+the same moment.
+
+**How it works.** The body goes from the request (`php://input`) straight to clamd with the
+`INSTREAM` command: `zINSTREAM\0`, then 1 MiB pieces, each with a 4-byte big-endian length, then
+a zero length, then clamd's answer (`stream: OK`, `stream: <name> FOUND` or `... ERROR`). At most
+2 scans run at once, counted in Redis; a slot frees itself after 150 seconds if its PHP process
+dies. Every scan gets an audit row with the result (`clean`, `infected`, `too_large`, ...), never a
+file name or a byte of the file.
+
+**No stored copy.** The app never writes the bytes anywhere: no file, no log, no database, no
+Drive storage. Two programs keep a short-lived temporary file, as they always do, and delete it
+at once:
+
+- PHP keeps any request body over 16 KB in a temporary file in the app container's `/tmp` until
+  the request ends;
+- clamd writes the stream to a temporary file in the clamav container's `/tmp` while it scans.
+
+Tested 2026-10-25: after 12 scan calls (among them three of 95 MiB that ran, two of them at
+once) the file table had the same 620 rows, no new file over 1 MiB in the data folder, no PHP or clamd temporary file left, and
+neither the test file names nor any EICAR bytes in the server log.
+
+Optional later hardening, not done: `php_admin_flag enable_post_data_reading off` for this path
+only would let PHP pass the body through without its temporary file. It needs the Apache config
+of the `app` and `cron` containers changed, so they would have to be recreated.
+
+**What clamd must allow.** `StreamMaxLength` and `MaxFileSize` at least 100M and `MaxScanSize` at
+least 100M (they are 110M, 110M and 400M in `config/clamav/clamd.conf`, Task 5). Lowering them
+below 95 MiB would turn big attachments into 413s.
+
+**Measured** on 2026-10-25 (2 vCPU, 3.7 GB RAM), from the server through Cloudflare:
+
+| Body | Answer | Total time | Time inside the app |
+|---|---|---|---|
+| EICAR test string (68 bytes) | infected, `Eicar-Test-Signature` | 0.26 s | 30 ms |
+| 5 MiB of random bytes | clean | 1.1 s | 0.8 s |
+| 99,614,720 bytes (the limit) | clean | 10.4 s | 7.5 s |
+| 96 MiB, straight to the app container | 413 `too_large` | 0.26 s | 3 ms |
+| 96 MiB chunked, straight to the app container | 413 `too_large` after 95 MiB went to clamd | 0.6 s | 0.3 s |
+| 4 × 95 MiB at once, straight to the app container | 2 clean, 2 × 429 `scanner_busy` | 1.4 s | 1.3 s each (clean) |
+
+NoMail waits 45 seconds for one scan.
+
 ## Errors
 
 Every answer is JSON with `Cache-Control: no-store`. Errors look like `{"error":"<code>"}`.
@@ -101,6 +174,9 @@ Every answer is JSON with `Cache-Control: no-store`. Errors look like `{"error":
 | 429 | `rate_limited` | A rate limit is full. `Retry-After: 30`. The brute-force block (below) also answers 429, as HTML. |
 | 500 | `internal_error` | Anything unexpected. The server log has the error class and message, nothing else. |
 | 503 | `not_configured` | No key has been imported into the app yet. |
+
+`/v1/provision` and `/v1/scan` add their own answers (400, 409, 413, 422, 429 `scanner_busy`,
+503 `oidc_*` and `scanner_unavailable`); see their sections above.
 
 NoMail treats 401, 403, 404, 429 and 503 as "the API is not ready" and simply tries again on its
 next run, so nothing on the NoMail side breaks while the Drive side is down or not set up.
@@ -155,7 +231,7 @@ Change with `occ config:app:set nourax_api <key> --value=<value>` (no `--type`).
 | `clamav_host`, `clamav_port` | `clamav`, `3310` | Where clamd listens (the compose service) |
 | `oidc_provider` | `Nourax` | The "Log in with Nourax" provider new accounts belong to |
 | `rate_limit_health`, `rate_limit_provision`, `rate_limit_scan`, `rate_limit_admin` | 120, 60, 60, 120 | Calls per minute; 0 switches a limit off |
-| `scan_concurrency` | 2 | Scans at the same time |
+| `scan_concurrency` | 2 | Scans at the same time; one more gets 429 `scanner_busy` |
 | `scheduled_delete` | `off` | The daily deletion of people who left their organisation 30+ days ago ([docs/teams.md](teams.md)). Only `on` switches it on; it stays `off` until the owner says yes. The configure step writes `off` when the key is missing and never changes it otherwise. |
 | `leaver_deletion_last_run` | — | Written by the daily job: `{"at","mode","due","deleted"}` of its last run |
 
@@ -174,7 +250,7 @@ ClamAV state and the row counts.
 | `lib/Controller/AdminController.php`, `lib/Http/HmacAuth.php` | The admin API and its request signing ([docs/teams.md](teams.md)) |
 | `lib/Service/OrgService.php`, `TeamService.php`, `PeopleService.php`, `LeaveService.php`, `ReconcileService.php` | Organisations, teams, people, leaving a team, reconcile and drift repair |
 | `lib/Service/OnlyofficeCommand.php` | The signed ONLYOFFICE "drop" command that ends a leaver's editing sessions |
-| `lib/Service/ClamdClient.php`, `HealthService.php` | clamd `PING` and `VERSION` (NUL-framed commands), the health answer |
+| `lib/Service/ClamdClient.php`, `ScanResult.php`, `HealthService.php` | clamd `PING`, `VERSION` and `INSTREAM` (NUL-framed commands), the scan's verdict, the health answer |
 | `lib/Migration/Version1000Date20261025000000.php` | All tables: `nourax_api_orgs`, `_teams`, `_people`, `_members`, `_nonces`, `_drift`, `_audit` |
 | `lib/Listener/GroupDriftListener.php` | Notes changes to `org:*` and `team:*` groups made outside the API |
 | Commands | `nourax_api:secret`, `:status`, `:service-account`, `:reconcile` |
@@ -184,6 +260,17 @@ ClamAV state and the row counts.
 
 On the server: `sudo tests/nomail-api-health.sh` (no key → 401, wrong key → 401, right key → 200
 with `status` ok, a valid `clamav` and `signatures`, `Cache-Control: no-store`).
+
+`sudo tests/api-scan.sh` tests `/v1/scan` and the ClamAV part of health, **on the server only**
+(Windows Defender on the owner's PC quarantines the EICAR test file; the test builds the EICAR
+string in memory and pipes it). It first runs `tests/clamd-instream.php` (the `INSTREAM`
+exchange against a fake clamd: framing, the exact limit and one byte over, clamd's size limit,
+odd answers, a closed connection, silence), waits up to 90 minutes for ClamAV (exit 2, BLOCKED,
+if it never comes), then checks health (clamav ok, signatures at most 2 days old), EICAR →
+infected, 5 MiB → clean, exactly 99,614,720 bytes through Cloudflare → clean within 45 s, 96 MiB
+and one byte over straight to the app container → 413 (also chunked), 4 at once → 2 clean and
+2 × 429, no stored copy, the audit rows, and, under the lock, `clamav_host=clamav-missing` → scan
+503 and health ok with clamav unavailable, then put back.
 
 `sudo tests/api-provision.sh` tests `/v1/provision` with QA ids only (see `tests/README.md`): a new
 account `qa-t6-1` (created true, backend `user_oidc`, the four folders, a 72-character password
