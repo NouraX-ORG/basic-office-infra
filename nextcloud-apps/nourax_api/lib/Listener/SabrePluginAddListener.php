@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 /**
- * Adds two plugins to the server's DAV endpoint (/remote.php/dav):
+ * Adds three plugins to the server's DAV endpoint (/remote.php/dav):
  * - ReadOnlyBooksPlugin, so a member's write to a directory or a team address book gets 403, not
  *   the server's 404;
  * - OrgSharePlugin, so a calendar or an address book is shared only within the person's
- *   organisation (while sharing is limited to group members, docs/teams.md).
+ *   organisation (while sharing is limited to group members, docs/teams.md);
+ * - OrgPeoplePlugin, so a person's name, email address and groups show only within their
+ *   organisation, and Photos albums and team folder rules are shared only within it (same rule).
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -15,6 +17,7 @@ declare(strict_types=1);
 namespace OCA\NouraxApi\Listener;
 
 use OCA\DAV\Events\SabrePluginAddEvent;
+use OCA\NouraxApi\Dav\OrgPeoplePlugin;
 use OCA\NouraxApi\Dav\OrgSharePlugin;
 use OCA\NouraxApi\Dav\ReadOnlyBooksPlugin;
 use OCP\EventDispatcher\Event;
@@ -33,6 +36,9 @@ class SabrePluginAddListener implements IEventListener {
 		}
 		if ($server->getPlugin(OrgSharePlugin::PLUGIN_NAME) === null) {
 			$server->addPlugin(new OrgSharePlugin());
+		}
+		if ($server->getPlugin(OrgPeoplePlugin::PLUGIN_NAME) === null) {
+			$server->addPlugin(new OrgPeoplePlugin());
 		}
 	}
 }

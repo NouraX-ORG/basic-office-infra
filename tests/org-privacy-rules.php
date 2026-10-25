@@ -135,6 +135,46 @@ expect('deck: remote refused', $on->checkDeckAcl($a1, 6, 'qa@example.invalid') =
 expect('deck: circle refused', $on->checkDeckAcl($a1, 7, 'abc') === $other);
 expect('deck: the service account shares the team board', $on->checkDeckAcl($teams, 1, 'team:qa-t6-team-b1') === null);
 
+// Handing something to one named account (NoGantt, NoForms, NoBoard owners, transfers, rules):
+// an id that does not exist gets the same refusal as another organisation's account.
+expect('reach: same organisation allowed', $on->checkReach($a1, 'qa-t6-2') === null);
+expect('reach: other organisation refused', $on->checkReach($a1, 'qa-t6-3') === $person);
+expect('reach: an unknown id refused the same way', $on->checkReach($a1, 'qa-t6-nobody') === $person);
+expect('reach: oneself allowed', $on->checkReach($a1, 'qa-t6-1') === null);
+expect('reach: the service account is never limited', $on->checkReach($teams, 'qa-t6-3') === null);
+// Who may see a name (DAV addresses, the ONLYOFFICE editor, comments)
+expect('see: same organisation', $on->canSeeUser($a1, 'qa-t6-2'));
+expect('see: not the other organisation', !$on->canSeeUser($a1, 'qa-t6-3'));
+expect('see: the service account stays visible', $on->canSeeUser($a1, 'nourax-teams'));
+expect('see: own groups only', $on->canSeeGroup($a1, 'org:qa-t6-org-a') && !$on->canSeeGroup($a1, 'org:qa-t6-org-b'));
+// Board imports (Deck JSON exports and uidRelation)
+$import = fn (array $acl, array $extra = []): mixed => json_decode((string)json_encode(['boards' => [array_merge(['title' => 'x', 'owner' => 'someone-else', 'acl' => $acl, 'stacks' => []], $extra)]]));
+$aclOf = fn (int $type, string $who): array => [['type' => $type, 'participant' => ['primaryKey' => $who, 'uid' => $who]]];
+expect('import: a share with org A allowed', $on->checkDeckImport($a1, null, $import($aclOf(0, 'qa-t6-2'))) === null);
+expect('import: a share with qa-t6-3 refused', $on->checkDeckImport($a1, null, $import($aclOf(0, 'qa-t6-3'))) === $person);
+expect('import: a plain-string participant refused too', $on->checkDeckImport($a1, null, $import([['type' => 0, 'participant' => 'qa-t6-3']])) === $person);
+expect('import: org B group refused', $on->checkDeckImport($a1, null, $import($aclOf(1, 'org:qa-t6-org-b'))) === $group);
+expect('import: the owner named in the export becomes the importer', $on->checkDeckImport($a1, null, $import($aclOf(0, 'someone-else'))) === null);
+expect('import: an account that is not here is skipped', $on->checkDeckImport($a1, null, $import($aclOf(0, 'qa-t6-nobody'))) === null);
+expect('import: a card assigned to qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([], ['stacks' => [['cards' => [['assignedUsers' => [['participant' => ['uid' => 'qa-t6-3', 'type' => 0]]]]]]]])) === $person);
+expect('import: a comment by qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([], ['stacks' => [['cards' => [['comments' => [['actorId' => 'qa-t6-3']]]]]]])) === $person);
+expect('import: uidRelation to qa-t6-3 refused', $on->checkDeckImport($a1, json_decode('{"uidRelation":{"x":"qa-t6-3"}}'), null) === $person);
+expect('import: uidRelation to qa-t6-2 allowed, its source id is not checked again', $on->checkDeckImport($a1, json_decode('{"uidRelation":{"qa-t6-3":"qa-t6-2"}}'), $import($aclOf(0, 'qa-t6-3'))) === null);
+expect('import: the old format (a map of boards) is read too', $on->checkDeckImport($a1, null, json_decode((string)json_encode(['5' => ['acl' => $aclOf(0, 'qa-t6-3')]]))) === $person);
+// Each field is read the way Deck 1.19.1 reads it (DeckJsonService).
+$card = fn (array $fields): array => ['stacks' => [['title' => 's', 'cards' => [array_merge(['id' => 1, 'title' => 'c'], $fields)]]]];
+expect('import: a share reads participant.primaryKey (qa-t6-2), not uid', $on->checkDeckImport($a1, null, $import([['type' => 0, 'participant' => ['primaryKey' => 'qa-t6-2', 'uid' => 'qa-t6-3']]])) === null);
+expect('import: a card person reads participant.uid (qa-t6-3), not primaryKey', $on->checkDeckImport($a1, null, $import([], $card(['assignedUsers' => [['participant' => ['primaryKey' => 'qa-t6-2', 'uid' => 'qa-t6-3', 'type' => 0]]]]))) === $person);
+expect('import: an owner without primaryKey is not mapped, so a share with it is checked', $on->checkDeckImport($a1, null, $import([['type' => 0, 'participant' => 'qa-t6-3']], ['owner' => ['uid' => 'qa-t6-3']])) === $person);
+expect('import: a comment by the export\'s owner keeps that author (never mapped)', $on->checkDeckImport($a1, null, $import([], array_merge(['owner' => 'qa-t6-3'], $card(['comments' => [['id' => 1, 'actorId' => 'qa-t6-3']]])))) === $person);
+expect('import: a comment by a bot is not an account', $on->checkDeckImport($a1, null, $import([], $card(['comments' => [['id' => 1, 'actorType' => 'bots', 'actorId' => 'qa-t6-3']]]))) === null);
+expect('import: a card\'s last editor qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([], $card(['lastEditor' => 'qa-t6-3']))) === $person);
+expect('import: an attachment by qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([], $card(['attachments' => [['type' => 'file', 'data' => 'a.txt', 'contentBase64' => 'YQ==', 'createdBy' => 'qa-t6-3']]]))) === $person);
+expect('import: an attachment Deck skips (no content) is not checked', $on->checkDeckImport($a1, null, $import([], $card(['attachments' => [['type' => 'file', 'data' => 'a.txt', 'createdBy' => 'qa-t6-3']]]))) === null);
+expect('import: a share type that is not a number refused', $on->checkDeckImport($a1, null, $import([['type' => 'abc', 'participant' => 'qa-t6-2']])) === $person);
+expect('import: a share without a type is skipped, as by Deck', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-3']])) === null);
+expect('import: same-organisation people everywhere allowed', $on->checkDeckImport($a1, null, $import($aclOf(0, 'qa-t6-2'), $card(['lastEditor' => 'qa-t6-2', 'assignedUsers' => [['participant' => ['uid' => 'qa-t6-2', 'type' => 0]]], 'comments' => [['id' => 1, 'actorId' => 'qa-t6-2']]]))) === null);
+
 // --- The DAV plugin, on a small DAV server with one shareable collection, as if privacy were on --
 \OC::$server->registerService(OrgPrivacy::class, fn () => $on);
 $session = Server::get(IUserSession::class);
@@ -187,7 +227,7 @@ $deckController = Server::get(IAppManager::class)->isEnabledForAnyone('deck')
 function deckAcl(?Controller $controller, string $method, int $type, string $participant, OrgPrivacy $privacy): string {
 	$request = new Request(['post' => ['type' => $type, 'participant' => $participant], 'method' => 'POST'],
 		Server::get(IRequestId::class), Server::get(IConfig::class));
-	$middleware = new OrgShareMiddleware($request, Server::get(IUserSession::class), $privacy);
+	$middleware = new OrgShareMiddleware($request, Server::get(IUserSession::class), $privacy, Server::get(IConfig::class));
 	try {
 		$middleware->beforeController($controller, $method);
 	} catch (\Exception $e) {

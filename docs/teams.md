@@ -492,6 +492,8 @@ see [The test](#the-test) for the run of the reply to NoMail.
 | Sharing a file or folder with a person or a group | Only with people who share a group, and only with one's own groups ("Sharing is only allowed with group members.") | core `shareapi_only_share_with_group_members=yes`; `shareapi_only_share_with_group_members_exclude_group_list=["admin"]`, so being in `admin` together never counts |
 | Sharing a calendar or an address book (NoCalendar, NoContacts, any CalDAV or CardDAV app) | The same rule: 403 "Sharing is only allowed with people of your organisation." and nothing is shared. The server itself checks only `mailto:` targets here, not account or group ids. | nourax_api `lib/Dav/OrgSharePlugin.php` (a DAV plugin on `/remote.php/dav`, before the server's sharing plugin) |
 | Sharing a board (NoBoard, in the app or through its REST and OCS APIs) | The same rule: 403 with the same message. Deck itself takes any account or group id. | nourax_api `lib/Middleware/OrgShareMiddleware.php` (looks only at Deck's three "add a board share" actions) |
+| Sharing or handing over in the other apps: a NoGantt project share or planning person (resource), a NoForms share or new form owner, a new board owner or a board import (NoBoard), asking someone to take over one's files (NoDrive), a Photos album collaborator, a team folder rule (a lead's advanced permissions) | The same rule: 403 "Sharing is only allowed with people of your organisation." (for a group: "... with your own organisation and teams.") and nothing is shared or handed over. An id that does not exist gets the same 403, so the answer never tells whether an account exists. The apps themselves only check that the account exists (Deck's import not even that). | nourax_api `lib/Middleware/OrgShareMiddleware.php` (the apps' own actions) and `lib/Dav/OrgPeoplePlugin.php` (the album and team folder PROPPATCH) |
+| Who a person is, given their exact id: their own DAV address (`/remote.php/dav/principals/users/<id>/`, and `.../groups/<id>/` for a group), the names the ONLYOFFICE editor asks for, and the name in a comment that mentions "@<id>" | Only for people who share a group, and one's own groups. For anyone else the address answers no name, email address, groups or language; the editor gets no name; a comment shows the id that was typed. | nourax_api `lib/Dav/OrgPeoplePlugin.php` and `lib/Middleware/OrgShareMiddleware.php` |
 | The "Accounts" address book of every account on the server | Not offered in anyone's address books. Asked for at its own address, it lists only people who share a group. Each organisation has its own directory instead. | dav `system_addressbook_exposed=false` |
 | Profile pages (`/u/<uid>`) | Off for everyone, signed in or not: every address shows the "Profile not found" page (the server answers it with HTTP 200, the same as for an account that does not exist), with no name or other field | system `profile.enabled=false` |
 | Shares with other servers, the public lookup server | Off | files_sharing `outgoing_server2server_share_enabled`, `incoming_server2server_share_enabled`, `outgoing_server2server_group_share_enabled`, `incoming_server2server_group_share_enabled`, `lookupServerEnabled`, `lookupServerUploadEnabled` = `no`. The server reads these keys in files_sharing only; the step stores `outgoing_server2server_share_enabled` and `incoming_server2server_share_enabled` = `no` under federatedfilesharing too, so a check of either app reads the same (nothing reads them there). |
@@ -499,12 +501,46 @@ see [The test](#the-test) for the run of the reply to NoMail.
 | The Teams app (circles) | Off | app `circles` disabled: its member search lists every account on the server, disabled ones too, whatever the settings above say, and anyone may add any account to a team (tested 2026-10-25). Team folders, boards and the team address books do not use it. |
 | Search | Unchanged: the search box only finds one's own files and files shared with one, and one's own contacts and directories. Tested with a word only another organisation's file has. | — |
 
-The rule for calendars, address books and boards is the server's own rule for files (core's
-`RestrictInteractionListener`), in `lib/Service/OrgPrivacy.php`: a person only when the two share
-a group other than `admin`; a group only when one is a member and it is not `admin`; a Teams-app
-team or a person on another server never. The service account `nourax-teams` is never limited, so
-the admin API keeps sharing the team books, calendars and boards with their team groups.
+The rule for calendars, address books, boards and the other apps is the server's own rule for
+files (core's `RestrictInteractionListener`), in `lib/Service/OrgPrivacy.php`: a person only when
+the two share a group other than `admin`; a group only when one is a member and it is not `admin`;
+a Teams-app team or a person on another server never. The service account `nourax-teams` is never
+limited, so the admin API keeps sharing the team books, calendars and boards with their team
+groups, and it stays visible to everyone (it owns the team calendars and books).
 `occ nourax_api:status` shows `org_privacy` (`on` while sharing is limited to group members).
+None of this edits another app's files: an app update keeps it.
+
+### Every place people meet, app by app
+
+Checked on 2026-10-25 with privacy on, as the demo accounts see each other (Demo Alpha and Demo
+Beta, both ways) and, for everything that shares or hands something over, as three QA accounts in
+two QA organisations (so a leak could never change a demo account). `tests/privacy-apps.sh` runs
+all of it; [The test](#the-test) has the runs.
+
+| App | Where a person meets another | Result |
+|---|---|---|
+| NoDrive (files) | Share dialog (files, and the calendar, board and principal kinds of the same search), recommendations, autocomplete (@-mentions in comments), contacts menu, hovercards, online statuses, the account API | Nobody of the other organisation, by part of a name, the exact id, email or name, or a group name. Hovercards and the contacts menu's card by id: 404. Server settings (above). |
+| NoDrive | Asking someone to take over one's files (`files/api/v1/transferownership`) | Was a leak: any account got the request, with the sender's name. Now 403. |
+| NoDrive | Comments: "@<id>" in a comment | The mentioned person gets no notification (the server drops it: they cannot open the file). Was a leak: the comment answered their name to everyone who reads it. Now the id. |
+| NoCalendar | Attendee suggestions, photos, contact groups, principal search, free/busy | Nobody of the other organisation; free/busy answers "could not find principal" (3.7). |
+| NoCalendar | Sharing a calendar; inviting someone | Shares: 403 (above). An invitation to someone of another organisation goes out as an email to their address; it never reaches their calendar inbox. |
+| NoTasks | Sharing a task list (a calendar) | 403, as for calendars. |
+| NoContacts | Address books, the directory, contacts search | Only one's own organisation's directory and teams' books, never the "Accounts" book; the directory holds the organisation's 12 people only; search finds nobody else. |
+| DAV (any app) | A person's or group's own address (`principals/users/<id>`, `principals/groups/<id>`) | Was a leak: anyone who knew the id got the name, email address, groups and language. Now nothing but "it is a principal". |
+| NoBoard | Board shares | 403 (above). |
+| NoBoard | A new board owner (`transferOwner`) | Was a leak: Deck took any id, even one that does not exist. Now 403. |
+| NoBoard | Board imports (the import API and the upload) | Was a leak: the shares, card people, comment authors, card editors and attachment authors of an import were written as they are (the import API answered 200 with a `uidRelation` that named `qa-t6b-3`, and the upload 200 with a share to `qa-t6b-3`). Now an import that names someone of another organisation, or another organisation's group, gets 403. Each field is read exactly as Deck 1.19.1 reads it (a share by `participant.primaryKey`, a card person by `participant.uid`, the export's owner becomes the importing person, comment authors never), so an export cannot say one thing to the check and another to Deck. |
+| NoBoard | Card people, @-mentions on cards | Only the board's people (Deck's own rule). |
+| NoForms | Sharing a form, a new form owner | Was a leak: any account or group. Now 403. The "all accounts" options stay off (`50-apps.sh`). |
+| NoGantt | Its own sharee search, people search and email match | Nobody of the other organisation (they use the server's search); the email match answers `not_found`. |
+| NoGantt | Sharing a project, a planning person (resource) | Was a leak (Task 1's lane G found it too): a project share with any account, and a resource for any account answered that person's name and could send them notifications. Now 403. |
+| ONLYOFFICE | The editor's people list (mentions, protected ranges), its names for account ids, mentions by email | The list holds the organisation's people only. Was a leak: the editor's name lookup answered any account's name. Now only names of people one shares a group with. A mention by email of someone of another organisation shares nothing and notifies nobody (ONLYOFFICE's own check). |
+| Team folders | The lead's people search; a lead's advanced permissions | The search holds the team only. Was a leak: a rule could name anyone, and then showed their name. Now a new rule for someone outside the organisation, or for a group the lead is not in, gets 403. Rules the folder already has are not checked again, so an old rule (for someone who has since left) never blocks the lead's other changes. |
+| Photos | Album collaborators | Was a leak: any account or group (Photos checks only that it exists). Now a new collaborator outside the organisation gets 403; collaborators the album already has are not checked again. Public links stay possible. |
+| NoNotes | — | No people list of its own: notes are files and are shared as files. |
+| Text documents | @-mentions | The suggestions use the server's search; the mentioned person is notified only when they can open the file (the Notifier drops the rest). Checked in the source of text 9.0.1. |
+| Activity | The activity stream | Names nobody of the other organisation. |
+| Search box | Every provider (files, contacts, comments, NoBoard cards and comments, NoForms, NoGantt, full text, calendar, tasks, tags, notes, settings, apps) | Nothing of the other organisation for a name, an id or the organisation's id. |
 
 ### What stays possible
 
@@ -528,9 +564,17 @@ the admin API keeps sharing the team books, calendars and boards with their team
 ### Known limits
 
 - Someone who already knows the exact account id of a person in another organisation (a random
-  36-character id they cannot find through Drive) can still see that the account exists and its
-  avatar picture (`/avatar/<id>/64`), and its online status if one is set. They cannot find it,
-  share with it or see its profile.
+  36-character id they cannot find through Drive) can still see that the account exists (its
+  DAV address answers "a principal", with no name) and its avatar picture (`/avatar/<id>/64`),
+  and its online status if one is set. They cannot find it, share with it, hand it anything or
+  see its name, email address, groups or profile.
+- Someone who writes "@<id>" of such a person in a comment sees that person's name in their own
+  activity stream ("You commented ..."): the activity app names the people in a comment with the
+  server's display-name lookup, which no app can change. Only the comment's author sees it, and
+  only for an id they typed themselves; the comment itself and everyone else show the id, and the
+  person is not notified.
+- Opening NoNotes for the first time makes an empty "Notes" folder in one's files (the app's own
+  behaviour, not a privacy matter).
 - The old addresses `/remote.php/caldav` and `/remote.php/carddav` have no sharing at all, so
   `OrgSharePlugin` covers every way to share a calendar or an address book.
 - The "Accounts" book at its own address (`/remote.php/dav/addressbooks/system/system/system/`):
@@ -749,6 +793,7 @@ and writes it to the server file. Then copy the file to the PC again (above).
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
+| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted). The run before the fixes also left what the leaks let through, all between QA accounts: see [The test](#the-test). Kept for the next run. |
 | People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team

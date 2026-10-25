@@ -36,8 +36,9 @@ class Application extends App implements IBootstrap {
 		// The directories and team address books are read-only for members: a write gets 403.
 		// The same listener adds the org privacy check of calendar and address book shares.
 		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginAddListener::class);
-		// Privacy between organisations for Deck boards: registered for every app's controllers,
-		// it looks only at Deck's "add a board share" actions (docs/teams.md).
+		// Privacy between organisations for the apps' own shares and hand-overs (NoBoard, NoForms,
+		// NoGantt, file ownership transfers) and the ONLYOFFICE editor's names: registered for
+		// every app's controllers, it looks only at those actions (docs/teams.md).
 		$context->registerMiddleware(OrgShareMiddleware::class, true);
 	}
 
