@@ -10,6 +10,10 @@
 # straight from the Drive (WebDAV PROPFIND and GET) and compares sizes and SHA-256 sums. It also
 # checks CORS (mail.nourax.org yes, any other origin 403), tickets sealed with the wrong key or
 # missing (401), bad chunk numbers and lengths (400), a name that is taken (409) and cancelling.
+# A second, 6 MiB upload (chunks of 5 MiB and 1 MiB) finishes too early on purpose: before any
+# chunk, then with chunk 2 missing. Both must answer 409 `incomplete` and save no file (the Drive
+# itself would save a short file), the session must stay usable, and a finish sent twice (as
+# after a lost answer) must give 201 both times with the same file.
 #
 # Keys and passwords:
 # - The Worker runs with a throwaway ticket key made here, in <scratch-dir>/upload-dev.env, loaded
@@ -27,9 +31,9 @@
 # from the server (sudo cat /etc/nourax/secrets/upload_ticket_key over SSH) straight into
 # mint-ticket.mjs on stdin, never into a file. It stops at once while the route is not on.
 #
-# What it leaves: the uploaded file in qa-t6-2's /NoMail/Sent/<yyyy-mm>/ (worker-120m.bin, or
-# worker-120m-live.bin through the route, or the name with -<time> when it is taken) and the login
-# files in <scratch-dir>. The test data, tickets and keys it made are removed at the end. Exit 0
+# What it leaves: the uploaded files in qa-t6-2's /NoMail/Sent/<yyyy-mm>/ (worker-120m.bin and
+# worker-gaps.bin, or worker-120m-live.bin and worker-gaps-live.bin through the route, or the name
+# with -<time> when it is taken) and the login files in <scratch-dir>. The test data, tickets and keys it made are removed at the end. Exit 0
 # when every check passes.
 #
 # Settings (environment): NOURAX_SSH (the ssh command for the server), QA_UID (default qa-t6-2),
@@ -142,15 +146,15 @@ oc_prop() { grep -oE "<oc:$1>[^<]*" "$T/dav" | head -1 | sed 's/^<[^>]*>//'; }
 
 # Seals a ticket and writes it as a curl config line (header = "X-Upload-Ticket: ..."). KEY is a
 # key file, or "server" for the real key, piped from the server into mint-ticket.mjs on stdin.
-#   ticket KEY DRIVE-PATH SIZE OUT-FILE
+#   ticket KEY DRIVE-PATH SIZE OUT-FILE [CHUNK-SIZE, default $CHUNK]
 ticket() {
-	local mint=(node "$(native "$MINT")")
+	local mint=(node "$(native "$MINT")") chunk="${5:-$CHUNK}"
 	if [ "$1" = server ]; then
 		$NOURAX_SSH 'sudo cat /etc/nourax/secrets/upload_ticket_key' | MSYS_NO_PATHCONV=1 "${mint[@]}" - \
-			"$QA_UID" "$QA_LOGIN" "$(native "$S/$QA_UID.pass")" "$2" "$3" "$CHUNK" > "$T/ticket.raw"
+			"$QA_UID" "$QA_LOGIN" "$(native "$S/$QA_UID.pass")" "$2" "$3" "$chunk" > "$T/ticket.raw"
 	else
 		MSYS_NO_PATHCONV=1 "${mint[@]}" "$(native "$1")" \
-			"$QA_UID" "$QA_LOGIN" "$(native "$S/$QA_UID.pass")" "$2" "$3" "$CHUNK" > "$T/ticket.raw"
+			"$QA_UID" "$QA_LOGIN" "$(native "$S/$QA_UID.pass")" "$2" "$3" "$chunk" > "$T/ticket.raw"
 	fi
 	[ -s "$T/ticket.raw" ] || die "could not seal a ticket"
 	printf 'header = "X-Upload-Ticket: %s"\n' "$(cat "$T/ticket.raw")" > "$4"
@@ -193,24 +197,37 @@ else
 	log "wrangler dev is up on $BASE (throwaway key)"
 fi
 
-# --- The destination: /NoMail/Sent/<yyyy-mm>/worker-120m[-live].bin, or with -<time> if taken ---
-NAME=worker-120m.bin
-[ "$LIVE" = no ] || NAME=worker-120m-live.bin
-if [ "$(dav PROPFIND "/NoMail/Sent/$MONTH/$NAME" -H 'Depth: 0' --data-binary "$PROPFIND_BODY")" = 207 ]; then
-	log "$NAME is already there from an earlier run"
-	NAME="${NAME%.bin}-$(date -u +%Y%m%d%H%M%S).bin"
-fi
-DEST="/NoMail/Sent/$MONTH/$NAME"
+# --- The destinations: /NoMail/Sent/<yyyy-mm>/<name>[-live].bin, or with -<time> if taken -------
+# Prints the Drive path for a name: the name itself, or with -<time> when an earlier run took it.
+free_dest() { # name.bin
+	local name="${1%.bin}"
+	[ "$LIVE" = no ] || name="$name-live"
+	if [ "$(dav PROPFIND "/NoMail/Sent/$MONTH/$name.bin" -H 'Depth: 0' --data-binary "$PROPFIND_BODY")" = 207 ]; then
+		log "$name.bin is already there from an earlier run" >&2
+		name="$name-$(date -u +%Y%m%d%H%M%S)"
+	fi
+	printf '%s' "/NoMail/Sent/$MONTH/$name.bin"
+}
+DEST="$(free_dest worker-120m.bin)"
 log "destination: $QA_UID:$DEST ($SIZE bytes)"
+# The early-finish test: 6 MiB in two chunks, 5 MiB (the smallest R2 part) and 1 MiB.
+GAP_CHUNK=$((5 * MiB))
+GAP_SIZE=$((6 * MiB))
+GAP_DEST="$(free_dest worker-gaps.bin)"
+log "early-finish destination: $QA_UID:$GAP_DEST ($GAP_SIZE bytes)"
 
 # --- Test data and tickets ----------------------------------------------------------------------
 head -c "$SIZE" /dev/urandom > "$T/data.bin"
 split -b "$CHUNK" -d -a 1 "$T/data.bin" "$T/chunk."
 SENT_SHA="$(sha256sum "$T/data.bin" | cut -d' ' -f1)"
 log "test data: $(wc -c < "$T/data.bin") bytes, sha256 $SENT_SHA; chunks $(wc -c "$T"/chunk.? | awk '$2 != "total" {printf "%s ", $1}')"
+head -c "$GAP_SIZE" /dev/urandom > "$T/gap.bin"
+split -b "$GAP_CHUNK" -d -a 1 "$T/gap.bin" "$T/gap."
+GAP_SHA="$(sha256sum "$T/gap.bin" | cut -d' ' -f1)"
 ticket "$KEY" "$DEST" "$SIZE" "$T/ticket.curl"
 ticket "$T/wrong-key" "$DEST" "$SIZE" "$T/wrong.curl"
 ticket "$KEY" "/NoMail/Sent/$MONTH/worker-cancel.bin" 1048576 "$T/cancel.curl"
+ticket "$KEY" "$GAP_DEST" "$GAP_SIZE" "$T/gap.curl" "$GAP_CHUNK"
 
 # --- CORS and tickets ------------------------------------------------------------------------
 check "GET /health -> 200" 200 "$(up GET /health -)"
@@ -270,6 +287,32 @@ check "DELETE / -> 204" 204 "$(up DELETE / "$T/cancel.curl")"
 check "GET /chunks after cancel -> 404" 404 "$(up GET /chunks "$T/cancel.curl")"
 check "cancelled upload gets upload_not_found" upload_not_found "$(jget j.error.code < "$T/body")"
 
+# --- Finishing too early: before any chunk, then with chunk 2 missing ----------------------------
+# The Drive (Nextcloud 35 on R2) would put a short file together here, or drop the session when no
+# chunk is in, so the Worker must refuse with 409 incomplete and leave the session usable.
+check "POST /start (early-finish test) -> 201" 201 "$(up POST /start "$T/gap.curl")"
+check "early-finish upload has 2 chunks" 2 "$(jget j.chunks < "$T/body")"
+check "POST /finish before any chunk -> 409" 409 "$(up POST /finish "$T/gap.curl")"
+check "finish before any chunk gets incomplete" incomplete "$(jget j.error.code < "$T/body")"
+check "finish before any chunk says chunks 1 and 2 are missing" 1,2 "$(jget 'j.error.missing.join(",")' < "$T/body")"
+check "GET /chunks after the early finish -> 200 (session still usable)" 200 "$(up GET /chunks "$T/gap.curl")"
+check "GET /chunks lists nothing yet" 0 "$(jget j.received.length < "$T/body")"
+check "PUT /chunks/1 ($GAP_CHUNK bytes) -> 201" 201 "$(up PUT /chunks/1 "$T/gap.curl" -T "$(native "$T/gap.0")")"
+check "POST /finish with chunk 2 missing -> 409" 409 "$(up POST /finish "$T/gap.curl")"
+check "finish with chunk 2 missing gets incomplete" incomplete "$(jget j.error.code < "$T/body")"
+check "finish with chunk 2 missing says chunk 2" 2 "$(jget 'j.error.missing.join(",")' < "$T/body")"
+check "no file at $GAP_DEST after the refused finishes" 404 "$(dav PROPFIND "$GAP_DEST" -H 'Depth: 0' \
+	--data-binary "$PROPFIND_BODY")"
+check "PUT /chunks/2 ($((GAP_SIZE - GAP_CHUNK)) bytes) -> 201" 201 "$(up PUT /chunks/2 "$T/gap.curl" -T "$(native "$T/gap.1")")"
+check "GET /chunks lists 1 and 2 with their sizes" "1:$GAP_CHUNK,2:$((GAP_SIZE - GAP_CHUNK))" \
+	"$(up GET /chunks "$T/gap.curl" >/dev/null; jget 'j.received.map((c) => c.n + ":" + c.size).join(",")' < "$T/body")"
+check "POST /finish with both chunks -> 201" 201 "$(up POST /finish "$T/gap.curl")"
+check "that finish gives size $GAP_SIZE" "$GAP_SIZE" "$(jget j.size < "$T/body")"
+GAP_ID="$(jget j.fileId < "$T/body")"
+check "POST /finish again, as after a lost answer -> 201" 201 "$(up POST /finish "$T/gap.curl")"
+check "the repeated finish gives the same file id" "$GAP_ID" "$(jget j.fileId < "$T/body")"
+check "the repeated finish gives size $GAP_SIZE" "$GAP_SIZE" "$(jget j.size < "$T/body")"
+
 stop_dev
 
 # --- Read it back straight from the Drive --------------------------------------------------------
@@ -284,6 +327,13 @@ log "got  sha256 $GOT_SHA"
 check "sha256 of the download equals the sha256 sent" "$SENT_SHA" "$GOT_SHA"
 check "cancelled upload left no file" 404 "$(dav PROPFIND "/NoMail/Sent/$MONTH/worker-cancel.bin" -H 'Depth: 0' \
 	--data-binary "$PROPFIND_BODY")"
+check "PROPFIND $GAP_DEST -> 207" 207 "$(dav PROPFIND "$GAP_DEST" -H 'Depth: 0' -H 'Content-Type: application/xml' \
+	--data-binary "$PROPFIND_BODY")"
+check "the early-finish file is $GAP_SIZE bytes (not short)" "$GAP_SIZE" "$(dav_prop getcontentlength)"
+check "its fileid matches the Worker's answer" "$GAP_ID" "$(oc_prop fileid)"
+check "GET $GAP_DEST -> 200" 200 "$(DAV_OUT="$T/gap-download.bin" dav GET "$GAP_DEST")"
+check "sha256 of the early-finish download equals the sha256 sent" "$GAP_SHA" \
+	"$( (sha256sum "$T/gap-download.bin" 2>/dev/null || true) | cut -d' ' -f1)"
 
 # --- For the record: is the live route on? (an owner-yes step; not a check) --------------------
 if [ "$LIVE" = no ]; then

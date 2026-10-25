@@ -158,21 +158,47 @@ describe("chunks", () => {
 	});
 });
 
+// The upload folder as the Drive lists it (PROPFIND Depth 1): the folder, ".file", ".target" and
+// one entry per stored part, named by its part number (R2 multipart parts on object storage).
+function uploadFolder(parts: Array<[number, number]>): Response {
+	return multistatus([
+		{ href: "/remote.php/dav/uploads/hammad/nomail-0123456789/" },
+		{ href: "/remote.php/dav/uploads/hammad/nomail-0123456789/.file" },
+		{ href: "/remote.php/dav/uploads/hammad/nomail-0123456789/.target", "d:getcontentlength": "0" },
+		...parts.map(([n, size]) => ({
+			href: `/remote.php/dav/uploads/hammad/nomail-0123456789/${n}`,
+			"d:getcontentlength": String(size),
+		})),
+	]);
+}
+
+function finishedFile(size: number): Response {
+	return multistatus([
+		{
+			href: "/remote.php/dav/files/hammad/NoMail/Sent/2026-10/report.pdf",
+			"d:getetag": "&quot;abc123&quot;",
+			"d:getcontentlength": String(size),
+			"d:getcontenttype": "application/pdf",
+			"oc:fileid": "4242",
+			"oc:size": String(size),
+		},
+	]);
+}
+
+// The default ticket: 12 MiB in chunks of 5, 5 and 2 MiB.
+const ALL_PARTS: Array<[number, number]> = [
+	[1, 5 * MiB],
+	[2, 5 * MiB],
+	[3, 2 * MiB],
+];
+
+async function errorOf(res: Response): Promise<{ code: string; message: string; missing?: number[] }> {
+	return ((await res.json()) as { error: { code: string; message: string; missing?: number[] } }).error;
+}
+
 describe("finish and cancel", () => {
-	it("assembles the file and returns its id", async () => {
-		const calls = mockDrive([
-			201,
-			multistatus([
-				{
-					href: "/remote.php/dav/files/hammad/NoMail/Sent/2026-10/report.pdf",
-					"d:getetag": "&quot;abc123&quot;",
-					"d:getcontentlength": String(12 * MiB),
-					"d:getcontenttype": "application/pdf",
-					"oc:fileid": "4242",
-					"oc:size": String(12 * MiB),
-				},
-			]),
-		]);
+	it("checks every chunk, assembles the file and returns its id", async () => {
+		const calls = mockDrive([uploadFolder(ALL_PARTS), 201, finishedFile(12 * MiB)]);
 		const res = await call("/finish", { method: "POST", ticket: await sealed({ mtime: 1761200000 }) });
 		expect(res.status).toBe(201);
 		expect(await res.json()).toEqual({
@@ -182,16 +208,94 @@ describe("finish and cancel", () => {
 			etag: "abc123",
 			contentType: "application/pdf",
 		});
-		expect(calls[0]?.method).toBe("MOVE");
-		expect(calls[0]?.url).toBe(`${UPLOADS}/.file`);
-		expect(calls[0]?.headers.get("X-OC-Mtime")).toBe("1761200000");
+		expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+			`PROPFIND ${UPLOADS}`,
+			`MOVE ${UPLOADS}/.file`,
+			`PROPFIND ${FILES}/NoMail/Sent/2026-10/report.pdf`,
+		]);
+		expect(calls[0]?.headers.get("Depth")).toBe("1");
+		expect(calls[1]?.headers.get("Destination")).toBe(`${FILES}/NoMail/Sent/2026-10/report.pdf`);
+		expect(calls[1]?.headers.get("OC-Total-Length")).toBe(String(12 * MiB));
+		expect(calls[1]?.headers.get("X-OC-Mtime")).toBe("1761200000");
 	});
 
-	it("says incomplete when chunks are missing", async () => {
-		mockDrive([400]);
+	it("says incomplete when a chunk is missing, and never assembles a short file", async () => {
+		// Nextcloud 35 on object storage does not compare the parts with OC-Total-Length: a MOVE here
+		// would save the 10 MiB it has and answer 201.
+		const calls = mockDrive([uploadFolder([[1, 5 * MiB], [2, 5 * MiB]])]);
 		const res = await call("/finish", { method: "POST" });
 		expect(res.status).toBe(409);
-		expect(((await res.json()) as { error: { code: string } }).error.code).toBe("incomplete");
+		const error = await errorOf(res);
+		expect(error.code).toBe("incomplete");
+		expect(error.missing).toEqual([3]);
+		expect(calls.map((c) => c.method)).toEqual(["PROPFIND"]);
+	});
+
+	it("says incomplete for a finish before any chunk, so the session stays usable", async () => {
+		// A MOVE with no parts fails on R2, and the Drive then drops the multipart upload (500s after).
+		const calls = mockDrive([uploadFolder([])]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(409);
+		const error = await errorOf(res);
+		expect(error.code).toBe("incomplete");
+		expect(error.missing).toEqual([1, 2, 3]);
+		expect(calls).toHaveLength(1);
+	});
+
+	it("counts a chunk of the wrong length as missing", async () => {
+		const calls = mockDrive([uploadFolder([[1, 5 * MiB], [2, 4 * MiB], [3, 2 * MiB]])]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(409);
+		expect((await errorOf(res)).missing).toEqual([2]);
+		expect(calls).toHaveLength(1);
+	});
+
+	it("refuses chunks past the end of the file", async () => {
+		const calls = mockDrive([uploadFolder([...ALL_PARTS, [4, 5 * MiB]])]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(409);
+		expect((await errorOf(res)).code).toBe("unexpected_chunks");
+		expect(calls).toHaveLength(1);
+	});
+
+	it("still says incomplete when the Drive itself refuses the MOVE", async () => {
+		mockDrive([uploadFolder(ALL_PARTS), 400]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(409);
+		expect((await errorOf(res)).code).toBe("incomplete");
+	});
+
+	it("does not answer 201 when the saved file has the wrong size", async () => {
+		mockDrive([uploadFolder(ALL_PARTS), 201, finishedFile(10 * MiB)]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(500);
+		expect((await errorOf(res)).code).toBe("size_mismatch");
+	});
+
+	it("answers a repeated finish with the file when the first one went through", async () => {
+		// The first answer was lost on the way, so NoMail sends /finish again; the session is gone.
+		const calls = mockDrive([404, finishedFile(12 * MiB)]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(201);
+		expect(((await res.json()) as { fileId: number; size: number }).fileId).toBe(4242);
+		expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+			`PROPFIND ${UPLOADS}`,
+			`PROPFIND ${FILES}/NoMail/Sent/2026-10/report.pdf`,
+		]);
+	});
+
+	it("says upload_not_found when neither the session nor the file is there", async () => {
+		mockDrive([404, 404]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(404);
+		expect((await errorOf(res)).code).toBe("upload_not_found");
+	});
+
+	it("does not take a file of the wrong size for a finished upload", async () => {
+		mockDrive([404, finishedFile(10 * MiB)]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(500);
+		expect((await errorOf(res)).code).toBe("size_mismatch");
 	});
 
 	it("cancels the session", async () => {
@@ -200,6 +304,15 @@ describe("finish and cancel", () => {
 		expect(res.status).toBe(204);
 		expect(calls[0]?.method).toBe("DELETE");
 		expect(calls[0]?.url).toBe(UPLOADS);
+	});
+});
+
+describe("the Drive's refusals", () => {
+	it("passes a 403 on as drive_forbidden, not as a Drive error", async () => {
+		mockDrive([403]);
+		const res = await call("/start", { method: "POST" });
+		expect(res.status).toBe(403);
+		expect((await errorOf(res)).code).toBe("drive_forbidden");
 	});
 });
 

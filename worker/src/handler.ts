@@ -11,7 +11,7 @@
 //   POST   /start           create /NoMail/... folders and the upload session
 //   PUT    /chunks/{n}      upload chunk n (1-based), exact length required
 //   GET    /chunks          list chunks already received (to resume)
-//   POST   /finish          assemble the file; returns its file id, size and etag
+//   POST   /finish          check every chunk, assemble the file; returns its file id, size and etag
 //   DELETE /                cancel the upload session
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -67,7 +67,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
 		if (request.method === "POST" && route === "/start") return await start(dav, ticket, cors);
 		const chunkMatch = /^\/chunks\/(\d{1,5})$/.exec(route);
 		if (request.method === "PUT" && chunkMatch) return await putChunk(dav, ticket, Number(chunkMatch[1]), request, cors);
-		if (request.method === "GET" && route === "/chunks") return await listChunks(dav, cors);
+		if (request.method === "GET" && route === "/chunks") return await listChunks(dav, ticket, cors);
 		if (request.method === "POST" && route === "/finish") return await finish(dav, ticket, cors);
 		if (request.method === "DELETE" && route === "/") return await abort(dav, cors);
 	} catch (err) {
@@ -119,35 +119,111 @@ async function putChunk(dav: Dav, t: Ticket, n: number, request: Request, cors: 
 	return json(cors, 201, { chunk: n, size: expected });
 }
 
-async function listChunks(dav: Dav, cors: Headers): Promise<Response> {
-	const res = await dav.send("PROPFIND", dav.uploadUrl(), { Depth: "1", "Content-Type": "application/xml" }, PROPFIND_LENGTH);
-	if (res.status !== 207) throw new UpstreamError(res.status, "list chunks");
-	const received = parseResponses(await res.text())
-		.map((r) => ({ n: Number(/\/(\d{1,5})\/?$/.exec(decodeURIComponent(r.href))?.[1] ?? NaN), size: r.length ?? 0 }))
-		.filter((c) => Number.isInteger(c.n))
-		.sort((a, b) => a.n - b.n);
+async function listChunks(dav: Dav, t: Ticket, cors: Headers): Promise<Response> {
+	const chunks = await receivedChunks(dav, t);
+	if (chunks === null) throw new UpstreamError(404, "list chunks");
+	const received = [...chunks].sort((a, b) => a[0] - b[0]).map(([n, size]) => ({ n, size }));
 	return json(cors, 200, { received });
 }
 
 async function finish(dav: Dav, t: Ticket, cors: Headers): Promise<Response> {
+	// The Drive (Nextcloud 35 on R2) does not compare the parts with OC-Total-Length: its MOVE
+	// completes the multipart upload with whatever parts it has and answers 201, so a lost chunk
+	// would give a short file. A MOVE with no parts at all fails on R2, and the Drive then drops
+	// the session. So every chunk is checked here first, and the MOVE runs only when all are in.
+	const chunks = await receivedChunks(dav, t);
+	if (chunks === null) return finishedBefore(dav, t, cors);
+	const count = chunkCount(t);
+	if ([...chunks.keys()].some((n) => n < 1 || n > count)) {
+		return fail(cors, 409, "unexpected_chunks", `the upload holds chunks outside 1..${count} - cancel it and start again`);
+	}
+	const missing: number[] = [];
+	for (let n = 1; n <= count; n++) if (chunks.get(n) !== expectedChunkLength(t, n)) missing.push(n);
+	if (missing.length > 0) return incomplete(cors, `${missing.length} of ${count} chunks`, missing);
+
 	const headers: Record<string, string> = { Destination: dav.fileUrl(t.path), "OC-Total-Length": String(t.size) };
 	if (t.mtime !== undefined) headers["X-OC-Mtime"] = String(t.mtime);
 	const res = await dav.send("MOVE", dav.uploadUrl("/.file"), headers);
-	if (res.status === 400 || res.status === 412) {
-		return fail(cors, 409, "incomplete", "not all chunks have arrived - check GET /chunks and resend the missing ones");
-	}
+	if (res.status === 400 || res.status === 412) return incomplete(cors, "some chunks", []);
 	if (res.status !== 201 && res.status !== 204) throw new UpstreamError(res.status, "finish upload");
 
-	const info = await dav.send("PROPFIND", dav.fileUrl(t.path), { Depth: "0", "Content-Type": "application/xml" }, PROPFIND_FILE);
-	if (info.status !== 207) throw new UpstreamError(info.status, "read finished file");
-	const file = parseResponses(await info.text())[0];
+	const file = await readFile(dav, t);
+	if (file === null) throw new UpstreamError(404, "read finished file");
+	return finished(cors, t, file);
+}
+
+/**
+ * The session is gone. When the file is there with the full size, an earlier finish went through
+ * and only its answer was lost (NoMail sends /finish again after a network error or a 502), so the
+ * answer is the same as then. Otherwise the session ran out or was cancelled.
+ */
+async function finishedBefore(dav: Dav, t: Ticket, cors: Headers): Promise<Response> {
+	const file = await readFile(dav, t);
+	if (file === null) throw new UpstreamError(404, "finish upload");
+	return finished(cors, t, file);
+}
+
+/** 201 with the file's details, but only when the Drive holds exactly the bytes of the ticket. */
+function finished(cors: Headers, t: Ticket, file: DavItem): Response {
+	const size = file.size ?? file.length;
+	if (size !== t.size) {
+		return fail(
+			cors,
+			500,
+			"size_mismatch",
+			`the Drive holds ${size ?? "an unknown number of"} bytes for this file, not ${t.size} - upload it again under a new name`,
+		);
+	}
 	return json(cors, 201, {
 		path: t.path,
-		fileId: file?.fileId ?? null,
-		size: file?.size ?? file?.length ?? t.size,
-		etag: file?.etag ?? null,
-		contentType: file?.contentType ?? null,
+		fileId: file.fileId ?? null,
+		size,
+		etag: file.etag ?? null,
+		contentType: file.contentType ?? null,
 	});
+}
+
+function incomplete(cors: Headers, what: string, missing: number[]): Response {
+	return json(cors, 409, {
+		error: {
+			code: "incomplete",
+			message: `${what} have not arrived whole - check GET /chunks and resend the missing ones`,
+			// The first 100 chunk numbers to send again (empty when the Drive did not say which).
+			missing: missing.slice(0, 100),
+		},
+	});
+}
+
+/** The chunks the Drive holds for this upload (number -> bytes), or null when there is no session. */
+async function receivedChunks(dav: Dav, t: Ticket): Promise<Map<number, number> | null> {
+	const res = await dav.send("PROPFIND", dav.uploadUrl(), { Depth: "1", "Content-Type": "application/xml" }, PROPFIND_LENGTH);
+	if (res.status === 404) return null;
+	if (res.status !== 207) throw new UpstreamError(res.status, "list chunks");
+	// The entries are the folder itself, ".file", ".target" and one per chunk: "1", "2", … on object
+	// storage (the R2 parts), "00001", … elsewhere. The upload id has no characters special to a regex.
+	const chunkName = new RegExp(`/${t.upload}/(\\d{1,5})/?$`);
+	const chunks = new Map<number, number>();
+	for (const item of parseResponses(await res.text())) {
+		const match = chunkName.exec(safeDecode(item.href));
+		if (match?.[1] !== undefined) chunks.set(Number(match[1]), item.length ?? 0);
+	}
+	return chunks;
+}
+
+/** The destination file's details, or null when it is not there. */
+async function readFile(dav: Dav, t: Ticket): Promise<DavItem | null> {
+	const res = await dav.send("PROPFIND", dav.fileUrl(t.path), { Depth: "0", "Content-Type": "application/xml" }, PROPFIND_FILE);
+	if (res.status === 404) return null;
+	if (res.status !== 207) throw new UpstreamError(res.status, "read finished file");
+	return parseResponses(await res.text())[0] ?? null;
+}
+
+function safeDecode(text: string): string {
+	try {
+		return decodeURIComponent(text);
+	} catch {
+		return text;
+	}
 }
 
 async function abort(dav: Dav, cors: Headers): Promise<Response> {
@@ -202,6 +278,7 @@ class UpstreamError extends Error {
 
 function fromUpstream(cors: Cors, status: number, step: string): Response {
 	if (status === 401) return fail(cors, 401, "drive_unauthorized", "the Drive rejected the app password - reconnect the Drive");
+	if (status === 403) return fail(cors, 403, "drive_forbidden", `${step}: the Drive refused access to this place`);
 	if (status === 404) return fail(cors, 404, "upload_not_found", `${step}: upload session not found or expired - start again`);
 	if (status === 409) return fail(cors, 409, "conflict", `${step}: a parent folder is missing or is a file`);
 	if (status === 507) return fail(cors, 507, "quota_exceeded", "not enough space in the Drive");

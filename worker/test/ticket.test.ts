@@ -44,6 +44,16 @@ describe("upload tickets", () => {
 		await expect(openTicket(await sealTicket(ticketFor({ path }), key), key, limits)).rejects.toThrow(message);
 	});
 
+	it.each([".", "..", "...", "", "a/b", "x".repeat(65)])("refuses the user id %j", async (uid) => {
+		const key = await importTicketKey(KEY);
+		await expect(openTicket(await sealTicket(ticketFor({ uid }), key), key, limits)).rejects.toThrow("bad user id");
+	});
+
+	it("accepts a user id with dots inside", async () => {
+		const key = await importTicketKey(KEY);
+		expect((await openTicket(await sealTicket(ticketFor({ uid: "first.last" }), key), key, limits)).uid).toBe("first.last");
+	});
+
 	it("enforces chunk and file size limits", async () => {
 		const key = await importTicketKey(KEY);
 		await expect(openTicket(await sealTicket(ticketFor({ chunk: 4 * MiB }), key), key, limits)).rejects.toThrow("chunk size");

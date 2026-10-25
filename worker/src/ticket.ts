@@ -91,7 +91,10 @@ export async function openTicket(
 	if (ticket.v !== 1) throw new TicketError("unsupported ticket version");
 	if (!Number.isInteger(ticket.exp) || ticket.exp <= now) throw new TicketError("upload ticket has expired");
 	if (ticket.exp > now + 24 * 3600) throw new TicketError("upload ticket lives longer than 24 hours");
-	if (typeof ticket.uid !== "string" || !/^[A-Za-z0-9._@-]{1,64}$/.test(ticket.uid)) throw new TicketError("bad user id");
+	// A user id of only dots would be "." or ".." in the DAV paths.
+	if (typeof ticket.uid !== "string" || !/^[A-Za-z0-9._@-]{1,64}$/.test(ticket.uid) || /^\.+$/.test(ticket.uid)) {
+		throw new TicketError("bad user id");
+	}
 	if (typeof ticket.login !== "string" || ticket.login.length === 0 || ticket.login.length > 256) throw new TicketError("bad login");
 	if (typeof ticket.pass !== "string" || ticket.pass.length === 0) throw new TicketError("bad app password");
 	if (typeof ticket.upload !== "string" || !/^[A-Za-z0-9-]{8,64}$/.test(ticket.upload)) throw new TicketError("bad upload id");

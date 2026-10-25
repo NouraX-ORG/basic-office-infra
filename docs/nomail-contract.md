@@ -59,6 +59,25 @@ chunk (a new unit test covers it, and another that a redirect is still an error)
 file, `/NoMail/Sent/2026-10/worker-120m.bin`, is complete (size and file id checked); the runs
 after the fix wrote `worker-120m-<time>.bin` and passed all 47 checks, the SHA-256 included.
 
+**Found by QA and fixed (fix round 1, 2026-10-25): a missing chunk gave a short file.** With chunk 2
+of 2 missing, `POST /finish` answered 201 and saved only the first 5 MiB of a 6 MiB file; a
+finish before any chunk answered 502 and broke the session (every later request 502 until a new
+`/start`). The cause is in the Drive: on object storage `ChunkingV2Plugin::beforeMove` adds up
+the parts only for the free-space check, never compares them with `OC-Total-Length`, and
+completes the R2 multipart upload with whatever parts there are; with no parts the R2 complete
+fails and the Drive aborts the multipart upload. NoMail's `driveApi.ts` relies on 409 to resend
+lost chunks and takes 201 as success. Now `/finish` lists the session first and needs chunks 1 to
+N, each the exact length; otherwise 409 `incomplete` with `error.missing` and no `MOVE`. After the
+`MOVE` it answers 201 only when the file's size is the ticket's size (else 500 `size_mismatch`).
+A `/finish` sent again after a lost answer gets the same 201 instead of 404. Details:
+[worker/README.md](../worker/README.md#how-finish-keeps-files-whole). 16 new unit tests (50 in
+all). The run of `tests/worker-local.sh` after the fix passed all 71 checks: the 120 MiB upload as
+before (`worker-120m-20261025090525.bin`, SHA-256 equal) and the new 6 MiB one
+(`worker-gaps.bin`): finish before any chunk 409 `incomplete`, missing `1,2`, then `GET /chunks`
+200 (the session still works); finish with chunk 2 missing 409, missing `2`, and no file on the
+Drive; with both chunks 201, and a second finish 201 with the same file id; size 6291456 and
+SHA-256 equal on a WebDAV `GET`.
+
 ### The route (waits for the owner's yes)
 
 Route `drive.nourax.org/nomail-upload/*` → `nodrive-upload`.

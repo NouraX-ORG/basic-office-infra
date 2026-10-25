@@ -44,13 +44,36 @@ All under `/nomail-upload`. Every request except `/health` and `OPTIONS` needs t
 | `POST /start` | Makes the `/NoMail/…` folders and the upload session | 201 `{upload, path, size, chunkSize, chunks}`; 409 `exists` when the name is taken |
 | `PUT /chunks/{n}` | Chunk `n` (from 1). Every chunk except the last is exactly `chunk` bytes; `Content-Length` is required | 201 `{chunk, size}`; 400 `bad_chunk_number` or `bad_chunk_length`; 411 without a length |
 | `GET /chunks` | The chunks the Drive has, to resume | 200 `{received:[{n, size}]}` |
-| `POST /finish` | Puts the file together | 201 `{path, fileId, size, etag, contentType}`; 409 `incomplete` when chunks are missing |
+| `POST /finish` | Checks that every chunk is there with its exact length, then puts the file together | 201 `{path, fileId, size, etag, contentType}`; 409 `incomplete` with `missing:[n…]` when a chunk is missing or the wrong length (no file is made, and the session stays usable); 409 `unexpected_chunks`; 500 `size_mismatch` |
 | `DELETE /` | Cancels the upload session | 204 |
 
 Errors look like `{"error":{"code":"…","message":"…"}}`. A bad, expired or missing ticket gives
-401 `bad_ticket`. The Drive's answers become `drive_unauthorized` (401), `upload_not_found` (404),
-`conflict` (409), `throttled` (429), `quota_exceeded` (507) or `drive_error` (502). A request
-without an `Origin` header (a server tool, a test) is let through: it still needs a ticket.
+401 `bad_ticket`. The Drive's answers become `drive_unauthorized` (401), `drive_forbidden` (403),
+`upload_not_found` (404), `conflict` (409), `throttled` (429), `quota_exceeded` (507) or
+`drive_error` (502). A request without an `Origin` header (a server tool, a test) is let through:
+it still needs a ticket.
+
+### How `/finish` keeps files whole
+
+The Drive (Nextcloud 35 with its files in R2) does **not** check the chunks itself. Its
+`ChunkingV2Plugin::beforeMove` adds up the parts' sizes only for the free-space check and never
+compares them with `OC-Total-Length`; the `MOVE` then completes the R2 multipart upload with
+whatever parts are there and answers 201. A lost chunk would give a short file, and a `MOVE` with
+no parts at all fails on R2, after which the Drive drops the session (every later request 500).
+So the Worker does the check:
+
+1. It lists the session (`PROPFIND` Depth 1, as `GET /chunks` does) and needs chunks 1 to N, each
+   exactly the length the ticket gives it (every chunk `chunk` bytes, the last one the rest).
+   Anything missing or the wrong length: 409 `incomplete` with the first 100 chunk numbers to send
+   again in `error.missing`; no `MOVE`. Chunks past N (only possible with two tickets of
+   different sizes for one upload id): 409 `unexpected_chunks`.
+2. Only then the `MOVE`. A 400 or 412 from it still becomes 409 `incomplete`.
+3. It reads the file back (`PROPFIND`) and answers 201 only when its size is the ticket's size;
+   otherwise 500 `size_mismatch` (not retried by NoMail), never 201.
+
+A `/finish` sent again after a lost answer finds no session. If the file is there with the full
+size, the answer is the same 201 as the first time; with another size, 500 `size_mismatch`; with
+no file, 404 `upload_not_found`.
 
 ## The ticket, v1
 
@@ -62,7 +85,7 @@ without an `Origin` header (a server tool, a test) is let through: it still need
 | Field | Rule |
 |---|---|
 | `v` | `1` |
-| `uid` | The Drive user id, used in the DAV paths: 1-64 of `A-Z a-z 0-9 . _ @ -` |
+| `uid` | The Drive user id, used in the DAV paths: 1-64 of `A-Z a-z 0-9 . _ @ -`, not only dots |
 | `login` | The login for Basic auth, 1-256 characters (from `/v1/provision`: the same as `uid`) |
 | `pass` | The app password named "NoMail" (from `/v1/provision`) |
 | `path` | The destination, starting with `/NoMail/`; no empty, `.` or `..` parts, no backslashes or control characters |
@@ -103,10 +126,12 @@ uploads get 401 `bad_ticket`; nothing else breaks.
 
 ```
 npm ci
-npm test            # 34 tests: tickets, CORS, every request, the Drive's answers
+npm test            # 50 tests: tickets, CORS, every request, the Drive's answers, the /finish checks
 npm run typecheck
 ```
 
 `tests/worker-local.sh <scratch-dir>` (Git Bash on the owner's PC, from the repo) runs this Worker
 with `wrangler dev` and a throwaway key, and uploads a real 120 MiB file through it into the live
-Drive as `qa-t6-2`; see [tests/README.md](../tests/README.md).
+Drive as `qa-t6-2`. A second, 6 MiB upload finishes too early on purpose (before any chunk, then
+with a chunk missing: 409 `incomplete` and no file each time), and then twice in a row (201 and
+the same file both times). See [tests/README.md](../tests/README.md).
