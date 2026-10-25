@@ -86,7 +86,9 @@ File `custom_apps/integration_openai/lib/Service/OpenAiAPIService.php` of releas
 
 - It is applied only when the file has the release checksum
   `ce14a031f931cba63a3898d2c01d2718ef265c8b7f41951ed17810ae8ca34140`; afterwards it is
-  `46586b91a42844b8bfc23961da3ce252825abf6bc10c884bb7ee723051bf4072`.
+  `46586b91a42844b8bfc23961da3ce252825abf6bc10c884bb7ee723051bf4072`. The worker is restarted
+  when the patch goes in; the web server's PHP cache looks at changed files once a minute
+  (`opcache.revalidate_freq=60` in the image).
 - Any other file (a new release) is left alone with a WARNING. The relay then gets no `user` and
   answers "Nourax AI is not available yet.", and logs why. Nobody is charged wrongly.
 - `occ app:update integration_openai` puts the original file back. Run `sudo scripts/configure.sh`
