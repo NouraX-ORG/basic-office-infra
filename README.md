@@ -46,6 +46,7 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `scripts/` | Server hardening, secrets, first setup, backup, restore, update |
 | `systemd/` | Timers for the nightly backup and the weekly file mirror |
 | `worker/` | `nodrive-upload`, the Cloudflare Worker that takes big uploads from NoMail |
+| `nextcloud-apps/nourax_api/` | The NoMail API (health, accounts, virus scan) and the admin-only teams API, as an app inside the file server ([docs/nomail-api.md](docs/nomail-api.md)) |
 | `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
 | `config/onlyoffice/` | The editors' Nourax AI settings |
 | `cloudflare/` | Tunnel routes and the WAF rule, as applied |

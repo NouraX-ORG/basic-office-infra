@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!--
+  - SPDX-License-Identifier: AGPL-3.0-or-later
+  -
+  - Every background job and occ command is declared here from version 1.0.0 on, so later
+  - features only change code and never need a version bump and `occ upgrade`.
+-->
+<info>
+	<id>nourax_api</id>
+	<name>Nourax API</name>
+	<summary>Server-to-server API for NoMail and the Nourax admin tools</summary>
+	<description>The NoMail API (health, accounts, virus scan) and the admin-only organisations and teams API of Nourax Workspace. It has no pages; every call needs a server key.</description>
+	<version>1.0.0</version>
+	<licence>agpl</licence>
+	<author>Nourax</author>
+	<namespace>NouraxApi</namespace>
+	<category>integration</category>
+	<dependencies>
+		<php min-version="8.3"/>
+		<nextcloud min-version="35" max-version="35"/>
+	</dependencies>
+	<background-jobs>
+		<job>OCA\NouraxApi\BackgroundJob\NonceCleanup</job>
+		<job>OCA\NouraxApi\BackgroundJob\DriftReconcile</job>
+		<job>OCA\NouraxApi\BackgroundJob\LeaverDeletion</job>
+	</background-jobs>
+	<commands>
+		<command>OCA\NouraxApi\Command\Secret</command>
+		<command>OCA\NouraxApi\Command\ServiceAccount</command>
+		<command>OCA\NouraxApi\Command\Status</command>
+		<command>OCA\NouraxApi\Command\Reconcile</command>
+	</commands>
+</info>
