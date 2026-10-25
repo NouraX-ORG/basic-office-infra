@@ -20,6 +20,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoTasks** | To-do lists with due dates, priorities and subtasks; lists are calendars, so they sync to phones (CalDAV) ([docs/apps.md](docs/apps.md#notasks)) |
 | **NoNotes** | Markdown notes, kept as files in the person's NoDrive folder `Notes`, so they are backed up, scanned and searchable ([docs/apps.md](docs/apps.md#nonotes)) |
 | **NoForms** | Forms, surveys and polls, shared with people, groups or a public link; answers export to a spreadsheet ([docs/apps.md](docs/apps.md#noforms)) |
+| **Suspicious login and audit log** | People get a notification when their account is signed in from an unusual address; sign-ins, file actions, shares and account changes go to an audit log on the server ([docs/apps.md](docs/apps.md#suspicious-login)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

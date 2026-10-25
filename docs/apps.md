@@ -16,6 +16,14 @@ the script logs each app's version and prints a `WARNING` when it is not the rel
 The app-menu names (NoTasks, NoNotes, NoForms) are in `config/nextcloud/app-labels.d/50-apps.conf`;
 `scripts/configure.sh` turns them into the theme CSS.
 
+Two more apps ship with the server itself, so nothing is downloaded. `scripts/configure.d/50-audit.sh`
+switches them on ([Suspicious login](#suspicious-login), [Audit log](#audit-log)):
+
+| App id | What it is | Release (server 35.0.2) | Licence |
+|---|---|---|---|
+| `suspicious_login` | Warns people about sign-ins from unusual addresses | 13.0.0 | AGPL-3.0-or-later |
+| `admin_audit` | The audit log | 2.0.0 | AGPL-3.0-or-later |
+
 In the commands below, `OCC` means, on the server:
 
 ```
@@ -240,3 +248,143 @@ Checked on 2026-10-25:
   menu entry; NoNotes' shared-note marker, drawn in the upstream blue (now cobalt); and the colour
   picker's "Nextcloud blue" swatch. NoTasks lists start in the theme colour, not the upstream blue.
 - **Admins only:** the app descriptions on the Apps page (swept too).
+
+## Suspicious login
+
+`suspicious_login` 13.0.0 ships with the server. `scripts/configure.d/50-audit.sh` switches it on;
+it has no settings of ours.
+
+- **What people get.** The app learns from where each person usually signs in. When someone signs
+  in with a password (in the browser) from an address that does not fit, that person gets a
+  notification, "New login detected": *"A new login into your account was detected. The IP address
+  … was classified as suspicious by an AI model. If this was you, you can ignore this message, as
+  the AI model did not take any automated actions. Otherwise, you should change your password."*
+  Nothing is blocked. People who use "Log in with Nourax" change their password in NoMail.
+- **E-mail:** the app also tries to send the same text by e-mail. The server has no outgoing mail
+  set up yet (`mail_smtpmode` is empty), so for now only the notification arrives and the server
+  log has "Could not send suspicious login email".
+- **Requests with an app password** (phones, the desktop app, NoMail, the APIs) are counted for
+  learning but never flagged.
+- **Real addresses.** Cloudflare's `CF-Connecting-IP` header is trusted (`trusted_proxies`,
+  `forwarded_for_headers`), so the app sees each person's own address, not Cloudflare's.
+- **Button to a lookup site.** The notification has a button "Open iplookup.flagfox.net ↗" that
+  shows where the address is. That site is not ours, and the address is in its link. To take the
+  button and its sentence away: `OCC config:app:set suspicious_login show_more_info_button --value=0`.
+- **Names on screen:** the notification and e-mail texts name no upstream product. Only the app's
+  description on the Apps page (admins only) did, and the branding sweep rewrote it as soon as the
+  app was switched on.
+
+**When it starts warning.** Its background jobs are registered when the app is switched on:
+
+| Job | When | What it does |
+|---|---|---|
+| `OCA\SuspiciousLogin\BackgroundJob\ETLJob` | every hour | Moves new sign-ins (`oc_login_address`: account, address, time) into one row per account and address (`oc_login_ips_aggregated`: how often, first and last seen), up to 10,000 per run |
+| `OCA\SuspiciousLogin\BackgroundJob\TrainJobIpV4` and `…TrainJobIpV6` | once a day, between 01:00 and 05:00 UTC (`maintenance_window_start` = 1) | Trains a small neural network (Rubix ML, in PHP, in the cron container) on up to 60 days of sign-ins, keeping the last 7 days to test it |
+
+The app trains only when it has an IPv4 address first seen at least 60 days earlier, so **the first
+model comes about 60 days after the app was switched on (from about 24 December 2026)**. Until then
+nothing is flagged, and each night's job logs "insufficient data" at the info level, which
+`nextcloud.log` does not keep.
+
+**What is kept:** the account id, address and time of each sign-in, in the database, so also in the
+nightly database backup. The raw rows are removed every hour once they are counted.
+
+```
+OCC suspiciouslogin:etl                       # count new sign-ins now (up to 25,000), if the hourly job falls behind
+OCC suspiciouslogin:train --dry-run --stats   # try a training by hand; refuses while there is too little data
+OCC suspiciouslogin:predict <account id> <ip> # after the first model: would this sign-in be flagged?
+```
+
+## Audit log
+
+`admin_audit` 2.0.0 ships with the server. `scripts/configure.d/50-audit.sh` switches it on.
+
+**What it writes:** one line of JSON per action, for every account:
+
+- sign-ins: successful, failed, signed out, two-factor passed or failed;
+- files: created, written, opened or downloaded ("accessed"), renamed, copied, deleted, restored
+  from the trash, versions restored, previews;
+- shares: made, changed, removed, and public links opened;
+- accounts and groups: made, deleted, changed, password changed, added to or removed from a group;
+- apps switched on, off or updated; tags made.
+
+Each line has `time` (London time, `logtimezone`), `user`, `remoteAddr` (the person's address),
+`method`, `url`, `userAgent` and `message`. A line written during an occ command has
+`occ_command` with the command's name only, never its options.
+
+**What it leaves out.** admin_audit writes at the info level, and the server keeps only warnings and
+worse (`loglevel` 2, in `zz-nourax.config.php`). So the script sets a log condition that lets the
+app's lines through, apart from two kinds:
+
+- **occ commands** ("Console command executed: …"). Their options can hold secrets (for example,
+  `configure.sh` hands the ONLYOFFICE key to occ), and the log is a plain file. What occ changes in
+  accounts, groups, apps and shares is still written, through those actions' own lines.
+- **"Login attempt"**. It comes before every sign-in, and each request with an app password is a
+  sign-in, so it was 62% of all lines in our test. Every attempt also ends in a "Login successful"
+  or "Login failed" line, and those stay.
+
+The condition, as `OCC config:system:get log.condition --output=json` prints it (wrapped here):
+
+```
+{"matches":[{"apps":["admin_audit"],"message":"Console command executed:","loglevel":4},
+            {"apps":["admin_audit"],"message":"Login attempt: \"","loglevel":4},
+            {"apps":["admin_audit"],"loglevel":1}]}
+```
+
+The first match wins: level 4 (fatal only) drops a line, level 1 writes it. Other apps are not
+touched. The upstream docs suggest the simpler `'apps' => ['admin_audit']`. It is not used, because
+it is checked before `matches` and would let those lines through. A file whose path contains one of
+the two phrases would also be left out.
+
+**Where it is:** `/var/www/html/data/audit.log` in the app container (volume `nextcloud`), owned by
+www-data, mode 0640. It is not moved with `logfile_audit`: admin_audit's rotation job does not read
+that setting, so a log there would never be rotated.
+
+**Rotation:** `log_rotate_size` is 50 MiB (the default is 100 MiB). Every 3 hours admin_audit's job
+`OCA\AdminAudit\BackgroundJobs\Rotate` renames a log over that size to `audit.log.1`, replacing the
+older copy, and a new log starts. The server's own job does the same for `nextcloud.log` every hour.
+So each log keeps at most about 100 MiB. During the QA tests of 2026-10-25 (several test runs at
+once) the audit log grew by about 120 KB a minute with every line, and by 30 to 60 KB a minute
+without the two left-out kinds. At 60 KB a minute, 50 MiB lasts about 14 hours and the two files
+together about a day. Normal use makes far fewer requests, so they last longer. If a longer history
+is needed, raise the size: `OCC config:system:set log_rotate_size --type=integer --value=<bytes>`
+(and the same number in `50-audit.sh`, which otherwise sets 50 MiB again on its next run).
+
+**Read it** (on the server; `jq` is installed there):
+
+```
+cd /opt/nourax/basic-office-infra
+sudo docker compose exec -T app tail -n 50 data/audit.log | jq -c '{time, user, remoteAddr, message}'
+# one person, in both files
+sudo docker compose exec -T app sh -c 'cat data/audit.log.1 2>/dev/null; cat data/audit.log' \
+	| jq -c 'select(.user == "<account id>") | {time, remoteAddr, message}'
+# failed sign-ins
+sudo docker compose exec -T app grep -h 'Login failed' data/audit.log | jq -c '{time, remoteAddr, message}'
+```
+
+- **Privacy:** it holds account ids, addresses, browser names, and file and folder names. It stays
+  on the server: no screen shows it (the admin log viewer shows `nextcloud.log` only), it is not in
+  the backups (`scripts/backup.sh` saves the database, config, apps and theme, not the data folder),
+  and a line is gone after two rotations.
+- **Lines twice:** this server version sends some events twice, so "Login successful" and "Cache
+  entry inserted" can appear twice for one request. Nothing is missing.
+- **Where the settings live:** `50-audit.sh` writes `log.condition` and `log_rotate_size` into
+  `config.php`, not `zz-nourax.config.php`, so no container restart is needed. If someone later adds
+  these keys to `zz-nourax.config.php`, that file wins at the next container start.
+- **Switch it off:** `OCC app:disable admin_audit`. The log files stay.
+
+### Tested on 2026-10-25
+
+| Check | Result |
+|---|---|
+| `OCC app:list --output=json \| jq -r '.enabled.suspicious_login, .enabled.admin_audit'` | `13.0.0`, `2.0.0` |
+| `OCC config:system:get log_rotate_size` | `52428800` |
+| `OCC background-job:list --class=<job> --output=json \| jq length` for ETLJob, TrainJobIpV4, TrainJobIpV6 and admin_audit's Rotate | 1 each. ETLJob ran at 11:50 UTC, minutes after the app was switched on; the others wait for their time |
+| As `qa-t5-1` from the server's address: WebDAV `PUT` (201), then `GET` (200) of `audit-test.txt` | `audit.log` got "Login successful", "File with id "1126" created", "… written to", then "… accessed", each with `remoteAddr` 57.129.185.78 and the user `qa-t5-1` |
+| The same after the "Login attempt" rule (`PUT` 204, `GET` 200) | the same lines; no "Login attempt" lines from then on |
+| `grep -c "Console command executed" data/audit.log` after dozens of occ commands | 0 |
+| A test logger with the same condition, writing to a file in `/tmp` (not the audit log) | an admin_audit line was written and an admin_audit "Console command executed" line was not; another app's info line was not, its warning was |
+| `select count(*) from oc_login_address` (database, read only) | 20 rows from 3 accounts within a minute; after the hourly job, `oc_login_ips_aggregated` had `qa-t5-1` from 57.129.185.78 |
+| `nextcloud.log` after the change | no new warnings or errors |
+| `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server --only l10n` | `8131 checked, 0 FAIL`, both apps' texts included |
+| The app and cron containers | not recreated (started 03:31:49 UTC, before and after) |

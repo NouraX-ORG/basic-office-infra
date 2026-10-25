@@ -30,6 +30,7 @@ this repository.
 | Tasks (`tasks`) 0.18 | NoTasks, the to-do lists (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/tasks |
 | Notes (`notes`) 6.1 | NoNotes, the Markdown notes (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/notes |
 | Forms (`forms`) 5.4 | NoForms, forms and surveys (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/forms |
+| Suspicious Login (`suspicious_login`) 13, shipped with the server | Warns people about sign-ins from unusual addresses (`scripts/configure.d/50-audit.sh`); bundles Rubix ML and other libraries under MIT, and joomla/string under GPL-2.0-or-later | AGPL-3.0-or-later | https://github.com/nextcloud/suspicious_login |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
