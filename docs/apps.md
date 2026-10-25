@@ -385,6 +385,6 @@ sudo docker compose exec -T app grep -h 'Login failed' data/audit.log | jq -c '{
 | `grep -c "Console command executed" data/audit.log` after dozens of occ commands | 0 |
 | A test logger with the same condition, writing to a file in `/tmp` (not the audit log) | an admin_audit line was written and an admin_audit "Console command executed" line was not; another app's info line was not, its warning was |
 | `select count(*) from oc_login_address` (database, read only) | 20 rows from 3 accounts within a minute; after the hourly job, `oc_login_ips_aggregated` had `qa-t5-1` from 57.129.185.78 |
-| `nextcloud.log` after the change | no new warnings or errors |
+| `nextcloud.log` after the change | no new kinds of warnings or errors (one "Tried to create an object store folder that already exists", a warning that was there before the change too) |
 | `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server --only l10n` | `8131 checked, 0 FAIL`, both apps' texts included |
 | The app and cron containers | not recreated (started 03:31:49 UTC, before and after) |
