@@ -283,7 +283,8 @@ expect('card comments (JSON): a visible name and a guest mention stay',
 	($back['ocs']['data'][0]['mentions'][1]['mentionDisplayName'] ?? '') === 'QA t6 2'
 	&& ($back['ocs']['data'][1]['mentions'][0]['mentionDisplayName'] ?? '') === 'QA t6 3');
 expect('card comments (JSON): the rest is as it was (objects stay objects, tags escaped)',
-	str_contains((string)$hidden, '"extra":{}') && str_contains((string)$hidden, '<b>')
+	str_contains((string)$hidden, '"extra":{}') && !str_contains((string)$hidden, '<b>')
+	&& str_contains((string)$hidden, substr((string)json_encode('<b>', JSON_HEX_TAG), 1, -1))
 	&& ($back['ocs']['data'][0]['message'] ?? '') === '@qa-t6-3 @qa-t6-2 <b>');
 expect('card comments (JSON): nothing to hide gives null (the answer is left as it is)',
 	MentionNames::hide((string)json_encode($comments), fn (string $uid): bool => true) === null);

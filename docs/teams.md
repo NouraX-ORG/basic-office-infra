@@ -629,6 +629,25 @@ sharee search for "qa-t6" as `qa-t6-1` found only `qa-t6-2` and `qa-t6-1`'s own 
 exact id, email and name of `qa-t6-3` found nobody; the system book at its own address and its
 sync report held 2 cards, none outside organisation A; every profile page was "not found".
 
+**App by app** (`sudo tests/privacy-apps.sh`, the table [Every place people meet, app by
+app](#every-place-people-meet-app-by-app)), with privacy on, 2026-10-25 (UTC):
+
+| Run | Commit | Result |
+|---|---|---|
+| Before the first fixes, 22:25–22:28 | `431a073` | 286 PASS, 42 FAIL: the leaks of commit `11e251f` (DAV addresses and the ONLYOFFICE names, both ways; NoGantt shares and resources; NoForms shares and owners; board owners, imports and card people; file ownership transfers; albums; team folder rules; the name in a comment) |
+| After them, 22:33–22:36 | `11e251f` | 7 FAIL: the 5 import API checks read the HTTP code, but that API answers OCS version 1 (HTTP 200, status 403 inside; nothing was imported), and the ONLYOFFICE names still leaked (the filter waited for a DataResponse, which the server had already made a JSONResponse) |
+| Before the second fixes, 22:59–23:03 | `cb8dcb7` | 343 PASS, 22 FAIL: avatars by id (8), the appointments page signed in and not (4), the ONLYOFFICE names (2), a status read by id, an absence read by id (2), a replacement (2), card comment names (2), and one fault of the test itself (it counted two old "card assigned to you" notifications of `qa-t6b-3` as mentions) |
+| After them, 23:04–23:07 | `0298b30` | **363 PASS, none failed** ("all privacy-apps checks passed") |
+
+The runs before the fixes left what the leaks let through, all between QA accounts and nothing
+of the demo accounts: NoGantt projects shared with `qa-t6b-3` and a resource for them, forms
+shared with `qa-t6b-3` and `org:qa-t6b-org-b`, two boards handed to `qa-t6b-3` (with a card
+assigned to them on each), two file ownership transfer requests to `qa-t6b-3`, the album "QA t6b
+privacy" with `org:qa-t6b-org-b`, team folder rules for them (folders `qa-t6b-acl` and
+`qa-t6b-acl-2`), and `qa-t6b-4`'s out of office once naming `qa-t6b-3` (set back to `qa-t6b-2` in
+the same run). No board import reached them. The test never uses such an object again (it makes
+"QA t6b privacy 2", `qa-t6b-acl-3` and so on). Deleting them needs the owner's yes.
+
 ## What NoMail builds
 
 NoMail is the source of truth for organisations, teams and who is in them. The Drive only
@@ -802,7 +821,7 @@ and writes it to the server file. Then copy the file to the PC again (above).
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
-| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. The run before the fixes also left what the leaks let through, all between QA accounts: see [The test](#the-test). Kept for the next run. |
+| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy 2" (with `qa-t6b-2`; "QA t6b privacy" is an earlier leak's), the folder `qa-t6b-acl-3` in the team folder (a rule for `qa-t6b-2`; `qa-t6b-acl` and `qa-t6b-acl-2` are earlier leaks'), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. The run before the fixes also left what the leaks let through, all between QA accounts: see [The test](#the-test). Kept for the next run. |
 | People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team
