@@ -184,6 +184,9 @@ check "core: no exact-match finds (name, email, id)" "no no no no" \
 	"$(setting core shareapi_restrict_user_enumeration_full_match) $(setting core shareapi_restrict_user_enumeration_full_match_user_id) $(setting core shareapi_restrict_user_enumeration_full_match_email) $(setting core shareapi_restrict_user_enumeration_full_match_displayname)"
 # The federation keys live in the files_sharing app (FederatedShareProvider reads them there).
 check "files_sharing outgoing_server2server_share_enabled -> no" no "$(setting files_sharing outgoing_server2server_share_enabled)"
+# The step stores the same two answers under federatedfilesharing (nothing reads them there).
+check "federatedfilesharing outgoing and incoming_server2server_share_enabled -> no no" "no no" \
+	"$(setting federatedfilesharing outgoing_server2server_share_enabled) $(setting federatedfilesharing incoming_server2server_share_enabled)"
 check "files_sharing: no incoming, no group federation, no lookup server" "no no no no no" \
 	"$(setting files_sharing incoming_server2server_share_enabled) $(setting files_sharing outgoing_server2server_group_share_enabled) $(setting files_sharing incoming_server2server_group_share_enabled) $(setting files_sharing lookupServerEnabled) $(setting files_sharing lookupServerUploadEnabled)"
 check "dav: the system address book is not exposed" yes "$(case "$(setting dav system_addressbook_exposed)" in 0 | false) echo yes ;; *) echo no ;; esac)"
@@ -256,6 +259,18 @@ if [ "$code" = 207 ]; then
 else
 	check "the system book at its own address is refused ($code)" yes "$([[ "$code" =~ ^40[34]$ ]] && echo yes || echo no)"
 fi
+# A sync app asks for "everything since the start" (sync-collection), a different code path in
+# the server (getChanges). Every card href it answers must be of a group-mate too.
+code="$(as "$N1" REPORT "$DAV_BASE/addressbooks/system/system/system/" -H 'Depth: 1' \
+	-H 'Content-Type: application/xml; charset=utf-8' --data-binary \
+	'<?xml version="1.0"?><d:sync-collection xmlns:d="DAV:"><d:sync-token/><d:sync-level>1</d:sync-level><d:prop><d:getetag/></d:prop></d:sync-collection>')"
+if [ "$code" = 207 ]; then
+	system_cards="$(card_uids)"
+	log "system book sync report: $(wc -w <<<"$system_cards") card(s), $(for u in $system_cards; do [ "$(subset "$u" "$SELF_AND_PEERS")" = yes ] || echo "$u"; done | wc -l) outside org A"
+	check "the system book sync report: only org A people" yes "$(subset "$system_cards" "$SELF_AND_PEERS")"
+else
+	check "the system book sync report is refused ($code)" yes "$([[ "$code" =~ ^40[034]$ ]] && echo yes || echo no)"
+fi
 principal_search() { # property-xml match
 	as "$N1" REPORT "$DAV_BASE/principals/users/" -H 'Depth: 0' -H 'Content-Type: application/xml; charset=utf-8' \
 		--data-binary "<?xml version=\"1.0\"?><d:principal-property-search xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" test=\"anyof\"><d:property-search><d:prop>$1</d:prop><d:match>$2</d:match></d:property-search><d:prop><d:displayname/></d:prop></d:principal-property-search>"
@@ -288,8 +303,21 @@ ocs "$N1" GET /search/providers >/dev/null
 check "no Teams (circles) search provider" yes "$(yes_no jq -e '[.ocs.data[].id] | index("circles") == null' "$T_OUT/dav")"
 
 # --- Profiles and the Teams app --------------------------------------------------------------------
-check "profile page of $QA3 -> 404" 404 "$(as "$N1" GET "https://${DRIVE_HOST}/u/$QA3")"
-check "profile page of qa-t6-1 itself -> 404 (profiles are off)" 404 "$(as "$N1" GET "https://${DRIVE_HOST}/u/$QA1")"
+# The server answers a missing or switched-off profile with its "Profile not found" page and
+# HTTP 200, so the check is what the page holds: a shown profile carries its fields (display
+# name and the rest) in the hidden "initial-state-profile-profileParameters" input.
+profile_hidden() { # status -> "yes" when the last page is the not-found page
+	if [[ "$1" =~ ^(200|404)$ ]] && ! grep -qF 'initial-state-profile-profileParameters' "$T_OUT/dav"; then
+		echo yes
+	else
+		echo "no ($1)"
+	fi
+}
+anon_get() { refuse_owner "$1"; curl -sS -g -o "$T_OUT/dav" -w '%{http_code}' "$1"; }
+check "profile page of $QA3, signed in as $QA1: not found" yes "$(profile_hidden "$(as "$N1" GET "https://${DRIVE_HOST}/u/$QA3")")"
+check "profile page of $QA3 with no login: not found" yes "$(profile_hidden "$(anon_get "https://${DRIVE_HOST}/u/$QA3")")"
+check "profile page of $QA1 with no login: not found" yes "$(profile_hidden "$(anon_get "https://${DRIVE_HOST}/u/$QA1")")"
+check "profile page of $QA1 itself: not found (profiles are off)" yes "$(profile_hidden "$(as "$N1" GET "https://${DRIVE_HOST}/u/$QA1")")"
 check "profile API for $QA3 is refused" yes "$(code="$(ocs "$N1" GET "/profile/$QA3")"; [ "$code" != 200 ] && echo yes || echo "no ($code)")"
 code="$(ocs "$N1" GET "/apps/circles/search?term=qa-t6")"
 check "Teams member search is gone ($code)" yes "$([ "$code" != 200 ] && echo yes || echo no)"

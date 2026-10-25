@@ -72,6 +72,11 @@ if [ "$org_privacy_step" = on ]; then
 	org_privacy_set files_sharing incoming_server2server_group_share_enabled no
 	org_privacy_set files_sharing lookupServerEnabled no
 	org_privacy_set files_sharing lookupServerUploadEnabled no
+	# The same two answers under federatedfilesharing too, so a check of either app reads "no".
+	# Nothing reads them there (in 35.0.2 FederatedShareProvider and Share20\Manager read
+	# files_sharing), so this changes nothing else.
+	org_privacy_set federatedfilesharing outgoing_server2server_share_enabled no
+	org_privacy_set federatedfilesharing incoming_server2server_share_enabled no
 
 	# The "Accounts" address book of every account on the server is not offered to anyone; each
 	# organisation has its own directory (docs/teams.md).
@@ -115,6 +120,8 @@ elif [ "$org_privacy_step" = off ] && [ "${ORG_PRIVACY:-}" = off ]; then
 	org_privacy_set files_sharing incoming_server2server_group_share_enabled no
 	org_privacy_set files_sharing lookupServerEnabled no
 	org_privacy_set files_sharing lookupServerUploadEnabled no
+	org_privacy_set federatedfilesharing outgoing_server2server_share_enabled yes
+	org_privacy_set federatedfilesharing incoming_server2server_share_enabled yes
 	occ config:app:set dav system_addressbook_exposed --type=boolean --value=true >/dev/null
 	occ config:system:set profile.enabled --type=boolean --value=true >/dev/null
 	org_privacy_app enable federation
