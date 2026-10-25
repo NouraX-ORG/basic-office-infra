@@ -46,11 +46,25 @@ else
 		log "  WARNING: the scanner test failed - see: docker compose logs clamav"
 	fi
 
-	# Big uploads arrive in parts, which the object storage joins without the app seeing the data,
-	# so those files are scanned after the upload. The app's own background job can't be relied on
-	# here: with object storage it counts version and editor files that it can never open as "not
-	# scanned yet", takes the same 10 of them on every run and never gets to new files. The full
-	# scan command has no such limit, so a host timer runs it every 15 minutes.
+	# Our helper app (nextcloud-apps/nourax_antivirus) makes three things work with the object store:
+	# - an infected upload in one piece gets the virus message with 415 ("... Upload cannot be
+	#   completed."), not a generic size-mismatch error;
+	# - an upload in parts, which R2 joins without the scanner seeing the data, is read back and
+	#   scanned as soon as it is joined, up to chunked_scan_max_size (256 MiB: a few seconds per
+	#   100 MiB, well inside the 100 seconds Cloudflare waits); infected ones are refused the same way;
+	# - version, trash, editor and upload entries, which the stored-file scan can't open and would
+	#   pick again on every run, are entered as not for it (every 5 minutes and before each timer run).
+	if occ app:list --output=json | jq -e '.enabled.nourax_antivirus != null' >/dev/null; then
+		log "  nourax_antivirus already enabled"
+	elif ! occ app:enable nourax_antivirus; then
+		log "  WARNING: nourax_antivirus could not be enabled - see: docker compose logs app"
+	fi
+	occ config:app:set nourax_antivirus chunked_scan_max_size --value=268435456 --type=integer
+	log "  $(occ nourax_antivirus:skip-internal 2>&1 || echo 'WARNING: nourax_antivirus:skip-internal failed')"
+
+	# Files that could not be scanned while they arrived (uploads in parts over 256 MiB, or made while
+	# ClamAV was not answering), and every file again after 28 days: a host timer runs the full scan
+	# command 15 minutes after each run ends. The app's own cron job runs too, a batch at a time.
 	if [ -d /run/systemd/system ]; then
 		if install -m 0644 "$REPO_DIR"/config/clamav/nourax-virus-scan.{service,timer} /etc/systemd/system/ \
 			&& systemctl daemon-reload && systemctl enable --now nourax-virus-scan.timer; then

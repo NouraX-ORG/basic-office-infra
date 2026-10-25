@@ -1,5 +1,5 @@
-# Scans stored files that were not scanned while they were uploaded (big uploads in parts) and
-# rescans old ones with new signatures. Finds are only logged. Installed and started by
+# Scans stored files that were not scanned while they were uploaded (uploads in parts over 256 MiB,
+# or made while ClamAV was not answering) and rescans old ones with new signatures. Finds are only logged. Installed and started by
 # scripts/configure.d/50-virus-scanner.sh; why it is needed: docs/search-and-antivirus.md.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [Unit]
@@ -10,6 +10,9 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/nourax/basic-office-infra
+# First enter new version, trash, editor and upload entries as not for this scan, which can't open
+# them (nextcloud-apps/nourax_antivirus). The leading "-": a failure there never stops the scan.
+ExecStartPre=-/usr/bin/docker compose exec -T -u www-data app php occ nourax_antivirus:skip-internal
 ExecStart=/usr/bin/docker compose exec -T -u www-data app php occ files_antivirus:background-scan
 Nice=10
 IOSchedulingClass=idle

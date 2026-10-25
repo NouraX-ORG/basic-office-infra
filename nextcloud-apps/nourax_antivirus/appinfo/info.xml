@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--
+  - SPDX-License-Identifier: AGPL-3.0-or-later
+  -
+  - The background job and the occ command are declared from version 1.0.0 on, so later changes
+  - only touch code and never need a version bump and `occ upgrade`.
+-->
+<info>
+	<id>nourax_antivirus</id>
+	<name>Nourax virus scan</name>
+	<summary>Makes the virus scanner work fully with files kept in object storage</summary>
+	<description>Works next to the files_antivirus app: an infected upload is refused with the plain "Upload cannot be completed" message, uploads in parts are scanned as soon as they are joined, and version, trash and editor files no longer hold up the scan of stored files. It has no pages and no settings page.</description>
+	<version>1.0.0</version>
+	<licence>agpl</licence>
+	<author>Nourax</author>
+	<namespace>NouraxAntivirus</namespace>
+	<types>
+		<filesystem/>
+		<dav/>
+	</types>
+	<category>security</category>
+	<dependencies>
+		<php min-version="8.3"/>
+		<nextcloud min-version="35" max-version="35"/>
+	</dependencies>
+	<background-jobs>
+		<job>OCA\NouraxAntivirus\BackgroundJob\SkipInternalFiles</job>
+	</background-jobs>
+	<commands>
+		<command>OCA\NouraxAntivirus\Command\SkipInternal</command>
+	</commands>
+</info>
