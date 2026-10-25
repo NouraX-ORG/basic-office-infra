@@ -67,7 +67,8 @@ class NomailController extends JsonController {
 				$response = $this->error('not_configured', 503);
 			} elseif (!$this->auth->check($this->request)) {
 				$response = $this->error('unauthorized', 401, ['WWW-Authenticate' => 'Bearer']);
-				$response->throttle(['action' => self::BRUTE_FORCE_ACTION]);
+				// No metadata: a reset only clears misses whose metadata matches, and it passes [].
+				$response->throttle();
 			} else {
 				$keyId = self::KEY_ID;
 				// The right key: earlier misses from this address stop slowing it down.
