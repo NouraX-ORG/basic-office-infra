@@ -259,6 +259,76 @@ services:
       retries: 3
       start_period: 1m
 
+  # Nourax AI for the Assistant: the relay to NIG on 8080 inside the compose network only (no port
+  # is published). The file server's AI provider (integration_openai, set by
+  # scripts/configure.d/50-assistant.sh) sends its requests here with the ai_relay_token; the relay
+  # checks them, adds NIG's service key (nig_assistant_key, which never reaches the file server) and
+  # sends them to NIG with "user" = the account id, so each one counts against that person's Nourax AI
+  # budget. Refusals and failures come back as plain messages. Python standard library only, as
+  # "nobody", read-only. Details: docs/assistant.md.
+  ai-relay:
+    image: ${AI_RELAY_IMAGE:-python:3.13.16-alpine3.24}
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["python", "-I", "/opt/ai-relay/relay.py"]
+    environment:
+      NIG_URL: ${NIG_URL:-https://nig.nourax.org}
+      NIG_KEY_FILE: /run/secrets/nig_assistant_key
+      RELAY_TOKEN_FILE: /run/secrets/ai_relay_token
+      NIG_FEATURE: assistant
+      ALLOWED_MODELS: nourax-smart,nourax-long-context,nourax-fast
+      # off: NIG gets whole-answer requests, so each one carries its token count and is charged.
+      # Switch on (AI_RELAY_STREAM=on in .env) once NIG confirms streamed calls are charged too.
+      NIG_STREAM: ${AI_RELAY_STREAM:-off}
+      PYTHONDONTWRITEBYTECODE: "1"
+    secrets: [ai_relay_token, nig_assistant_key]
+    volumes:
+      - ./ai-relay/relay.py:/opt/ai-relay/relay.py:ro
+    # About 20 MB in use. The higher OOM score makes the kernel stop it before the database or the
+    # file server; the Assistant then says it is busy.
+    mem_limit: ${AI_RELAY_MEM_LIMIT:-64m}
+    oom_score_adj: 300
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "python", "-I", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+      start_interval: 5s
+    logging: *logging
+
+  # The Assistant's AI tasks, run as soon as they are asked for (Nextcloud's occ taskprocessing:worker,
+  # in ai-relay/ai-worker.sh); without it they wait for the cron container, up to 5 minutes. Same image,
+  # files and settings as "cron" (extends), but no crond, with its own memory limit. While there is
+  # nothing to do it holds one PHP process and asks the database every 2 seconds. Details: docs/assistant.md.
+  ai-worker:
+    extends: cron
+    user: www-data
+    entrypoint: ["/bin/bash", "/opt/nourax/ai/ai-worker.sh"]
+    environment:
+      PHP_MEMORY_LIMIT: 512M
+    volumes:
+      - ./ai-relay/ai-worker.sh:/opt/nourax/ai/ai-worker.sh:ro
+    mem_limit: ${AI_WORKER_MEM_LIMIT:-320m}
+    oom_score_adj: 500
+    # The image's own stop signal (SIGWINCH) is for Apache; the script stops on SIGTERM and lets a
+    # task that has started finish first (a request to NIG takes at most 110 seconds).
+    stop_signal: SIGTERM
+    stop_grace_period: 2m
+    healthcheck:
+      # The script touches this file every time the worker starts again (every 5 minutes, later
+      # while a long task runs); older than 15 minutes means it is stuck.
+      test: ["CMD-SHELL", "find /tmp/nourax-ai-worker.alive -mmin -15 | grep -q ."]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+      start_interval: 10s
+
 
   cloudflared:
     image: ${CLOUDFLARED_IMAGE}
@@ -308,3 +378,9 @@ secrets:
     file: ${SECRETS_DIR}/tunnel_token
   elasticsearch_password:
     file: ${SECRETS_DIR}/elasticsearch_password
+  # Nourax AI for the Assistant (docs/assistant.md): made by scripts/configure.d/50-assistant.sh
+  # (nig_assistant_key says "unset" until NIG's key is put in).
+  ai_relay_token:
+    file: ${SECRETS_DIR}/ai_relay_token
+  nig_assistant_key:
+    file: ${SECRETS_DIR}/nig_assistant_key
