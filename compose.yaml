@@ -144,6 +144,36 @@ services:
 
   # Add-on services (search engine, virus scanner) go below this line.
 
+  # Virus scanner: clamd answers on TCP 3310 inside the compose network only (no port is published).
+  # The file server scans every upload with it (files_antivirus, scripts/configure.d/50-virus-scanner.sh)
+  # and the NoMail API sends attachments to it. freshclam in the same container keeps the signatures
+  # fresh. The _base image has no signatures: the first start downloads them (about 230 MB) into
+  # the clamav_db volume. Details: docs/search-and-antivirus.md.
+  clamav:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.5.4_base}
+    restart: unless-stopped
+    environment:
+      FRESHCLAM_CHECKS: "2"          # look for new signatures twice a day
+      CLAMD_STARTUP_TIMEOUT: "1800"  # seconds the start script waits for clamd to load
+    volumes:
+      - clamav_db:/var/lib/clamav
+      # Our own complete files, not the image's CLAMD_CONF_* variables: its start script appends
+      # those to the config file again on every start.
+      - ./config/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+      - ./config/clamav/freshclam.conf:/etc/clamav/freshclam.conf:ro
+    # clamd holds all signatures in memory (about 1.2 GB). The limit and the higher OOM score make
+    # the kernel stop ClamAV first, never the database or the file server, when memory runs out.
+    mem_limit: ${CLAMAV_MEM_LIMIT:-1600m}
+    oom_score_adj: 400
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]   # PING on port 3310, from the image
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15m                 # first signature download plus loading
+    logging: *logging
+
 
   cloudflared:
     image: ${CLOUDFLARED_IMAGE}
@@ -173,6 +203,7 @@ volumes:
   onlyoffice_data:
   onlyoffice_lib:
   onlyoffice_logs:
+  clamav_db:
 
 secrets:
   postgres_password:
