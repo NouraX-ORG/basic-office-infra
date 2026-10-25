@@ -694,7 +694,8 @@ function publicPages(tokens) {
 		{ id: 'public-lost-password', path: '/login', wait: 1500, steps: [click('.login-box__wrapper button[type=button]', { last: true, wait: 1500 })] },
 		{ id: 'public-device-login', path: '/login', wait: 1500, steps: [click('.login-box__wrapper button[type=button]:not(.input-field__trailing-button)', { wait: 1500 })] },
 		{ id: 'public-share-file', path: s('file'), wait: 2500 },
-		{ id: 'public-share-file-menu', path: s('file'), wait: 2500, steps: [click('header button[aria-haspopup="menu"], #header button.action-item__menutoggle, .header-end button', { wait: 1500 })] },
+		// A file link opens the file in the viewer; closed, the page shows its header menu.
+		{ id: 'public-share-file-menu', path: s('file'), wait: 2500, steps: [press('Escape', 1500), click('header button[aria-haspopup="menu"], #header button.action-item__menutoggle, .header-end button', { wait: 1500 })] },
 		{ id: 'public-share-folder', path: s('folder'), wait: 3000 },
 		{ id: 'public-share-folder-menu', path: s('folder'), wait: 3000, steps: [click('header button[aria-haspopup="menu"], #header button.action-item__menutoggle, .header-end button', { wait: 1500 })] },
 		{ id: 'public-share-drop', path: s('drop'), wait: 3000 },

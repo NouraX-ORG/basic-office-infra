@@ -320,5 +320,17 @@ same(UpstreamAssets::isUpstreamUrl('https://github.com/nextcloudfan/x'), false, 
 same(UpstreamAssets::isUpstreamUrl('https://notnextcloud.com/'), false, 'upstream address: a look-alike host');
 same(UpstreamAssets::isUpstreamUrl('/apps/files/?dir=/nextcloud.com'), false, 'upstream address: a path on our site');
 
+// Page direction of signed-out pages (Middleware\PageDirectionMiddleware).
+$dirOf = static fn (string $lang): string => in_array($lang, ['ar', 'fa', 'he', 'ps', 'ug', 'ur_PK'], true) ? 'rtl' : 'ltr';
+same(UpstreamAssets::pageDirection("<!DOCTYPE html>\n<html class=\"ng-csp\" lang=\"ar\" data-locale=\"ar\">\n<head></head>\n<body id=\"body-login\" data-themes=\"\">x</body></html>", $dirOf),
+	"<!DOCTYPE html>\n<html class=\"ng-csp\" lang=\"ar\" data-locale=\"ar\">\n<head></head>\n<body dir=\"rtl\" id=\"body-login\" data-themes=\"\">x</body></html>",
+	'page direction: an Arabic guest page runs right to left');
+$ltr = '<html lang="de"><body id="body-public">x</body></html>';
+same(UpstreamAssets::pageDirection($ltr, $dirOf), $ltr, 'page direction: German stays as it is');
+$user = '<html lang="ar"><body dir="rtl" id="body-user">x</body></html>';
+same(UpstreamAssets::pageDirection($user, $dirOf), $user, 'page direction: a body with its own dir is left alone');
+same(UpstreamAssets::pageDirection('{"lang":"ar"}', $dirOf), '{"lang":"ar"}', 'page direction: not a page, left alone');
+same(UpstreamAssets::pageDirection('<html lang="ur_PK"><body>a<body>b</body></html>', $dirOf), '<html lang="ur_PK"><body dir="rtl">a<body>b</body></html>', 'page direction: only the first body tag');
+
 echo "\n$passed passed, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

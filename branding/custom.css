@@ -96,5 +96,13 @@ body[data-theme-dark-highcontrast] {
 	display: none !important;
 }
 
+/*
+ * Right-to-left languages: signed-out pages get dir="rtl" from the nourax_branding app
+ * (Middleware/PageDirectionMiddleware); this covers the few error pages core draws without it.
+ */
+html:is([lang|="ar"], [lang|="fa"], [lang|="he"], [lang|="ps"], [lang|="ug"], [lang^="ur"]) body:not([dir]) {
+	direction: rtl;
+}
+
 /* Product names in the app menu and beside its button (the apps keep their technical ids). */
 __APP_LABELS__

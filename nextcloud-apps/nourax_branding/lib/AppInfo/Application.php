@@ -16,6 +16,7 @@ use OCA\NouraxBranding\Listener\NewAccountListener;
 use OCA\NouraxBranding\Listener\PageScriptListener;
 use OCA\NouraxBranding\Listener\SabrePluginListener;
 use OCA\NouraxBranding\Middleware\EmptySettingsPageMiddleware;
+use OCA\NouraxBranding\Middleware\PageDirectionMiddleware;
 use OCA\NouraxBranding\Middleware\UpstreamPagesMiddleware;
 use OCP\App\Events\AppEnableEvent;
 use OCP\App\Events\AppUpdateEvent;
@@ -45,6 +46,9 @@ class Application extends App implements IBootstrap {
 		// Upstream links, pictures and colours in the theming and settings apps' answers (manifests,
 		// theme stylesheets, /settings/help, the backgrounds picker). Global for the same reason.
 		$context->registerMiddleware(UpstreamPagesMiddleware::class, true);
+		// Signed-out pages in Arabic and the other right-to-left languages run right to left, as
+		// signed-in pages do. Global, so that it runs for core's login page and every app's public pages.
+		$context->registerMiddleware(PageDirectionMiddleware::class, true);
 		// The text people see when they open the WebDAV address in a web browser.
 		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginListener::class);
 		// No upstream welcome board in NoBoard for new accounts.
