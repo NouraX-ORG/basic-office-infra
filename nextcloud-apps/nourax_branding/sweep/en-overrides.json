@@ -3,8 +3,10 @@
 		"Curated texts for sentences a word swap cannot fix (see docs/branding.md). Each entry is",
 		"app id -> the exact English source text (the translation key) -> the text people see instead.",
 		"\"english\" is used for en and en_GB (and other English variants); \"every_language\" is used for every",
-		"language, for upstream notices that speak as the upstream project. A plural key takes a list",
-		"[one, many]. Keys that are not installed are listed by occ nourax_branding:sweep --report."
+		"language, for upstream notices that speak as the upstream project; \"by_language\" is language code ->",
+		"app id -> key -> text, for one language whose translation leaves the name out where our name belongs",
+		"(it wins over the other two). A plural key takes a list [one, many]. Keys that are not installed are",
+		"listed by occ nourax_branding:sweep --report."
 	],
 	"english": {
 		"core": {
@@ -28,6 +30,13 @@
 			"Nextcloud GmbH sponsors a free push notification gateway for private users. To ensure good service, the gateway limits the number of push notifications per server and the limit was reached for this server. For enterprise users, a more scalable gateway is available.": "The free push notification gateway limits the number of push notifications per server, and this server has reached the limit.",
 			"Nextcloud GmbH sponsors a free push notification gateway for private users. To ensure good service, the gateway limits the number of push notifications per server. For enterprise users, a more scalable gateway is available. Contact Nextcloud GmbH for more information.": "The free push notification gateway limits the number of push notifications per server.",
 			"Contact Nextcloud GmbH": "More information"
+		}
+	},
+	"by_language": {
+		"ar": {
+			"core": {
+				"Failed to add the public link to your Nextcloud": "فشل في إضافة الرابط العام إلى Nourax Workspace الخاص بك"
+			}
 		}
 	}
 }

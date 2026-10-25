@@ -6,25 +6,47 @@
 		"Regex syntax must work in Python re, PHP PCRE (used with the u modifier) and JavaScript (with the u flag):",
 		"a pattern is case-sensitive, or starts with (?i) and has no other inline flag; no \\x{...}, no possessive",
 		"quantifiers, no named groups, no ~ character. JSON escapes such as \\u200c become the literal character.",
-		"Name patterns end without a word boundary, so endings like Nextcloudi or Nextcloudjához match too."
+		"Name patterns end without a word boundary, so endings like Nextcloudi or Nextcloudjához match too.",
+		"near_name is not a pattern but a distance check, for spellings nobody has listed yet."
 	],
 	"version": 1,
 	"name_patterns": [
 		{"id": "latin", "re": "(?i)next[ -]?cloud", "note": "Nextcloud, Next cloud, Next-cloud, nextcloud.com, #Nextcloud"},
-		{"id": "latin-misspelt", "re": "(?i)nex(?:ct|to)?cloud|nextcould|nextzcloud|nextcolud", "note": "Nexcloud (es, hu), Nexctcloud (et), Nextocloud (sc), Nextcould and Nextcolud (tr), Nextzcloud (sl)"},
+		{"id": "latin-misspelt", "re": "(?i)nex(?:ct|to|tt|st|r)?cloud|nextcould|nextzcloud|nextcolud|nextcoud|nextloud|nextclouod|nextclpoud|nexticloud|nextlcloud|nexctloud|nexclouf", "note": "Nexcloud (es, hu), Nexctcloud (et), Nextocloud (sc), Nextcould, Nextcolud and Nexctloud (tr), Nextzcloud and Nextcoud (sl), Nexttcloud and Nexstcloud (es), Nexrcloud, Nextlcloud and Nextclouod (ast), Nextloud (sc), Nexticloud (et), Nextclpoud and Nexclouf (br); near_name below finds spellings not listed here"},
 		{"id": "latin-phonetic", "re": "(?i)nekst ?klaud", "note": "Serbian and Bosnian Latin"},
-		{"id": "arabic", "re": "ن(?:ي)?كست ?كل(?:ا)?ود", "note": "Arabic نكست كلاود, نيكست كلاود, نكست كلود"},
+		{"id": "arabic", "re": "ن(?:ا|ي)?(?:كس|سك)ت ?كل(?:ا)?ود", "note": "Arabic نكست كلاود, نيكست كلاود, ناكست كلاود, نسكت كلاود, نكست كلود"},
+		{"id": "arabic-cloud", "re": "كلاود|کلاود", "note": "the loanword for 'cloud' that only the name uses in Arabic (a cloud is سحابة), so a new spelling of the name before it is found. In generic_skip: found, never replaced"},
 		{"id": "persian", "re": "نکست[‌ ]?کل(?:ا)?ود", "note": "Persian نکست‌کلود with or without the zero-width non-joiner"},
 		{"id": "cyrillic", "re": "(?i)н[еэ]кст ?клауд", "note": "Serbian Некстклауд, Mongolian Нэкстклауд"},
 		{"id": "hindi", "re": "नेक्स्ट ?क्लाउड", "note": "Hindi"},
 		{"id": "sinhala", "re": "නෙක්ස්ට් ?ක්ලවුඩ්", "note": "Sinhala"},
 		{"id": "lao", "re": "ເນັກຄຮາວ", "note": "Lao"},
 		{"id": "cjk", "re": "ネクストクラウド|넥스트 ?클라우드", "note": "Japanese and Korean, not seen yet, kept as a precaution"},
+		{"id": "hebrew", "re": "נקסט ?קלאוד", "note": "Hebrew, not seen yet, kept as a precaution"},
+		{"id": "thai", "re": "เน็กซ์ ?คลาวด์", "note": "Thai, not seen yet, kept as a precaution"},
 		{"id": "uzbek", "re": "(?i)(?:next|keyingi) bulut", "note": "Uzbek: Next bulutli, Keyingi bulut (a word-for-word 'next cloud')"},
 		{"id": "uyghur", "re": "كېيىنكى بۇلۇت", "note": "Uyghur word-for-word 'next cloud'"},
 		{"id": "vietnamese", "re": "(?i)vWorkspace", "note": "the Vietnamese translators' stand-in name"},
 		{"id": "company", "re": "\\bGmbH\\b", "note": "the upstream company (Nextcloud GmbH, NC GmbH, or GmbH alone in vi)"}
 	],
+	"near_name": {
+		"word": "nextcloud",
+		"max_distance": 2,
+		"min_length": 7,
+		"max_length": 11,
+		"note": [
+			"Finds misspellings that no name pattern lists. A word of Latin letters (A-Z and U+00C0 to U+024F, not",
+			"right after another letter) names the upstream when one of its beginnings, min_length to max_length",
+			"letters long, is at most max_distance edits away from 'word', ignoring case. An edit adds, drops or",
+			"changes one letter, or swaps two letters next to each other (optimal string alignment distance). The",
+			"letters after that beginning are an ending, as in Nextcloudi; on a tie the longer beginning wins.",
+			"A scan of every translation of every app on the server (9543 .json and .js files, 2026-10-25) found nothing within",
+			"distance 2 that is not the name; at distance 3 'exclude' and 'de cloud' turn up, so keep it at 2.",
+			"The sweep replaces these words like the patterns above and lists them in --report, so they can be",
+			"added to latin-misspelt. Same code in lib/Service/L10nSweeper.php, scripts/check-branding.sh (its",
+			"Python and its PHP part) and branding/audit/scan-page.js."
+		]
+	},
 	"link_patterns": [
 		{"id": "upstream-host", "re": "(?i)^[a-z][a-z0-9+.-]*:(?://)?(?:[^/?#@]*@)?[^/?#]*next ?cloud", "note": "nextcloud.com and every subdomain (apps., docs., help., newsletter., push-notifications.), nextcloud.bsky.social, mailto: addresses there, any host with the name"},
 		{"id": "upstream-github", "re": "(?i)^https?://(?:www\\.)?github\\.com/nextcloud", "note": "github.com/nextcloud and github.com/nextcloud-libraries, -gmbh, ..."},
@@ -75,7 +97,7 @@
 			"'langs' is 'en' (en, en_GB and other English variants), 'other' (every other language) or left out (all)."
 		],
 		"product": "Nourax Workspace",
-		"generic_skip": ["company"],
+		"generic_skip": ["company", "arabic-cloud"],
 		"phrases": [
 			{"re": "(?i)#next[ -]?cloud", "to": "#NouraxWorkspace", "note": "the federated cloud ID hashtag"},
 			{"re": "(?i)@[^\\s@/<>()\"'\\[\\]]*next[ -]?cloud[^\\s@/<>()\"'\\[\\]]*\\.org\\b", "to": "@drive.nourax.org", "note": "example cloud IDs such as user@your-nextcloud.org or felhasználó@az-ön-nextcloudja.org, in every language"},

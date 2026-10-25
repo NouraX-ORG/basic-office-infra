@@ -62,7 +62,77 @@ function nouraxScanPage(rules, options) {
 			}
 		}
 	};
-	const names = (where, value) => scan('name', NAME, where, value);
+	// near_name: spellings no pattern lists, found by their likeness to the name (the same check as
+	// the sweep and scripts/check-branding.sh): a beginning of a Latin word that is at most max_distance
+	// letters added, dropped, changed or swapped away from the word.
+	const near = (() => {
+		const n = rules.near_name;
+		if (!n || !n.word) return null;
+		const chars = Array.from(String(n.word).toLowerCase());
+		const pairs = [...new Set(chars.slice(1).map((c, i) => chars[i] + c))];
+		const distance = Math.max(0, n.max_distance ?? 2);
+		const min = Math.max(1, n.min_length ?? chars.length - distance);
+		return {
+			chars, pairs, distance, min,
+			need: Math.max(1, pairs.length - 3 * distance),
+			max: Math.max(min, n.max_length ?? chars.length + distance),
+			word: new RegExp('(?<!\\p{L})[A-Za-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u024F]{' + min + ',}', 'gu'),
+		};
+	})();
+	const nearLength = (word) => {
+		const lower = word.toLowerCase();
+		if (near.pairs.filter((p) => lower.includes(p)).length < near.need) return 0;
+		const a = Array.from(word).map((c) => c.toLowerCase());
+		const t = near.chars;
+		const tn = t.length;
+		let prev2 = [];
+		let prev = Array.from({ length: tn + 1 }, (_, j) => j);
+		let best = Infinity;
+		let bestLen = 0;
+		for (let i = 1; i <= Math.min(a.length, near.max); i++) {
+			const cur = [i];
+			for (let j = 1; j <= tn; j++) {
+				let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === t[j - 1] ? 0 : 1));
+				if (i > 1 && j > 1 && a[i - 1] === t[j - 2] && a[i - 2] === t[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+				cur.push(v);
+			}
+			if (i >= near.min && cur[tn] <= best) {
+				best = cur[tn];
+				bestLen = i;
+			}
+			prev2 = prev;
+			prev = cur;
+		}
+		return best <= near.distance ? bestLen : 0;
+	};
+	const nearHits = (s) => {
+		if (!near) return [];
+		const hits = [];
+		near.word.lastIndex = 0;
+		let m;
+		while ((m = near.word.exec(s)) !== null) {
+			const n = nearLength(m[0]);
+			if (n) hits.push([m.index, m.index + Array.from(m[0]).slice(0, n).join('').length]);
+		}
+		return hits;
+	};
+	const names = (where, value) => {
+		const s = String(value || '');
+		scan('name', NAME, where, s);
+		// Words a pattern found are reported once.
+		const found = [];
+		for (const [, rx] of NAME) {
+			rx.lastIndex = 0;
+			let m;
+			while ((m = rx.exec(s)) !== null) {
+				found.push([m.index, m.index + m[0].length]);
+				if (m[0].length === 0) rx.lastIndex += 1;
+			}
+		}
+		for (const [i, j] of nearHits(s)) {
+			if (!found.some(([a, b]) => i < b && a < j)) add('name', where + ' (near_name)', around(s, i, j));
+		}
+	};
 	const blues = (where, value) => scan('blue', BLUE, where, value);
 	const urlProblem = (raw) => {
 		const u = String(raw || '').trim();
@@ -88,6 +158,7 @@ function nouraxScanPage(rules, options) {
 				rx.lastIndex = 0;
 				if (rx.test(decoded)) return 'outside link with the name (' + id + ')';
 			}
+			if (nearHits(decoded).length) return 'outside link with the name (near_name)';
 		} else if (h === host) {
 			for (const [id, rx] of ASSET) {
 				if (rx.test(abs.pathname)) return 'upstream asset (' + id + ')';

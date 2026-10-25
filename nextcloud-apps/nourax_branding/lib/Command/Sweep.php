@@ -30,7 +30,7 @@ class Sweep extends Command {
 			->setDescription('Rewrite the upstream name in all translations (theme overrides); safe to run again')
 			->addOption('app', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Sweep only this app (core and lib are names too); give it more than once for more')
 			->addOption('if-needed', null, InputOption::VALUE_NONE, 'Sweep only what changed since the last sweep (what the background job does)')
-			->addOption('report', null, InputOption::VALUE_NONE, 'Also list every folder, the notes, and translations that leave the name out or spell it in a way the rules do not know')
+			->addOption('report', null, InputOption::VALUE_NONE, 'Also list every folder, the notes, translations that leave the name out or spell it in a way the rules do not know, and spellings found by their likeness to the name')
 			->addOption('dry-run', null, InputOption::VALUE_NONE, 'Work everything out but write nothing')
 			->addOption('bump', null, InputOption::VALUE_NONE, 'Raise the theming cache buster even when no file changed (browsers fetch the theme files again)');
 	}
@@ -56,8 +56,10 @@ class Sweep extends Command {
 
 		$report = (bool)$input->getOption('report');
 		$unknown = 0;
+		$guessed = 0;
 		foreach ($r['folders'] as $id => $f) {
 			$unknown += count($f['unknown']);
+			$guessed += count($f['guessed']);
 			if ($report || $f['left'] !== []) {
 				$output->writeln(sprintf('%-22s %3d languages, %5d texts changed, %5d filled in, %4d files written, %4d already right',
 					$id, $f['langs'], $f['changed'], $f['filled'], $f['written'], $f['same']));
@@ -72,6 +74,9 @@ class Sweep extends Command {
 				foreach ($f['unknown'] as [$lang, $key]) {
 					$output->writeln("  no known spelling in $lang: " . SweepRunner::short($key));
 				}
+				foreach ($f['guessed'] as $word) {
+					$output->writeln("  guessed spelling (near_name), replaced: $word; add it to latin-misspelt in sweep/rules.json");
+				}
 			}
 		}
 		foreach ($r['notes'] as $note) {
@@ -81,6 +86,9 @@ class Sweep extends Command {
 			$dryRun ? 'Dry run, nothing written. ' : '', count($r['folders']), $r['theme'], $r['written'], $r['same'], $r['changed'], $r['filled'], $r['left']));
 		if (!$report && $unknown > 0) {
 			$output->writeln("$unknown translations leave the name out or spell it in a way the rules do not know: see --report.");
+		}
+		if (!$report && $guessed > 0) {
+			$output->writeln("$guessed spellings of the name that no pattern lists were found by their likeness and replaced: see --report.");
 		}
 		return $r['left'] > 0 || $r['notes'] !== [] ? 1 : 0;
 	}

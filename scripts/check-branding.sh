@@ -21,7 +21,10 @@
 #   css      every other stylesheet the pages link, for hard-coded blues
 # --server (sudo, on the server, read only) adds config and mail, renders the page of a deleted or
 # expired link (errors), and makes l10n also merge every enabled app's translation files with the
-# theme's, for every language including en, and compare sweep-state.json with the installed versions.
+# theme's, for every language including en (what the server shows), check the browser file each
+# language loads (what the browser shows), and compare sweep-state.json with the installed versions.
+# The name is found by the patterns in rules.json and, for spellings nobody has listed yet, by its
+# likeness to the name (near_name: at most two letters added, dropped, changed or swapped).
 #
 # Output: "FAIL <area> <url> <where>: <snippet>" for each hit, then a summary per area. Exit code 0
 # when clean, 1 on any hit, 2 when the check could not run. The rules are shared with the sweep and
@@ -181,6 +184,66 @@ def compile_rules(key):
 	return out
 
 
+def compile_near():
+	# near_name in rules.json: spellings that no name pattern lists, found by their likeness to the
+	# name (the same check as L10nSweeper::nearHits in the nourax_branding app).
+	n = RULES.get('near_name')
+	if not isinstance(n, dict) or not n.get('word'):
+		return None
+	chars = list(n['word'].lower())
+	pairs = list(dict.fromkeys(chars[i] + chars[i + 1] for i in range(len(chars) - 1)))
+	dist = max(0, int(n.get('max_distance', 2)))
+	low = max(1, int(n.get('min_length', len(chars) - dist)))
+	return {
+		'chars': chars, 'pairs': pairs, 'distance': dist, 'min': low,
+		# One edit breaks at most three letter pairs of the name: a quick test before the real one.
+		'need': max(1, len(pairs) - 3 * dist),
+		'max': max(low, int(n.get('max_length', len(chars) + dist))),
+		# A word of Latin letters, not right after another letter (PHP: (?<!\p{L})).
+		're': re.compile(r'(?<![^\W\d_])[A-Za-zÀ-ÖØ-öø-ɏ]{%d,}' % low),
+		'pcre': r'~(?<!\p{L})[A-Za-z\x{00C0}-\x{00D6}\x{00D8}-\x{00F6}\x{00F8}-\x{024F}]{%d,}~u' % low,
+	}
+
+
+NEAR = compile_near()
+
+
+def near_length(word):
+	# How many letters at the start of the word spell the name within the distance (0: none); the
+	# optimal string alignment distance, as in the sweep. On a tie the longer beginning wins.
+	n = NEAR
+	lower = word.lower()
+	if sum(1 for p in n['pairs'] if p in lower) < n['need']:
+		return 0
+	a = [c.lower() for c in word]
+	t = n['chars']
+	tn = len(t)
+	prev2, prev = [], list(range(tn + 1))
+	best, best_len = None, 0
+	for i in range(1, min(len(a), n['max']) + 1):
+		cur = [i]
+		for j in range(1, tn + 1):
+			v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (0 if a[i - 1] == t[j - 1] else 1))
+			if i > 1 and j > 1 and a[i - 1] == t[j - 2] and a[i - 2] == t[j - 1]:
+				v = min(v, prev2[j - 2] + 1)
+			cur.append(v)
+		if i >= n['min'] and (best is None or cur[tn] <= best):
+			best, best_len = cur[tn], i
+		prev2, prev = prev, cur
+	return best_len if best is not None and best <= n['distance'] else 0
+
+
+def near_hits(s):
+	if NEAR is None:
+		return []
+	hits = []
+	for m in NEAR['re'].finditer(s):
+		n = near_length(m.group(0))
+		if n:
+			hits.append((m.start(), m.start() + n, 'near_name'))
+	return hits
+
+
 NAME = compile_rules('name_patterns')
 LINK = compile_rules('link_patterns')
 ASSET = compile_rules('asset_patterns')
@@ -303,7 +366,13 @@ def name_hits(s):
 	for pid, rx in NAME:
 		for m in rx.finditer(s):
 			hits.append((m.start(), m.end(), pid))
-	return sorted(hits)
+	# Then the spellings no pattern lists. One word is one hit, also when two rules find it (the
+	# Arabic name and arabic-cloud, for example).
+	out = []
+	for a, b, pid in sorted(hits) + near_hits(s):
+		if not any(a < hb and ha < b for ha, hb, _ in out):
+			out.append((a, b, pid))
+	return sorted(out)
 
 
 def scan_names(area, url, where, s, first_only=False):
@@ -348,6 +417,8 @@ def url_problem(raw, page_url):
 		for pid, rx in NAME:
 			if rx.search(decoded):
 				return 'outside link with the name (%s)' % pid
+		if near_hits(decoded):
+			return 'outside link with the name (near_name)'
 	elif host == BASE_HOST:
 		for pid, rx in ASSET:
 			if rx.search(p.path):
@@ -791,7 +862,12 @@ def parse_l10n(text):
 	m = L10N_RE.search(text)
 	if not m:
 		return None, None
-	return json.loads(m.group(1)), json.loads(m.group(2))
+	try:
+		tr = json.loads(m.group(2))
+	except ValueError:
+		# JavaScript allows escapes JSON does not, such as \$ in onlyoffice's files: \$ is $.
+		tr = json.loads(re.sub(r'\\(.)', lambda e: e.group(0) if e.group(1) in '"\\/bfnrtu' else e.group(1), m.group(2), flags=re.S))
+	return json.loads(m.group(1)), tr
 
 
 def css_declarations(css):
@@ -1049,13 +1125,69 @@ $in = json_decode(base64_decode('@INPUT@'), true);
 function out(array $o): void {
 	echo "NBC\t", json_encode($o, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), "\n";
 }
-function nbc_name(string $s, array $pats): ?array {
+// The name in any spelling of rules.json, or one close to it (near_name): [text, byte offset] or null.
+function nbc_name(string $s, array $pats, ?array $near = null): ?array {
 	foreach ($pats as $p) {
 		if (preg_match('~' . $p . '~u', $s, $m, PREG_OFFSET_CAPTURE)) {
 			return $m[0];
 		}
 	}
+	if ($near === null || !preg_match_all($near['pcre'], $s, $mm, PREG_OFFSET_CAPTURE)) {
+		return null;
+	}
+	// The optimal string alignment distance of each beginning of a word to the name, as in the sweep.
+	$t = $near['chars'];
+	$tn = count($t);
+	foreach ($mm[0] as [$word, $offset]) {
+		$lower = mb_strtolower($word, 'UTF-8');
+		$have = 0;
+		foreach ($near['pairs'] as $pair) {
+			$have += str_contains($lower, $pair) ? 1 : 0;
+		}
+		if ($have < $near['need']) {
+			continue;
+		}
+		$a = array_map(fn (string $c): string => mb_strtolower($c, 'UTF-8'), mb_str_split($word, 1, 'UTF-8'));
+		$prev2 = [];
+		$prev = range(0, $tn);
+		for ($i = 1, $rows = min(count($a), $near['max']); $i <= $rows; $i++) {
+			$cur = [$i];
+			for ($j = 1; $j <= $tn; $j++) {
+				$v = min($prev[$j] + 1, $cur[$j - 1] + 1, $prev[$j - 1] + ($a[$i - 1] === $t[$j - 1] ? 0 : 1));
+				if ($i > 1 && $j > 1 && $a[$i - 1] === $t[$j - 2] && $a[$i - 2] === $t[$j - 1]) {
+					$v = min($v, $prev2[$j - 2] + 1);
+				}
+				$cur[$j] = $v;
+			}
+			if ($i >= $near['min'] && $cur[$tn] <= $near['distance']) {
+				return [$word, $offset];
+			}
+			$prev2 = $prev;
+			$prev = $cur;
+		}
+	}
 	return null;
+}
+// The English text a person sees for a key that has no translation (or an empty one).
+function nbc_english(string $key, int $form): string {
+	if (preg_match('/^_(.*)_::_(.*)_$/s', $key, $m) === 1) {
+		return $form === 0 ? $m[1] : $m[2];
+	}
+	return $key;
+}
+// A browser translation file, OC.L10N.register("app", {...}, "plural"): its texts, or null.
+function nbc_js(string $file): ?array {
+	$raw = (string)file_get_contents($file);
+	if (preg_match('~OC\.L10N\.register\(\s*"(?:[^"\\\\]|\\\\.)*"\s*,\s*(\{.*\})\s*,\s*"(?:[^"\\\\]|\\\\.)*"\s*\)\s*;?\s*$~s', $raw, $m) !== 1) {
+		return null;
+	}
+	$j = json_decode($m[1], true);
+	if (!is_array($j)) {
+		// JavaScript allows escapes JSON does not, such as \$ in onlyoffice's files: \$ is $.
+		$fixed = preg_replace_callback('~\\\\(.)~su', fn (array $e): string => str_contains('"\\/bfnrtu', $e[1]) ? $e[0] : $e[1], $m[1]);
+		$j = is_string($fixed) ? json_decode($fixed, true) : null;
+	}
+	return is_array($j) ? $j : null;
 }
 $root = \OC::$SERVERROOT;
 $config = \OCP\Server::get(\OCP\IConfig::class);
@@ -1104,12 +1236,18 @@ if ($in['l10n']) {
 			$dirs[$app] = "$p/l10n";
 		}
 	}
+	$near = $in['near'];
 	foreach ($dirs as $app => $dir) {
 		$rel = substr($dir, strlen($root) + 1);
-		$read = function (string $f) use ($rel): ?array {
+		// Read as Nextcloud reads them (OC\L10N\L10N::load: json_decode of the file as it is). A file
+		// it cannot read, such as one that starts with a byte order mark, counts as missing, so that
+		// language shows the theme's texts and English for the rest.
+		$unreadable = [];
+		$read = function (string $f) use ($rel, &$unreadable): ?array {
 			$j = json_decode((string)file_get_contents($f), true);
 			if (!is_array($j) || !isset($j['translations']) || !is_array($j['translations'])) {
-				out(['kind' => 'note', 'text' => "$rel/" . basename($f) . ' is not a translation file (skipped, as Nextcloud does)']);
+				out(['kind' => 'note', 'text' => "$rel/" . basename($f) . ' cannot be read by Nextcloud: that language shows the theme file and English']);
+				$unreadable[basename($f, '.json')] = true;
 				return null;
 			}
 			return $j['translations'];
@@ -1136,47 +1274,87 @@ if ($in['l10n']) {
 				$keys[(string)$k] = true;
 			}
 		}
-		$langs = array_unique(array_merge(array_keys($orig), array_keys($themed), ['en']));
+		// The browser: OC\Template\JSResourceLocator takes the first of these that exists, .mjs before
+		// .js. The resource is <folder id>/l10n/<lang>; lib has no browser file.
+		$jsBase = [];
+		if ($app !== 'lib') {
+			$res = ($app === 'core' ? 'core' : $app) . '/l10n/';
+			$appRoot = $app === 'core' ? "$root/apps" : (realpath(dirname($dir, 2)) ?: dirname($dir, 2));
+			$jsBase = ["$root/core/$res", "$root/themes/$theme/core/$res", "$root/$res", "$root/themes/$theme/$res", "$appRoot/$res", "$root/themes/$theme/apps/$res"];
+		}
+		$jsLangs = [];
+		foreach (array_unique($jsBase) as $b) {
+			foreach (array_merge(glob($b . '*.js') ?: [], glob($b . '*.mjs') ?: []) as $f) {
+				$jsLangs[preg_replace('/\.m?js$/', '', basename($f))] = true;
+			}
+		}
+		$langs = array_unique(array_merge(array_keys($orig), array_keys($unreadable), array_keys($themed), array_keys($jsLangs), ['en']));
 		sort($langs);
 		$nameKeys = [];
 		foreach (array_keys($keys) as $k) {
-			if (nbc_name($k, $in['names']) !== null) {
+			if (nbc_name($k, $in['names'], $near) !== null) {
 				$nameKeys[] = $k;
 			}
 		}
 		$sent = 0;
 		$values = 0;
 		$missing = 0;
-		foreach ($langs as $lang) {
-			// The same merge as OC\L10N\L10N::load: the theme file on top of the app's own file.
-			$merged = array_merge($orig[$lang] ?? [], $themed[$lang] ?? []);
-			foreach ($merged as $k => $v) {
-				foreach ((array)$v as $s) {
+		$hit = function (string $side, string $where, string $lang, string $k, ?string $s, int $at = 0) use (&$sent, $in): void {
+			if ($in['limit'] === 0 || $sent < $in['limit']) {
+				$sent++;
+				out(['kind' => 'l10n', 'side' => $side, 'dir' => $where, 'lang' => $lang, 'key' => $k, 'value' => $s, 'at' => $at]);
+			}
+		};
+		// $tr: the texts one side shows. A named text, or a named key with no text or an empty one
+		// (English is shown then), counts once per key.
+		$scan = function (string $side, string $where, string $lang, array $tr) use (&$values, &$missing, $hit, $nameKeys, $in, $near): void {
+			foreach ($tr as $k => $v) {
+				$k = (string)$k;
+				foreach (array_values((array)$v) as $i => $s) {
 					if (!is_string($s)) {
 						continue;
 					}
-					$m = nbc_name($s, $in['names']);
+					$m = nbc_name($s === '' ? nbc_english($k, $i) : $s, $in['names'], $near);
 					if ($m !== null) {
 						$values++;
-						if ($in['limit'] === 0 || $sent < $in['limit']) {
-							$sent++;
-							out(['kind' => 'l10n', 'dir' => $rel, 'lang' => $lang, 'key' => (string)$k, 'value' => $s, 'at' => $m[1]]);
-						}
+						$hit($side, $where, $lang, $k, $s === '' ? "(empty, so English) " . nbc_english($k, $i) : $s, $m[1]);
 						break;
 					}
 				}
 			}
 			foreach ($nameKeys as $k) {
-				if (!array_key_exists($k, $merged)) {
+				if (!array_key_exists($k, $tr)) {
 					$missing++;
-					if ($in['limit'] === 0 || $sent < $in['limit']) {
-						$sent++;
-						out(['kind' => 'l10n', 'dir' => $rel, 'lang' => $lang, 'key' => $k, 'value' => null]);
-					}
+					$hit($side, $where, $lang, $k, null);
 				}
 			}
+		};
+		foreach ($langs as $lang) {
+			// The server: the same merge as OC\L10N\Factory and L10N::load, the theme file on top of
+			// the app's own file.
+			$scan('server', $rel, $lang, array_merge($orig[$lang] ?? [], $themed[$lang] ?? []));
+			if ($jsBase === []) {
+				continue;
+			}
+			$file = null;
+			foreach ($jsBase as $b) {
+				foreach (['.mjs', '.js'] as $ext) {
+					if ($file === null && is_file("$b$lang$ext")) {
+						$file = "$b$lang$ext";
+					}
+				}
+				if ($file !== null) {
+					break;
+				}
+			}
+			$tr = $file === null ? [] : nbc_js($file);
+			if ($tr === null) {
+				out(['kind' => 'note', 'text' => substr($file, strlen($root) + 1) . ' is not in the OC.L10N.register form: not checked']);
+				continue;
+			}
+			$scan('browser', $file === null ? "$rel (no $lang.js)" : substr($file, strlen($root) + 1), $lang, $tr);
 		}
-		out(['kind' => 'l10n_count', 'dir' => $rel, 'langs' => count($langs), 'values' => $values, 'missing' => $missing, 'sent' => $sent]);
+		out(['kind' => 'l10n_count', 'dir' => $rel, 'langs' => count($langs) * ($jsBase === [] ? 1 : 2), 'values' => $values, 'missing' => $missing, 'sent' => $sent]);
 	}
 }
 
@@ -1210,7 +1388,10 @@ def run_server(http, upstream):
 	want = {'config': 'config' in AREAS, 'l10n': 'l10n' in AREAS, 'mail': 'mail' in AREAS, 'errors': 'errors' in AREAS}
 	if not any(want.values()):
 		return
-	inp = dict(want, names=[r['re'] for r in RULES['name_patterns']], langs=LANGS, limit=LIMIT,
+	near = None
+	if NEAR is not None:
+		near = {k: NEAR[k] for k in ('chars', 'pairs', 'need', 'distance', 'min', 'max', 'pcre')}
+	inp = dict(want, names=[r['re'] for r in RULES['name_patterns']], near=near, langs=LANGS, limit=LIMIT,
 		customclient_keys=RULES.get('customclient_keys', []))
 	script = PHP.replace('@INPUT@', base64.b64encode(json.dumps(inp).encode('utf-8')).decode('ascii'))
 	cmd = ['docker', 'compose', '--project-directory', REPO, 'exec', '-T', '-u', 'www-data', 'app', 'php']
@@ -1240,7 +1421,7 @@ def run_server(http, upstream):
 			check_sweep_state(o, info)
 		elif k == 'l10n':
 			url = o['dir']
-			where = '%s "%s"' % (o['lang'], o['key'][:60])
+			where = '%s %s "%s"' % (o.get('side', 'server'), o['lang'], o['key'][:60])
 			if o['value'] is None:
 				rep.fail('l10n', url, where, 'no %s translation, so the English text with the name is shown' % o['lang'])
 			else:

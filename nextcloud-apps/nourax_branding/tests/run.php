@@ -107,6 +107,24 @@ $cases = [
 	['uz', "Keyingi bulutga umumiy havolani qo'shib bo'lmadi", "Nourax Workspace-ga umumiy havolani qo'shib bo'lmadi"],
 	['uz', 'Next bulutli Server', 'Nourax Workspace-li Server'],
 	['hi_IN', 'नेक्स्टक्लाउड में', 'Nourax Workspace में'],
+	// Spellings QA found on the server (fix round 1), and the others the same scan found.
+	['ar', 'مرحبًا بكم على متن ناكست كلاود يا %s', 'مرحبًا بكم على متن Nourax Workspace يا %s'],
+	['ar', 'حول مزايا نسخة نسكت كلاود المؤسسية', 'حول مزايا نسخة Nourax Workspace المؤسسية'],
+	['tr', 'Nexctloud antivirus uygulamasıdır', 'Nourax Workspace antivirus uygulamasıdır'],
+	['ast', 'persones y grupos de Nextclouod.', 'persones y grupos de Nourax Workspace.'],
+	['ast', 'nun ye visible pa Nexrcloud.', 'nun ye visible pa Nourax Workspace.'],
+	['ast', 'nun ye visible a Nextlcloud.', 'nun ye visible a Nourax Workspace.'],
+	['eu', 'Nextlcloudeko kontua', 'Nourax Workspace-eko kontua'],
+	['et_EE', 'Nexticloudi võimalustest', 'Nourax Workspace-i võimalustest'],
+	['es', 'Nexttcloud no y Nexstcloud en', 'Nourax Workspace no y Nourax Workspace en'],
+	['sl', 'Nextcoud', 'Nourax Workspace'],
+	['sc', 'Nextloud o', 'Nourax Workspace o'],
+	['br', 'Nextclpoud ha Nexclouf', 'Nourax Workspace ha Nourax Workspace'],
+	// near_name: spellings that no pattern lists are found by their likeness to the name.
+	['en', 'Open Nextclaud now', 'Open Nourax Workspace now'],
+	['et_EE', 'Nextcluodi kaudu', 'Nourax Workspace-i kaudu'],
+	['de', 'Das Nextclodu-Konto', 'Das Nourax Workspace-Konto'],
+	['fr', 'Votre NEXTKLOUD', 'Votre Nourax Workspace'],
 	// Placeholders and ONLYOFFICE are never changed.
 	['en', 'Developed by the {communityopen}Nextcloud community{linkclose}', 'Developed by the {communityopen}Nourax Workspace community{linkclose}'],
 	['en', '{nextcloudUrl} is Nextcloud', '{nextcloudUrl} is Nourax Workspace'],
@@ -147,6 +165,78 @@ foreach (['english', 'every_language'] as $kind) {
 		}
 	}
 }
+foreach ($overrides['by_language'] ?? [] as $lang => $apps) {
+	foreach ($apps as $app => $list) {
+		foreach ($list as $key => $text) {
+			foreach ((array)$text as $t) {
+				check(!$sw->hasName($t) && str_contains($t, 'Nourax Workspace'), "curated $lang $app text names Nourax Workspace, not the upstream", $t);
+			}
+		}
+	}
+}
+$publicLink = 'Failed to add the public link to your Nextcloud';
+same($sw->value('core', $publicLink, 'فشل في إضافة الرابط العام إلى الخادم السحابي الخاص بك', 'ar'),
+	'فشل في إضافة الرابط العام إلى Nourax Workspace الخاص بك', 'curated text for one language (core ar)');
+same($sw->value('core', $publicLink, 'Fehler beim Hinzufügen des öffentlichen Links zu Ihrer Nextcloud', 'de'),
+	'Fehler beim Hinzufügen des öffentlichen Links zu Ihrer Nourax Workspace', 'other languages are swept as usual');
+same($sw->fill('core', $publicLink, 'ar', 6), 'فشل في إضافة الرابط العام إلى Nourax Workspace الخاص بك', 'curated text for one language when the text is missing there');
+
+// near_name leaves ordinary words alone (the words at distance 3 in the server scan, among others).
+foreach ([
+	['en', 'Exclude groups from the next login'],
+	['de', 'Dateien in der Cloud'],
+	['ca', 'Les versions exclouen de la quota'],
+	['en', 'Next, cloud storage'],
+	['en', 'Nextflow and Nextdoor'],
+	['fr', 'Partager avec des utilisateurs externes'],
+	['en', 'Connected to the network'],
+] as [$lang, $text]) {
+	check(!$sw->hasName($text), "near_name: no name in \"$text\"");
+	same($sw->transform($text, $lang), $text, '  left as it is');
+}
+$sw->takeGuessed();
+$sw->transform('Open Nextclaud now', 'en');
+$sw->transform('Nexctloud antivirus', 'tr');
+same($sw->takeGuessed(), ['nextclaud'], 'near_name: spellings no pattern lists are kept for --report (listed ones are not)');
+same($sw->takeGuessed(), [], 'near_name: and handed over once');
+
+// The Arabic loanword for cloud is found but never replaced, so a new spelling before it shows up.
+check($sw->hasName('خدمة آي كلاود'), 'arabic-cloud: the loanword is found');
+same($sw->transform('خدمة آي كلاود', 'ar'), 'خدمة آي كلاود', 'arabic-cloud: never replaced');
+same($sw->leftovers(['k' => 'خدمة آي كلاود']), ['k'], 'arabic-cloud: reported as still named');
+
+// A file with a byte order mark: read all the same, and marked as one Nextcloud cannot read.
+same(L10nSweeper::decodeFile("\xEF\xBB\xBF{\"translations\":{\"a\":\"b\"},\"pluralForm\":\"x\"}"), [['translations' => ['a' => 'b'], 'pluralForm' => 'x'], false], 'decodeFile: byte order mark');
+same(L10nSweeper::decodeFile('{"translations":{"a":"b"}}'), [['translations' => ['a' => 'b']], true], 'decodeFile: plain file');
+same(L10nSweeper::decodeFile('not json'), [null, false], 'decodeFile: not JSON');
+$bomOrig = [
+	'de' => ['translations' => ['Edit within Nextcloud' => 'In Nextcloud bearbeiten', 'Save' => 'Speichern'], 'plural' => 'nplurals=2; plural=(n != 1);'],
+	'eu' => ['translations' => ['Edit within Nextcloud' => 'Nextcloud-en editatu', 'Save' => 'Gorde'], 'plural' => 'nplurals=2; plural=(n != 1);', 'unreadable' => true],
+];
+$bom = $sw->build('demo', $bomOrig, []);
+same($bom['de']['server'], ['Edit within Nextcloud' => 'In Nourax Workspace bearbeiten'], 'unreadable file: other languages get the changed texts only');
+same($bom['eu']['server'], ['Edit within Nextcloud' => 'Nourax Workspace-en editatu', 'Save' => 'Gorde'], 'unreadable file: the theme file holds every text');
+$bomTheme = ['eu' => json_decode($sw->encodeJson($bom['eu']['server'], $bom['eu']['plural'], $bom['eu']['foreign']), true)];
+$bom2 = $sw->build('demo', $bomOrig, $bomTheme);
+same([$bom2['eu']['server'], $bom2['eu']['foreign']], [$bom['eu']['server'], []], 'unreadable file: the same on the next run');
+
+// The browser copy starts from the app's own .js texts (they can differ from its .json texts).
+$jsRaw = "OC.L10N.register(\n    \"demo\",\n    {\n    \"Edit within Nextcloud\" : \"Nextcloud内で編集\",\n    \"Only in js\" : \"ONLYOFFICE のみ\"\n},\n\"nplurals=1; plural=0;\");\n";
+same(L10nSweeper::decodeJs($jsRaw), ['Edit within Nextcloud' => 'Nextcloud内で編集', 'Only in js' => 'ONLYOFFICE のみ'], 'decodeJs: Nextcloud\'s browser format');
+same(L10nSweeper::decodeJs('var x = 1;'), null, 'decodeJs: anything else');
+same(L10nSweeper::decodeJs("OC.L10N.register(\"onlyoffice\", {\"Price\" : \"\\\$5 \\\\\$ \\\"ok\\\" \\u00e9\"}, \"nplurals=2; plural=(n != 1);\");"),
+	['Price' => '$5 \\$ "ok" é'], 'decodeJs: JavaScript escapes JSON lacks (\\$ in onlyoffice\'s files)');
+same(L10nSweeper::decodeJs($sw->encodeJs('demo', ['a' => 'b'], 'nplurals=2; plural=(n != 1);')), ['a' => 'b'], 'decodeJs: reads what encodeJs writes');
+$jsonTr = ['Edit within Nextcloud' => 'Nextcloudで編集', 'Save' => '保存', 'Only in json' => 'Nextcloud json'];
+$jsTr = ['Edit within Nextcloud' => 'Nextcloud内で編集', 'Save' => '保存', 'Only in js' => 'ONLYOFFICE のみ', 'Empty' => '', 'Kept' => 'Nextcloud from js'];
+$bc = $sw->browserCopy('demo', 'ja', $jsonTr, $jsTr, ['Edit within Nextcloud' => 'Nourax Workspaceで編集', 'Only in json' => 'Nourax Workspace json', 'Kept' => 'NoGantt from the other tool'], ['Kept' => 'NoGantt from the other tool']);
+same($bc, ['Edit within Nextcloud' => 'Nourax Workspace内で編集', 'Save' => '保存', 'Only in json' => 'Nourax Workspace json', 'Kept' => 'NoGantt from the other tool', 'Only in js' => 'ONLYOFFICE のみ'],
+	'browserCopy: the .js wording, swept; .json fills in; other tools\' texts stay; empty .js texts dropped');
+same($sw->browserCopy('demo', 'ja', $jsonTr, null, ['Edit within Nextcloud' => 'X'], []), ['Edit within Nextcloud' => 'X', 'Save' => '保存', 'Only in json' => 'Nextcloud json'], 'browserCopy: no .js file, the .json texts with the changes');
+
+// An empty translation of a text with the name shows the English text: it gets the swept one.
+$empty = $sw->build('demo', ['fr' => ['translations' => ['Nextcloud settings' => '', 'Files' => ''], 'plural' => 'nplurals=2; plural=(n > 1);']], []);
+same($empty['fr']['translations'], ['Nextcloud settings' => 'Nourax Workspace settings'], 'build: empty translation of a named text filled in, others left');
 
 // One folder: plural padding, the English file, filled-in keys and the foreign layer.
 $plural = '_%n Nextcloud app_::_%n Nextcloud apps_';

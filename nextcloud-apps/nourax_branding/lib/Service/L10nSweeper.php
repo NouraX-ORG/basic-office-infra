@@ -23,11 +23,12 @@ namespace OCA\NouraxBranding\Service;
  */
 final class L10nSweeper {
 	/** Raise this when the same input gives other output: the background job then sweeps again. */
-	public const VERSION = 1;
+	public const VERSION = 2;
 	/** Top-level key of the theme JSON files the sweep writes. Nextcloud reads only "translations". */
 	public const MARKER = 'nouraxSweep';
 	public const DEFAULT_PLURAL = 'nplurals=2; plural=(n != 1);';
 	private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
+	private const BOM = "\xEF\xBB\xBF";
 	/** A letter of a script that adds endings to names: "Nextcloudi" becomes "Nourax Workspace-i". */
 	private const ENDING = '~\G[\p{Latin}\p{Cyrillic}\p{Greek}\p{Armenian}\p{Georgian}]~u';
 	/** An Arabic-script letter (not the tatweel itself, which PCRE also counts as Arabic). */
@@ -51,8 +52,17 @@ final class L10nSweeper {
 	private array $english = [];
 	/** @var array<string, array<string, string|list<string>>> */
 	private array $everyLanguage = [];
+	/** @var array<string, array<string, array<string, string|list<string>>>> lang => app => key => text */
+	private array $byLanguage = [];
 	/** @var list<string> */
 	private array $keep = [];
+	/**
+	 * near_name from rules.json, ready to use: the name's letters, its letter pairs, the word pattern.
+	 * @var array{chars: list<string>, pairs: list<string>, need: int, distance: int, min: int, max: int, word: string}|null
+	 */
+	private ?array $near = null;
+	/** @var array<string, true> spellings near_name found since the last takeGuessed() */
+	private array $guessed = [];
 
 	/**
 	 * @param array $rules the decoded sweep/rules.json
@@ -84,7 +94,29 @@ final class L10nSweeper {
 		}
 		$this->english = is_array($overrides['english'] ?? null) ? $overrides['english'] : [];
 		$this->everyLanguage = is_array($overrides['every_language'] ?? null) ? $overrides['every_language'] : [];
+		$this->byLanguage = is_array($overrides['by_language'] ?? null) ? $overrides['by_language'] : [];
 		$this->keep = array_map('strval', is_array($sweep['keep'] ?? null) ? $sweep['keep'] : []);
+		$near = $rules['near_name'] ?? null;
+		if (is_array($near) && is_string($near['word'] ?? null) && $near['word'] !== '') {
+			$chars = mb_str_split(mb_strtolower($near['word'], 'UTF-8'), 1, 'UTF-8');
+			$pairs = [];
+			for ($i = 0; $i + 1 < count($chars); $i++) {
+				$pairs[$chars[$i] . $chars[$i + 1]] = true;
+			}
+			$distance = max(0, (int)($near['max_distance'] ?? 2));
+			$min = max(1, (int)($near['min_length'] ?? count($chars) - $distance));
+			$this->near = [
+				'chars' => $chars,
+				'pairs' => array_map('strval', array_keys($pairs)),
+				// One edit breaks at most three letter pairs of the name (a swap does), so a spelling
+				// within the distance keeps at least this many: a quick test before the real one.
+				'need' => max(1, count($pairs) - 3 * $distance),
+				'distance' => $distance,
+				'min' => $min,
+				'max' => max($min, (int)($near['max_length'] ?? count($chars) + $distance)),
+				'word' => '~(?<!\p{L})[A-Za-z\x{00C0}-\x{00D6}\x{00D8}-\x{00F6}\x{00F8}-\x{024F}]{' . $min . ',}~u',
+			];
+		}
 	}
 
 	private static function compile(string $re): string {
@@ -108,19 +140,166 @@ final class L10nSweeper {
 		return preg_match('/nplurals\s*=\s*(\d+)/', $plural, $m) ? max(1, (int)$m[1]) : 2;
 	}
 
+	/**
+	 * Reads a translation file. Nextcloud (OC\L10N\L10N::load) decodes it with json_decode as it is,
+	 * which fails on a file that starts with a byte order mark (onlyoffice's eu.json does): Nextcloud
+	 * then shows that language's texts in English. The sweep reads such a file all the same.
+	 *
+	 * @return array{0: array|null, 1: bool} the decoded file (null when it is no JSON object) and
+	 *                                       whether Nextcloud itself can read it
+	 */
+	public static function decodeFile(string $raw): array {
+		$data = json_decode($raw, true);
+		if (is_array($data)) {
+			return [$data, true];
+		}
+		if (str_starts_with($raw, self::BOM)) {
+			$data = json_decode(substr($raw, strlen(self::BOM)), true);
+			if (is_array($data)) {
+				return [$data, false];
+			}
+		}
+		return [null, false];
+	}
+
+	/**
+	 * Reads a browser translation file, OC.L10N.register("app", {...}, "plural").
+	 *
+	 * @return array|null its translations, or null when it is not in that form
+	 */
+	public static function decodeJs(string $raw): ?array {
+		if (str_starts_with($raw, self::BOM)) {
+			$raw = substr($raw, strlen(self::BOM));
+		}
+		if (preg_match('~OC\.L10N\.register\(\s*"(?:[^"\\\\]|\\\\.)*"\s*,\s*(\{.*\})\s*,\s*"(?:[^"\\\\]|\\\\.)*"\s*\)\s*;?\s*$~s', $raw, $m) !== 1) {
+			return null;
+		}
+		$data = json_decode($m[1], true);
+		if (!is_array($data)) {
+			// JavaScript allows escapes JSON does not, such as \$ in onlyoffice's files: \$ is $.
+			$fixed = preg_replace_callback('~\\\\(.)~su', fn (array $e): string => str_contains('"\\/bfnrtu', $e[1]) ? $e[0] : $e[1], $m[1]);
+			$data = is_string($fixed) ? json_decode($fixed, true) : null;
+		}
+		return is_array($data) ? $data : null;
+	}
+
+	/**
+	 * The full browser file of one language. The browser shows the app's own .js file, which is not
+	 * always the same as its .json file (onlyoffice's ja.js has texts its ja.json does not), so the
+	 * copy starts from the .js texts and sweeps them too; the .json texts fill in what the .js lacks.
+	 *
+	 * @param array $json the folder's own .json translations of this language
+	 * @param array|null $js the folder's own .js translations of this language (null: none or unreadable)
+	 * @param array $changes what build() returned as 'translations' (the changed texts and the
+	 *                       texts of other tools, see foreign())
+	 * @param array $foreign what build() returned as 'foreign': these stay as they are
+	 */
+	public function browserCopy(string $app, string $lang, array $json, ?array $js, array $changes, array $foreign): array {
+		$full = $json;
+		foreach ($changes as $k => $v) {
+			$full[$k] = $v;
+		}
+		foreach ($js ?? [] as $k => $v) {
+			if (array_key_exists($k, $foreign) || (!is_string($v) && !is_array($v))) {
+				continue;
+			}
+			if (array_key_exists($k, $json) && $json[$k] === $v) {
+				// The same text as in the .json file: build() swept it already (or left it alone).
+				continue;
+			}
+			if ($v === '' || $v === []) {
+				// An empty text shows the English source text: keep what the .json side has.
+				continue;
+			}
+			$full[$k] = $this->value($app, (string)$k, $v, $lang);
+		}
+		return $full;
+	}
+
 	/** @return list<string> the words that must stay as they are (ONLYOFFICE) */
 	public function keepWords(): array {
 		return $this->keep;
 	}
 
-	/** Whether a text names the upstream project in any known spelling, or links to it. */
+	/** Whether a text names the upstream project in any known spelling, or in one close to it. */
 	public function hasName(string $s): bool {
 		foreach ($this->detect as $re) {
 			if (preg_match($re, $s) === 1) {
 				return true;
 			}
 		}
-		return false;
+		return $this->nearHits($s) !== [];
+	}
+
+	/**
+	 * The words of a text that begin with a spelling close to the name (near_name in rules.json),
+	 * also spellings that no name pattern lists.
+	 *
+	 * @return list<array{0: int, 1: int}> byte offset and byte length of each such beginning
+	 */
+	public function nearHits(string $s): array {
+		$n = $this->near;
+		if ($n === null || preg_match_all($n['word'], $s, $m, PREG_OFFSET_CAPTURE) < 1) {
+			return [];
+		}
+		$hits = [];
+		foreach ($m[0] as [$word, $offset]) {
+			$len = $this->nearLength($word);
+			if ($len > 0) {
+				$hits[] = [$offset, strlen(mb_substr($word, 0, $len, 'UTF-8'))];
+			}
+		}
+		return $hits;
+	}
+
+	/** How many letters at the start of a word spell the name (0: none). On a tie the longer wins. */
+	private function nearLength(string $word): int {
+		$n = $this->near;
+		$lower = mb_strtolower($word, 'UTF-8');
+		$have = 0;
+		foreach ($n['pairs'] as $pair) {
+			if (str_contains($lower, $pair) && ++$have >= $n['need']) {
+				break;
+			}
+		}
+		if ($have < $n['need']) {
+			return 0;
+		}
+		// Optimal string alignment distance of each beginning of the word to the name: row $i of the
+		// table is the beginning of $i letters. Letters are lowered one by one, so they stay in step.
+		$a = array_map(fn (string $c): string => mb_strtolower($c, 'UTF-8'), mb_str_split($word, 1, 'UTF-8'));
+		$t = $n['chars'];
+		$tn = count($t);
+		$rows = min(count($a), $n['max']);
+		$prev2 = [];
+		$prev = range(0, $tn);
+		$best = PHP_INT_MAX;
+		$bestLen = 0;
+		for ($i = 1; $i <= $rows; $i++) {
+			$cur = [$i];
+			for ($j = 1; $j <= $tn; $j++) {
+				$v = min($prev[$j] + 1, $cur[$j - 1] + 1, $prev[$j - 1] + ($a[$i - 1] === $t[$j - 1] ? 0 : 1));
+				if ($i > 1 && $j > 1 && $a[$i - 1] === $t[$j - 2] && $a[$i - 2] === $t[$j - 1]) {
+					$v = min($v, $prev2[$j - 2] + 1);
+				}
+				$cur[$j] = $v;
+			}
+			if ($i >= $n['min'] && $cur[$tn] <= $best) {
+				$best = $cur[$tn];
+				$bestLen = $i;
+			}
+			$prev2 = $prev;
+			$prev = $cur;
+		}
+		return $best <= $n['distance'] ? $bestLen : 0;
+	}
+
+	/** @return list<string> the spellings near_name found and replaced since the last call, in lower case */
+	public function takeGuessed(): array {
+		$g = array_map('strval', array_keys($this->guessed));
+		sort($g, SORT_STRING);
+		$this->guessed = [];
+		return $g;
 	}
 
 	/** Whether a link points to the upstream project (any address with the name in it counts). */
@@ -207,37 +386,51 @@ final class L10nSweeper {
 			if (preg_match_all($re, $s, $m, PREG_OFFSET_CAPTURE) < 1) {
 				continue;
 			}
-			$out = '';
-			$pos = 0;
+			$spans = [];
 			foreach ($m[0] as [$text, $offset]) {
-				if ($text === '' || $offset < $pos) {
-					continue;
-				}
-				$end = $offset + strlen($text);
-				$name = $this->product;
-				// An Arabic prefix such as ل joins a Latin name with a tatweel: لـNourax Workspace.
-				$prev = mb_substr(substr($s, 0, $offset), -4, null, 'UTF-8');
-				if (preg_match(self::ARABIC_BEFORE, $prev) === 1) {
-					$name = "\u{0640}" . $name;
-				}
-				// An ending stays, after a hyphen ("Nextcloudhoz" becomes "Nourax Workspace-hoz"); an
-				// Arabic-script ending after a space.
-				if (preg_match(self::ENDING, $s, $unused, 0, $end) === 1) {
-					$name .= '-';
-				} elseif (preg_match(self::ARABIC_AFTER, $s, $unused, 0, $end) === 1) {
-					$name .= ' ';
-				}
-				$out .= substr($s, $pos, $offset - $pos) . $name;
-				$pos = $end;
+				$spans[] = [$offset, strlen($text)];
 			}
-			$s = $out . substr($s, $pos);
+			$s = $this->replaceSpans($s, $spans);
 		}
-		return $s;
+		// Last, the spellings no pattern lists: kept for --report, so they can be added to the rules.
+		$spans = $this->nearHits($s);
+		foreach ($spans as [$offset, $len]) {
+			$this->guessed[mb_strtolower(substr($s, $offset, $len), 'UTF-8')] = true;
+		}
+		return $spans === [] ? $s : $this->replaceSpans($s, $spans);
+	}
+
+	/** @param list<array{0: int, 1: int}> $spans byte offset and byte length of each name, in order */
+	private function replaceSpans(string $s, array $spans): string {
+		$out = '';
+		$pos = 0;
+		foreach ($spans as [$offset, $len]) {
+			if ($len === 0 || $offset < $pos) {
+				continue;
+			}
+			$end = $offset + $len;
+			$name = $this->product;
+			// An Arabic prefix such as ل joins a Latin name with a tatweel: لـNourax Workspace.
+			$prev = mb_substr(substr($s, 0, $offset), -4, null, 'UTF-8');
+			if (preg_match(self::ARABIC_BEFORE, $prev) === 1) {
+				$name = "\u{0640}" . $name;
+			}
+			// An ending stays, after a hyphen ("Nextcloudhoz" becomes "Nourax Workspace-hoz"); an
+			// Arabic-script ending after a space.
+			if (preg_match(self::ENDING, $s, $unused, 0, $end) === 1) {
+				$name .= '-';
+			} elseif (preg_match(self::ARABIC_AFTER, $s, $unused, 0, $end) === 1) {
+				$name .= ' ';
+			}
+			$out .= substr($s, $pos, $offset - $pos) . $name;
+			$pos = $end;
+		}
+		return $out . substr($s, $pos);
 	}
 
 	/** @return string|list<string>|null the curated text for this key and language, if there is one */
 	public function override(string $app, string $key, string $lang): string|array|null {
-		$o = $this->everyLanguage[$app][$key] ?? null;
+		$o = $this->byLanguage[$lang][$app][$key] ?? $this->everyLanguage[$app][$key] ?? null;
 		if ($o === null && self::isEnglish($lang)) {
 			$o = $this->english[$app][$key] ?? null;
 		}
@@ -252,12 +445,21 @@ final class L10nSweeper {
 				$keys[] = [$kind, (string)$k];
 			}
 		}
+		foreach ($this->byLanguage as $lang => $apps) {
+			foreach (array_keys(is_array($apps[$app] ?? null) ? $apps[$app] : []) as $k) {
+				$keys[] = ["by_language $lang", (string)$k];
+			}
+		}
 		return $keys;
 	}
 
 	/** @return list<string> the app ids that have curated texts */
 	public function overrideApps(): array {
-		return array_values(array_unique(array_map('strval', array_merge(array_keys($this->english), array_keys($this->everyLanguage)))));
+		$apps = array_merge(array_keys($this->english), array_keys($this->everyLanguage));
+		foreach ($this->byLanguage as $list) {
+			$apps = array_merge($apps, array_keys(is_array($list) ? $list : []));
+		}
+		return array_values(array_unique(array_map('strval', $apps)));
 	}
 
 	/** Whether a translation key must be translated in every language (it names the upstream). */
@@ -310,7 +512,7 @@ final class L10nSweeper {
 	 * @return string|list<string>
 	 */
 	public function fill(string $app, string $key, string $lang, int $nplurals): string|array {
-		$o = $this->everyLanguage[$app][$key] ?? $this->english[$app][$key] ?? null;
+		$o = $this->byLanguage[$lang][$app][$key] ?? $this->everyLanguage[$app][$key] ?? $this->english[$app][$key] ?? null;
 		if (preg_match('/^_(.*)_::_(.*)_$/s', $key, $pk) === 1) {
 			$o ??= [$this->text($app, $key, $pk[1], 'en'), $this->text($app, $key, $pk[2], 'en')];
 			return self::forms($o, $nplurals);
@@ -347,10 +549,14 @@ final class L10nSweeper {
 	/**
 	 * Sweep one translation folder.
 	 *
-	 * @param array<string, array{translations: array, plural: string}> $orig the folder's own files, by language
+	 * @param array<string, array{translations: array, plural: string, unreadable?: bool}> $orig the
+	 *        folder's own files, by language; 'unreadable' when Nextcloud cannot read the file itself
+	 *        (see decodeFile)
 	 * @param array<string, array|null> $theme the theme's files for the folder as they are now, by language
-	 * @return array<string, array{translations: array, foreign: array, plural: string, changed: int, filled: int, unknown: list<string>}>
-	 *               by language: what the theme file must hold. 'en' is always there.
+	 * @return array<string, array{translations: array, server: array, foreign: array, plural: string, unreadable: bool, changed: int, filled: int, unknown: list<string>}>
+	 *               by language: 'translations' are the texts that change, 'server' what the theme
+	 *               JSON file must hold (the same, or every text when Nextcloud cannot read the
+	 *               folder's own file). 'en' is always there.
 	 */
 	public function build(string $app, array $orig, array $theme): array {
 		$langs = array_values(array_unique(array_map('strval', array_merge(array_keys($orig), array_keys($theme), ['en']))));
@@ -385,6 +591,13 @@ final class L10nSweeper {
 					continue;
 				}
 				$k = (string)$k;
+				if ($v === '' && isset($nameKeys[$k])) {
+					// An empty translation: the browser shows the English source text instead (and the
+					// server stops with an error), so it gets the swept English text.
+					$tr[$k] = $this->fill($app, $k, $lang, self::nplurals($plural));
+					$filled++;
+					continue;
+				}
 				$nv = $this->value($app, $k, $v, $lang);
 				if ($nv !== $v) {
 					$tr[$k] = $nv;
@@ -403,10 +616,13 @@ final class L10nSweeper {
 					$filled++;
 				}
 			}
+			$unreadable = !empty($orig[$lang]['unreadable']);
 			$result[$lang] = [
 				'translations' => $tr,
+				'server' => $unreadable ? array_replace($own, $tr) : $tr,
 				'foreign' => $foreign,
 				'plural' => $plural,
+				'unreadable' => $unreadable,
 				'changed' => $changed,
 				'filled' => $filled,
 				'unknown' => $unknown,

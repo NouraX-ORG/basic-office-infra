@@ -23,7 +23,8 @@ use Psr\Log\LoggerInterface;
  * work out the changes and writes them into the theme folder (themes/<theme> in the Nextcloud
  * folder, the one named by the 'theme' setting):
  * - <folder>/<lang>.json for the server, for example themes/nourax/apps/settings/l10n/de.json;
- * - <app>/l10n/<lang>.js for the browser (core: core/core/l10n/<lang>.js), a full copy;
+ * - <app>/l10n/<lang>.js for the browser (core: core/core/l10n/<lang>.js), a full copy built from the
+ *   app's own .js and .json files (see L10nSweeper::browserCopy);
  * - sweep-state.json: the server version, the rules and the version of every app it swept, which
  *   the background job and scripts/check-branding.sh --server compare with what is installed.
  *
@@ -187,27 +188,32 @@ class SweepRunner {
 		}
 	}
 
-	/** @return array{langs: int, written: int, same: int, changed: int, filled: int, left: list<array{0: string, 1: string}>, unknown: list<array{0: string, 1: string}>, notes: list<string>} */
+	/** @return array{langs: int, written: int, same: int, changed: int, filled: int, left: list<array{0: string, 1: string}>, unknown: list<array{0: string, 1: string}>, guessed: list<string>, notes: list<string>} */
 	private function sweepFolder(L10nSweeper $sweeper, string $id, string $dir, string $themeRoot, bool $dryRun): array {
 		$root = \OC::$SERVERROOT;
 		if (!str_starts_with($dir, $root . '/')) {
 			throw new \RuntimeException("$dir is outside $root, so a theme cannot change it");
 		}
 		$rel = substr($dir, strlen($root) + 1);
-		$out = ['langs' => 0, 'written' => 0, 'same' => 0, 'changed' => 0, 'filled' => 0, 'left' => [], 'unknown' => [], 'notes' => []];
+		$out = ['langs' => 0, 'written' => 0, 'same' => 0, 'changed' => 0, 'filled' => 0, 'left' => [], 'unknown' => [], 'guessed' => [], 'notes' => []];
 
 		$orig = [];
 		$keys = [];
 		foreach (glob("$dir/*.json") ?: [] as $file) {
 			$lang = basename($file, '.json');
-			$data = self::readJsonOrNull($file);
+			[$data, $readable] = L10nSweeper::decodeFile((string)file_get_contents($file));
 			if (!is_array($data) || !is_array($data['translations'] ?? null)) {
 				$out['notes'][] = "$rel/$lang.json is not a translation file (skipped)";
 				continue;
 			}
+			if (!$readable) {
+				// Nextcloud would show this language in English: the theme file gets every text.
+				$out['notes'][] = "$rel/$lang.json starts with a byte order mark, which Nextcloud cannot read: the theme file holds all its texts";
+			}
 			$orig[$lang] = [
 				'translations' => $data['translations'],
 				'plural' => is_string($data['pluralForm'] ?? null) ? $data['pluralForm'] : '',
+				'unreadable' => !$readable,
 			];
 			foreach (array_keys($data['translations']) as $k) {
 				$keys[(string)$k] = true;
@@ -240,27 +246,30 @@ class SweepRunner {
 		}
 
 		$jsDir = $this->jsDir($id, $themeRoot);
+		$sweeper->takeGuessed();
 		foreach ($sweeper->build($id, $orig, $theme) as $lang => $r) {
 			$lang = (string)$lang;
 			$jsonPath = "$themeDir/$lang.json";
-			if ($r['translations'] === [] && !array_key_exists($lang, $theme)) {
+			// The app's own browser file, which can hold texts its .json file does not (see browserCopy).
+			$ownJs = is_file("$dir/$lang.js") ? L10nSweeper::decodeJs((string)file_get_contents("$dir/$lang.js")) : null;
+			$serverFile = $r['server'] !== [] || array_key_exists($lang, $theme);
+			if (!$serverFile && ($ownJs === null || $sweeper->leftovers($ownJs) === [])) {
 				continue;
 			}
 			$out['langs']++;
 			$out['changed'] += $r['changed'];
 			$out['filled'] += $r['filled'];
 			$file = $theme[$lang] ?? null;
-			if (is_array($file) && $r['translations'] === $r['foreign'] && ($file['translations'] ?? null) === $r['foreign']) {
+			if (!$serverFile) {
+				// Only the browser file names the upstream: no server file is needed.
+			} elseif (is_array($file) && !$r['unreadable'] && $r['translations'] === $r['foreign'] && ($file['translations'] ?? null) === $r['foreign']) {
 				// Another tool's file that needs nothing more: left as it is, so that tool and the sweep
 				// do not keep rewriting it in turn.
 				$out['same']++;
 			} else {
-				$this->put($jsonPath, $sweeper->encodeJson($r['translations'], $r['plural'], $r['foreign']), $dryRun, $out);
+				$this->put($jsonPath, $sweeper->encodeJson($r['server'], $r['plural'], $r['foreign']), $dryRun, $out);
 			}
-			$full = $orig[$lang]['translations'] ?? [];
-			foreach ($r['translations'] as $k => $v) {
-				$full[$k] = $v;
-			}
+			$full = $sweeper->browserCopy($id, $lang, $orig[$lang]['translations'] ?? [], $ownJs, $r['translations'], $r['foreign']);
 			if ($jsDir !== null) {
 				$this->put("$jsDir/$lang.js", $sweeper->encodeJs($jsName, $full, $r['plural']), $dryRun, $out);
 			}
@@ -271,6 +280,7 @@ class SweepRunner {
 				$out['unknown'][] = [$lang, $k];
 			}
 		}
+		$out['guessed'] = $sweeper->takeGuessed();
 		return $out;
 	}
 

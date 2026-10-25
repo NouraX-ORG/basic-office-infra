@@ -22,7 +22,9 @@ translation overrides from there:
   change into it;
 - the browser loads one file per app and language and takes the theme's first, so
   `themes/nourax/<app>/l10n/<lang>.js` (core: `themes/nourax/core/core/l10n/<lang>.js`) is a full copy
-  of the app's translations with the changes in it.
+  of the app's translations with the changes in it. It starts from the app's own `.js` file, whose
+  texts are not always the same as its `.json` file (onlyoffice's `ja.js` has texts its `ja.json`
+  lacks), and sweeps those too.
 
 The `nourax_branding` app builds these files from the installed translation files
 (`occ nourax_branding:sweep`, code in `nextcloud-apps/nourax_branding/lib/Service/`). For each text:
@@ -44,15 +46,30 @@ The `nourax_branding` app builds these files from the installed translation file
    | `{productName} iOS app`, `{productName} Android app` | NoDrive iOS app, NoDrive Android app |
 
 3. every other spelling of the name becomes "Nourax Workspace": every case, misspellings such as
-   "Nexcloud", and the spellings in other scripts (Arabic, Persian, Serbian, Mongolian, Hindi and
-   more, all listed in `name_patterns`). A word ending stays after a hyphen ("Nextcloudhoz" becomes
-   "Nourax Workspace-hoz").
+   "Nexcloud" or "Nextclouod", and the spellings in other scripts (Arabic نكست كلاود and ناكست كلاود,
+   Persian, Serbian, Mongolian, Hindi and more, all listed in `name_patterns`). A word ending stays
+   after a hyphen ("Nextcloudhoz" becomes "Nourax Workspace-hoz");
+4. last, spellings nobody has listed yet: `near_name` in `sweep/rules.json` finds any Latin word
+   that starts with something at most two letters away from the name (a letter added, dropped,
+   changed, or two letters swapped: "Nextclaud", "Nexrcloud"). These are replaced too, and `--report`
+   lists them so they can be added to `name_patterns`. A scan of every translation on the server
+   (9,543 files, 2026-10-25) found no ordinary word that close; at three letters away, words such as
+   "exclude" turn up, so the distance stays at two. The Arabic loanword كلاود ("cloud") is used only
+   in the name, so it is a name pattern too (`arabic-cloud`): it is never replaced, but a new Arabic
+   spelling of the name in front of it shows up in the report and in the guard.
 
 A text that names the upstream but has no translation in a language would show its English source
-text there, so it gets the swept English text. Sentences a word swap cannot fix have curated texts in
-`sweep/en-overrides.json`: "english" for `en` and `en_GB`, "every_language" for the upstream's own
-notices (for example about its free push service), which would otherwise speak as the upstream.
-Placeholders such as `{productName}` and `%s` are never changed.
+text there, so it gets the swept English text; so does an empty translation. Sentences a word swap
+cannot fix have curated texts in `sweep/en-overrides.json`: "english" for `en` and `en_GB`,
+"every_language" for the upstream's own notices (for example about its free push service), which would
+otherwise speak as the upstream, and "by_language" for one language whose translation leaves our name
+out where it belongs (Arabic "Failed to add the public link to your Nextcloud" says "your cloud
+server"; it now says "your Nourax Workspace"). Placeholders such as `{productName}` and `%s` are never
+changed.
+
+A translation file that starts with a byte order mark (onlyoffice's `eu.json`) cannot be read by
+Nextcloud, which then shows that language in English. The sweep reads it all the same and writes every
+one of its texts into the theme file, so Basque people see Basque, without the name.
 
 Translations that another step wrote into the theme folder first (the NoGantt wording of
 `scripts/configure.d/55-gantt.sh`) are kept, and the sweep builds on top of them. Each file the sweep
@@ -76,11 +93,14 @@ second run writes nothing. Each change raises the theming cache buster, so brows
 files.
 
 **By hand.** `sudo scripts/branding-sweep.sh` sweeps everything now; `--report` also lists, per app,
-the notes and every translation that leaves the name out or spells it in a way the rules do not
-know. Add a new spelling to `name_patterns` in `sweep/rules.json` (the guard reads the same list),
-then run the sweep again. Check the result with
-`sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server --only l10n`. The rules have
-their own tests:
+the notes, every translation that leaves the name out or spells it in a way the rules do not know, and
+every spelling `near_name` found ("guessed spelling"). Add a new spelling to `name_patterns` in
+`sweep/rules.json` (the guard and the browser audit read the same list and the same `near_name`), then
+run the sweep again. Check the result with
+`sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server --only l10n`: for every enabled
+app and every language it works out what the server shows (the app's file with the theme file on top,
+English where a text is missing) and what the browser shows (the first `.js` file Nextcloud's loader
+finds), and fails on any spelling of the name. The rules have their own tests:
 `sudo docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php`.
 
 **Undo.** `occ config:system:delete theme` switches the overrides off; the files stay and do nothing.
