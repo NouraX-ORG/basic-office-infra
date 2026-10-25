@@ -1,0 +1,16 @@
+# Scans stored files that were not scanned while they were uploaded (big uploads in parts) and
+# rescans old ones with new signatures. Finds are only logged. Installed and started by
+# scripts/configure.d/50-virus-scanner.sh; why it is needed: docs/search-and-antivirus.md.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Nourax Workspace virus scan of stored files
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nourax/basic-office-infra
+ExecStart=/usr/bin/docker compose exec -T -u www-data app php occ files_antivirus:background-scan
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

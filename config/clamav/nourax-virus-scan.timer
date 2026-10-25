@@ -1,0 +1,13 @@
+# Runs nourax-virus-scan.service 10 minutes after boot (or 2 minutes after the timer is switched
+# on), then 15 minutes after each run ends, so two runs never overlap.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Run the Nourax Workspace virus scan of stored files every 15 minutes
+
+[Timer]
+OnBootSec=10min
+OnActiveSec=2min
+OnUnitInactiveSec=15min
+
+[Install]
+WantedBy=timers.target
