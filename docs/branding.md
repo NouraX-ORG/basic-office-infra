@@ -223,23 +223,32 @@ file fetched as `/l10n/<language>.json` (which would skip the theme overrides) m
 theme (the browser's setting, with the account's theme on "System default"), with a screenshot of each:
 
 - signed in: NoDrive (file list, the folder of test files, New menu, sharing tab of the sidebar, NoDrive
-  settings and their WebDAV part, shared with you, shares, recent, deleted files, team folders), the
-  picture viewer, a Markdown file in Text, the PDF viewer, a document in ONLYOFFICE (also the editor's
-  own frames; ONLYOFFICE keeps its name), the app menu (NoMail must be in it), the user menu, the QR
-  code for the mobile app, the status menu, the contacts menu, notifications, the search (Ctrl+K),
-  Photos, Activity, NoCalendar (month, an event, its settings, editing and sharing a calendar),
-  NoContacts, NoBoard (boards, a board, a card), NoNotes, NoTasks, NoForms, NoGantt, every Personal
-  settings page, the help page, the old "sync clients" address, a profile page, `/remote.php/dav` and a
-  folder below it, a missing page and an admin-only page (as a person who is not an admin), and last
-  signing out;
+  settings and their WebDAV part, shared with you, shares, recent, deleted files, team folders, the
+  "Actions" menu of a file), the picture viewer, a Markdown file in Text, the PDF viewer, a document in
+  ONLYOFFICE (also the editor's own frames; ONLYOFFICE keeps its name), the app menu (NoMail must be in
+  it), the user menu, the QR code for the mobile app, the status menu, the contacts menu,
+  notifications, the search (Ctrl+K), Nourax AI (its dialog from the top bar and its page), Photos,
+  Activity, NoCalendar (month, an event, its settings, editing and sharing a calendar), NoContacts,
+  NoBoard (boards, a board, a card), NoNotes, NoTasks, NoForms, NoGantt, every other app of the app
+  menu, every Personal settings page, the help page, the old "sync clients" address, a profile page,
+  `/remote.php/dav` and a folder below it, a missing page and an admin-only page (as a person who is
+  not an admin), and last signing out. The apps of the app menu and the Personal settings pages are
+  read from the server on each run, so an app added later is audited without a change to the audit;
 - signed out: the login page, "Forgot password?", "Log in with a device", the four test links of the QA
   account's `branding-check` folder (a file with its menu, a folder with its menu, a file drop, a
-  password-protected link, also with a wrong password), a link that does not exist (an expired link
-  shows the same page), a missing page and the help page;
+  password-protected link, also with a wrong password), the page of a link that does not exist (a
+  deleted or expired link shows the same page), a missing page and the help page;
 - once: the language changed through the Personal settings language menu (German), the Appearance
   page's own "Dark theme" (pages must stay dark with a light browser; then back to "System default"),
-  and the first sign-in of a fresh account (its NoCalendar example event and its NoBoard boards: no
-  welcome board) and of the account that shares a file with the main QA account.
+  and the first sign-in of a fresh account (its welcome files, its NoCalendar example event and its
+  NoBoard boards: no welcome board) and of the account that shares a file with the main QA account.
+
+The page of a link that does not exist is opened as a real link with a path that is not in it
+(`/s/<link>?path=/missing`): the server shows the same "This share does not exist or is no longer
+available" page. A made-up link would count as a guessed link: after that, the server slows down every
+link page for this IP for 12 hours (up to 25 seconds each), and refuses them (HTTP 429) after more than
+ten in half an hour. A page that answers 429 or a 5xx is a problem in `problems.json`; a 502 or 503
+(another task restarting the server) is tried once more after a minute.
 
 The audit makes its own test data in the QA accounts, once, and finds it again on later runs: four
 files in `branding-check`, a board with a card, a calendar event (moved to the next day on each run), a

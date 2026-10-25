@@ -361,6 +361,23 @@ async function ensureContact(acc) {
 	return r.status === 201 || r.status === 204 ? 'ok' : `not made (HTTP ${r.status})`;
 }
 
+// The apps of the app menu and the sections of the Personal settings, as the server lists them for
+// this person, so that an app added later is part of the audit without a change here.
+async function discover(acc) {
+	const nav = ocsData(await api(acc, 'GET', '/ocs/v2.php/core/navigation/apps?format=json')) || [];
+	const apps = nav.map((e) => ({ id: String(e.id), href: String(e.href || '') }));
+	// The settings page draws its section list from the initial state "settings-sections".
+	const r = await api(acc, 'GET', '/settings/user', { headers: { Accept: 'text/html' } });
+	let sections = [];
+	const state = r.text.match(/id="initial-state-settings-sections" value="([^"]+)"/);
+	try {
+		sections = (JSON.parse(Buffer.from(state[1], 'base64').toString('utf8')).personal || []).map((s) => String(s.id)).filter((s) => /^[A-Za-z0-9_-]+$/.test(s));
+	} catch (e) {
+		sections = [];
+	}
+	return { apps, sections };
+}
+
 async function getLanguage(acc) {
 	const d = ocsData(await api(acc, 'GET', `/ocs/v2.php/cloud/users/${encodeURIComponent(acc.login)}?format=json`));
 	return d ? d.language : null;
@@ -539,12 +556,21 @@ async function visit(page, cx, def) {
 	let status = null;
 	if (def.path) {
 		try {
-			const r = await page.goto(BASE + def.path, { waitUntil: 'domcontentloaded', timeout: 45000 });
+			let r = await page.goto(BASE + def.path, { waitUntil: 'domcontentloaded', timeout: 60000 });
 			status = r ? r.status() : null;
+			// Another task may be restarting the server (docs: wait about a minute, then try once more).
+			if (status === 502 || status === 503) {
+				log(`  ${cx.lang} ${def.id}: HTTP ${status}, trying again in 60 s`);
+				await page.waitForTimeout(60000);
+				r = await page.goto(BASE + def.path, { waitUntil: 'domcontentloaded', timeout: 60000 });
+				status = r ? r.status() : null;
+			}
 		} catch (e) {
 			problem(pcx, 'open ' + def.path, e);
 			return;
 		}
+		// 429: the brute-force protection stopped this IP; the page shown is not the one asked for.
+		if (status === 429 || status >= 500) problem(pcx, 'open ' + def.path, `HTTP ${status}`);
 		await settle(page, def.wait ?? 1200);
 	}
 	if (def.waitFor) {
@@ -630,8 +656,14 @@ function signedInPages(fx, acc) {
 		{ id: 'contacts-menu', path: '/apps/files/files', steps: [click('button[aria-controls="header-menu-contactsmenu"]')] },
 		{ id: 'notifications', path: '/apps/files/files', steps: [click('#notifications button.header-menu__trigger', { wait: 2000 })] },
 		{ id: 'unified-search', path: '/apps/files/files', steps: [press('Control+k'), typeText('audit', 3500)] },
+		// Nourax AI (the Assistant): the button in the top bar opens its dialog; it also has a page.
+		{ id: 'assistant-dialog', path: '/apps/files/files', steps: [click('#assistant button', { wait: 3000 })] },
+		{ id: 'assistant-page', path: '/apps/assistant/', wait: 3000 },
 		{ id: 'files-folder', path: `/apps/files/files?dir=${encodeURIComponent(FOLDER)}`, waitFor: '.files-list' },
 		{ id: 'files-new-menu', path: `/apps/files/files?dir=${encodeURIComponent(FOLDER)}`, waitFor: '[data-cy-upload-picker]', steps: [click('[data-cy-upload-picker] button')] },
+		// The "Actions" menu of a file (the last button of its row): open with, AI tasks and so on.
+		{ id: 'files-actions-menu', path: `/apps/files/files?dir=${encodeURIComponent(FOLDER)}`, waitFor: '.files-list',
+			steps: [click(`tr[data-cy-files-list-row-name="${FILES.docx}"] td.files-list__row-actions button`, { last: true, wait: 1500 })] },
 		{ id: 'files-sharing-tab', path: `/apps/files/files/${ids['probe.txt'] || ''}?dir=${encodeURIComponent(FOLDER)}&opendetails=true`, steps: [waitFor('.app-sidebar'), async (p) => p.waitForTimeout(2500)] },
 		{ id: 'files-settings', path: '/apps/files/files', steps: [click('[data-cy-files-navigation-settings-button] a', { wait: 2000 })] },
 		{ id: 'files-settings-webdav', path: '/apps/files/files', steps: [click('[data-cy-files-navigation-settings-button] a', { wait: 2000 }), scrollTo('[id*="webdav" i], [data-cy-files-settings-webdav]')] },
@@ -668,7 +700,17 @@ function signedInPages(fx, acc) {
 		{ id: 'forms', path: '/apps/forms/', wait: 3000 },
 		{ id: 'gantt', path: '/apps/nc_gantt/', wait: 3000 },
 	];
-	for (const s of ['profile-contact', 'language-locale', 'security', 'notifications', 'theming', 'sharing', 'availability', 'workflow', 'nc_gantt']) {
+	// Every app of the app menu that the list above leaves out (an app added later, for example).
+	for (const app of fx.apps || []) {
+		const href = app.href.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/index\.php\//, '/');
+		if (!href.startsWith('/') || app.href.startsWith('http') && !app.href.startsWith(BASE)) continue;
+		if (pages.some((p) => p.path && p.path.startsWith(href.replace(/\/$/, '')))) continue;
+		pages.push({ id: 'app-' + app.id, path: href, wait: 3000 });
+	}
+	// Every section of the Personal settings this person has, as the server lists them.
+	const sections = fx.sections && fx.sections.length ? fx.sections
+		: ['profile-contact', 'language-locale', 'security', 'notifications', 'theming', 'sharing', 'ai', 'availability', 'workflow', 'nc_gantt'];
+	for (const s of sections) {
 		pages.push({ id: 'settings-' + s, path: '/settings/user/' + s, wait: 2000 });
 	}
 	pages.push(
@@ -709,7 +751,12 @@ function publicPages(tokens) {
 			await page.keyboard.press('Enter');
 			await settle(page, 1500);
 		}] },
-		{ id: 'public-share-missing', path: '/s/nouraxAuditMissing', wait: 1500 },
+		// The page of a missing, deleted or expired link ("This share does not exist or is no longer
+		// available"). A made-up link would show the same page, but the server counts each one as a
+		// guessed link: then every link page is slowed down for this IP for 12 hours, and refused
+		// (HTTP 429) after more than ten in half an hour. A path that is not in a real link shows that
+		// page and counts nothing.
+		{ id: 'public-share-missing', path: tokens.file ? `/s/${tokens.file}?path=${encodeURIComponent('/missing')}` : null, wait: 1500 },
 		{ id: 'public-not-found', path: '/index.php/apps/nourax-audit-missing-page', wait: 1000 },
 		{ id: 'public-help', path: '/apps/nourax_branding/help', wait: 1000 },
 	];
@@ -824,6 +871,8 @@ async function freshPass(browser, acc, lang, label) {
 	const page = await ctx.newPage();
 	try {
 		await login(page, acc, cx);
+		// The welcome files a new account gets.
+		await visit(page, cx, { id: label + '-files', path: '/apps/files/files', waitFor: '.files-list' });
 		await visit(page, cx, { id: label + '-calendar', path: '/apps/calendar/', wait: 4000 });
 		const events = await page.evaluate(async (uid) => {
 			const token = (window.OC && window.OC.requestToken) || document.head.getAttribute('data-requesttoken');
@@ -951,6 +1000,8 @@ async function main() {
 	fx.ids = await fileIds(main, FOLDER);
 	fx.tokens = await ensureLinks(main);
 	log(`test files: ${Object.keys(fx.ids).length - 1}; test links: ${Object.keys(fx.tokens).sort().join(', ')}`);
+	Object.assign(fx, await discover(main));
+	log(`app menu: ${fx.apps.map((a) => a.id).join(', ')}; Personal settings: ${fx.sections.join(', ')}`);
 
 	const browser = await chromium.launch({ channel: (config.chrome && config.chrome.channel) || 'chrome', headless: config.headless !== false });
 	log(`browser: ${browser.version()}`);
