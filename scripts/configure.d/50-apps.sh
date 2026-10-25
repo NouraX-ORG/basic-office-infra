@@ -95,3 +95,16 @@ occ config:app:set theming_customcss customcss --value="$apps_css"$'\n'"$apps_cs
 	--no-lazy --no-interaction >/dev/null
 occ config:app:set theming_customcss cachebuster --value="$(date +%s)"
 unset apps_css apps_css_block
+
+# Retention and automatic tagging. Both work with collaborative tags (system tags), and their rules
+# are made in Administration settings, "Flow", or through their admin APIs. They are installed with
+# NO rules: a retention rule deletes files, and which files get which tag is the owner's choice, so
+# every rule needs the owner's yes. Example rules with their exact API bodies: docs/apps.md,
+# "Retention" and "Automatic tagging".
+# - files_retention: deletes files that carry a given tag once they are a given age (counted from
+#   when they were uploaded or from their last change). Deleted files go to the trash bin first.
+# - files_automatedtagging: gives a file a tag when it is uploaded or changed and matches a rule
+#   (folder, file type, size, name and so on). It deletes nothing.
+log "retention and automatic tagging (files_retention, files_automatedtagging), no rules here"
+nourax_app files_retention 6.0.0
+nourax_app files_automatedtagging 6.0.1
