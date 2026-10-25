@@ -17,6 +17,9 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoMail** | Nourax mail: the NoMail entry in the app menu, right after NoBoard, opens it in a new tab (`nextcloud-apps/nourax_branding/`) |
 | **Organisations and teams** | Each team gets a group, a team folder, a read-only team address book, a calendar and a board, made by the admin-only teams API ([docs/teams.md](docs/teams.md)) |
 | **Privacy between organisations** | People find, autocomplete and share (files, calendars, address books, boards) only with people of their own organisation; on since 2026-10-25 (`ORG_PRIVACY=on`, [docs/teams.md](docs/teams.md#privacy-between-organisations)) |
+| **NoTasks** | To-do lists with due dates, priorities and subtasks; lists are calendars, so they sync to phones (CalDAV) ([docs/apps.md](docs/apps.md#notasks)) |
+| **NoNotes** | Markdown notes, kept as files in the person's NoDrive folder `Notes`, so they are backed up, scanned and searchable ([docs/apps.md](docs/apps.md#nonotes)) |
+| **NoForms** | Forms, surveys and polls, shared with people, groups or a public link; answers export to a spreadsheet ([docs/apps.md](docs/apps.md#noforms)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

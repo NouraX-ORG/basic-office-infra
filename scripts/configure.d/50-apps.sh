@@ -56,9 +56,11 @@ nourax_app forms 5.4.1
 # back: occ config:app:set forms allowPermitAll --value=true --type=boolean (and allowShowToAll).
 if [ "$(occ config:app:get nourax_api org_privacy_step 2>/dev/null || true)" = on ]; then
 	for forms_key in allowPermitAll allowShowToAll; do
-		if [ "$(occ config:app:get forms "$forms_key" 2>/dev/null || true)" != false ]; then
-			occ config:app:set forms "$forms_key" --value=false --type=boolean >/dev/null
-		fi
+		# occ prints a stored boolean false as 0.
+		case "$(occ config:app:get forms "$forms_key" 2>/dev/null || true)" in
+			0 | false) ;;
+			*) occ config:app:set forms "$forms_key" --value=false --type=boolean >/dev/null ;;
+		esac
 		log "  NoForms $forms_key = false (org privacy is on)"
 	done
 	unset forms_key

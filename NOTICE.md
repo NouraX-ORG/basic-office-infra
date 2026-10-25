@@ -27,6 +27,9 @@ this repository.
 | Antivirus for files (`files_antivirus`) 6.5 | Sends uploads to ClamAV and refuses infected files (`scripts/configure.d/50-virus-scanner.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_antivirus |
 | Elasticsearch 9.5 (official `elasticsearch` image) | The search engine for search inside files (compose service `elasticsearch`, `config/elasticsearch/`), used only inside this service | Elastic License 2.0 (binaries); source also AGPL-3.0 or SSPL-1.0 | https://github.com/elastic/elasticsearch |
 | Full text search (`fulltextsearch`, `fulltextsearch_elasticsearch`, `files_fulltextsearch`) 35 | Indexes the text of files and NoBoard cards and adds the results to the search box (`scripts/configure.d/50-search.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/fulltextsearch |
+| Tasks (`tasks`) 0.18 | NoTasks, the to-do lists (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/tasks |
+| Notes (`notes`) 6.1 | NoNotes, the Markdown notes (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/notes |
+| Forms (`forms`) 5.4 | NoForms, forms and surveys (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/forms |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
