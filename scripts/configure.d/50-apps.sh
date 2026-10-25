@@ -32,3 +32,16 @@ nourax_app() {
 # teams are made through the app's API or occ (docs/apps.md, "Team folders").
 log "team folders (groupfolders)"
 nourax_app groupfolders 23.0.1
+
+# NoTasks, NoNotes, NoForms. Their app-menu names are in config/nextcloud/app-labels.d/50-apps.conf;
+# their texts are reworded by the branding sweep (20-branding.sh, and the nourax_branding app as soon
+# as an app is switched on or updated). Nothing is set here: each app keeps its own defaults.
+# - Tasks: to-do lists. They are calendars with tasks (CalDAV VTODO), so they sync to phones like
+#   NoCalendar and are kept in the database.
+# - Notes: Markdown notes, kept as .md files in each person's NoDrive folder "Notes", so they are
+#   in the backups and are virus-scanned and searchable like any other file.
+# - Forms: forms and surveys; questions and answers are kept in the database.
+log "NoTasks, NoNotes, NoForms (tasks, notes, forms)"
+nourax_app tasks 0.18.1
+nourax_app notes 6.1.0
+nourax_app forms 5.4.1
