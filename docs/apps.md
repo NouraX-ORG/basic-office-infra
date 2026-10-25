@@ -12,9 +12,12 @@ the script logs each app's version and prints a `WARNING` when it is not the rel
 | `tasks` | NoTasks | 0.18.1 | AGPL-3.0-or-later |
 | `notes` | NoNotes | 6.1.0 | AGPL-3.0-or-later |
 | `forms` | NoForms | 5.4.1 | AGPL-3.0-or-later |
+| `files_retention` | [Retention](#retention) (in Administration settings, Flow) | 6.0.0 | AGPL-3.0-or-later |
+| `files_automatedtagging` | [Automatic tagging](#automatic-tagging) (in Administration settings, Flow) | 6.0.1 | AGPL-3.0-or-later |
 
 The app-menu names (NoTasks, NoNotes, NoForms) are in `config/nextcloud/app-labels.d/50-apps.conf`;
-`scripts/configure.sh` turns them into the theme CSS.
+`scripts/configure.sh` turns them into the theme CSS. Retention and automatic tagging have no
+app-menu entry.
 
 Two more apps ship with the server itself, so nothing is downloaded. `scripts/configure.d/50-audit.sh`
 switches them on ([Suspicious login](#suspicious-login), [Audit log](#audit-log)):
@@ -248,6 +251,212 @@ Checked on 2026-10-25:
   menu entry; NoNotes' shared-note marker, drawn in the upstream blue (now cobalt); and the colour
   picker's "Nextcloud blue" swatch. NoTasks lists start in the theme colour, not the upstream blue.
 - **Admins only:** the app descriptions on the Apps page (swept too).
+
+## Retention
+
+`files_retention` 6.0.0 deletes files on its own once they carry a given tag and are old enough.
+`scripts/configure.d/50-apps.sh` installs it with **no rules**. Every rule deletes files, so every
+rule needs the owner's yes. The examples below are ready to use but switched off.
+
+- **A rule** names one collaborative tag (a "system tag") and an age: a number of days, weeks,
+  months or years, counted from the upload or from the last change. There is one rule per tag.
+- **When it runs:** each rule gets a background job that runs once a day in the night window
+  (01:00 to 06:00 UTC). It looks at every file with the tag, in every account and team folder,
+  and deletes the ones that are old enough.
+- **Deleted means trash first.** The file goes to the trash like a file someone deleted by hand:
+  the owner's NoDrive trash, or the team folder's own trash. It is gone for everyone it was shared
+  with. The trash keeps it for at least 30 days (the server default `auto`; after that it is
+  removed only when space is needed), and the owner can restore it until then.
+- **Only the file's own tag counts.** A tag on a folder does not count for the files inside it.
+  But a **folder** that carries the tag is deleted as a whole, with everything in it, once the
+  folder is old enough. So the tagging rules that feed a retention rule leave folders out ("File
+  MIME type is not Folder").
+- **Use restricted tags.** Anyone who may change a file can add or remove a public tag on it. With a
+  public retention tag, someone a file is shared with for editing could tag it and get it deleted,
+  or remove the tag and keep it. Only admins and tagging rules can add or remove a restricted tag, and people still
+  see it. An invisible tag is hidden from people altogether. The upstream manual gives the same
+  advice.
+- **A warning the day before:** the option "Notify owner a day before a file is automatically
+  deleted" is off (`files_retention notify_before`). When it is on, the owner gets a notification
+  "*file name* will be removed in 24 hours", with the text "Your systems retention rules will
+  delete this file within 24 hours." Switch it on with the first rule:
+  `OCC config:app:set files_retention notify_before --value=yes`.
+- **Where:** Administration settings > Flow, "Retention". Only admins can open it, and only from the
+  owner's IP (WAF rule 1).
+
+**API** (admins only), at `https://drive.nourax.org/ocs/v2.php/apps/files_retention/api/v1/`, with
+the header `OCS-APIRequest: true`. These calls need no password confirmation, so an admin's app
+password works.
+
+| Call | Body | What it does |
+|---|---|---|
+| `GET /retentions` | | All rules: `id`, `tagid`, `timeunit`, `timeamount`, `timeafter` |
+| `POST /retentions` | `tagid`; `timeunit` (0 days, 1 weeks, 2 months, 3 years); `timeamount` (1 to 32000); `timeafter` (0 from the upload, 1 from the last change) | Makes a rule (HTTP 201). A wrong value, or a tag that already has a rule, gives HTTP 400 with `{"error":"tagid"}` (or `timeunit`, …) |
+| `DELETE /retentions/{id}` | | Removes a rule (HTTP 204). Files that were already deleted stay in the trash |
+
+**Example rules** (not switched on; each one needs the owner's yes):
+
+| # | Tag (access) | Rule | API body | Where the tag comes from |
+|---|---|---|---|---|
+| R1 | `Temporary` (restricted) | delete 30 days after the upload | `{"tagid": <id of Temporary>, "timeunit": 0, "timeamount": 30, "timeafter": 0}` | Tagging rule T4 below: files saved into a top-level folder `Temporary` |
+| R2 | `Large file` (restricted) | delete 1 year after the last change | `{"tagid": <id of Large file>, "timeunit": 3, "timeamount": 1, "timeafter": 1}` | Tagging rule T3 below. It deletes every big file nobody changed for a year (videos, backups), so only if that is wanted |
+
+How to make one (on the server, after the owner's yes):
+
+```
+OCC tag:add "Temporary" restricted --output=json      # prints {"id":<tag id>,"name":"Temporary","access":"restricted"}
+sudo docker compose exec -T -u www-data app php <<'PHP'
+<?php
+require '/var/www/html/lib/base.php';
+$retention = \OCP\Server::get(\OCA\Files_Retention\Service\RetentionService::class);
+// tag id, unit (0 days, 1 weeks, 2 months, 3 years), amount, from (0 upload, 1 last change)
+echo 'retention rule ', $retention->addRetention(<tag id>, 0, 30, 0), PHP_EOL;
+PHP
+```
+
+Or with the API from the owner's PC, with an admin app password in a netrc file (never on the
+command line):
+
+```
+curl -s --netrc-file <netrc file> -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
+	-H 'Content-Type: application/json' -d '{"tagid":<tag id>,"timeunit":0,"timeamount":30,"timeafter":0}' \
+	https://drive.nourax.org/ocs/v2.php/apps/files_retention/api/v1/retentions
+```
+
+Undo: `DELETE …/retentions/<rule id>`, or `$retention->deleteRetention(<rule id>)` in the same PHP.
+The tag itself stays; deleting a tag is a separate owner-yes (`OCC tag:delete <tag id>`).
+
+## Automatic tagging
+
+`files_automatedtagging` 6.0.1 adds collaborative tags to files when they are uploaded or changed
+and match a rule. It never deletes or moves anything. `scripts/configure.d/50-apps.sh` installs it
+with **no rules**: which files get which tag is the owner's choice. Four rules are proposed below.
+
+- **A rule** is a Flow rule: one or more checks that must all match (file name, file type, size,
+  the address of the request, the time, the person's group, their IP range, their app) and the
+  tags to add.
+- **When:** each time a file is written, new or changed, in someone's NoDrive or in a team folder.
+  Not for versions, the trash or the parts of an upload in progress (checked on the server, see
+  the tests). Files that already exist are not tagged when a rule is made.
+- **Where:** Administration settings > Flow, "Automated tagging" (admins, from the owner's IP). The
+  app has no settings page of its own: it adds itself to the Flow page.
+- **People's own rules:** the app also allows rules per person (Personal settings > Flow) that tag
+  only that person's files, with tags they may use. In practice nobody can make one today: the
+  settings pages open only from the owner's IP (WAF rule 1), and the API needs a password
+  confirmation, which an app password can't give.
+- **Folders:** a rule matches folders too, unless it has the check "File MIME type is not Folder"
+  (`httpd/unix-directory`). T1 and T4 have it; T2 and T3 can't match a folder.
+- **Tags are seen server-wide.** The name of every public or restricted tag shows to everyone on the
+  server, in every organisation (which files carry it does not). So tag names stay neutral, like
+  the ones below.
+- **Cost:** with no rules, each file write runs one extra lookup; nothing to measure in memory.
+
+**Proposed rules** (none switched on; the owner picks):
+
+| # | Tag (access) | Checks (all must match) | What it is for |
+|---|---|---|---|
+| T1 | `NoMail` (restricted) | Request URL matches `/\/remote\.php\/(dav\/files\/[^\/]+\|webdav)\/NoMail\/Received\//i`; File MIME type is not `httpd/unix-directory` | Attachments that NoMail saves. NoMail writes each one with one WebDAV `PUT` to `/NoMail/Received/<yyyy-mm>/`, so they can be found and filtered by tag |
+| T2 | `Invoice` (public, so people can remove a wrong guess) | File MIME type is `application/pdf`; File name matches `/(^\|[^a-z])(invoice\|receipt\|bill)s?([^a-z]\|$)/i` | PDFs named like invoices. It matches `Invoice-2026-10.pdf`, `invoice_123.pdf`, `Receipt.pdf`, `phone bill.pdf`, `bills.pdf`; not `billing-report.pdf` or `Billy.pdf` |
+| T3 | `Large file` (restricted) | File size is greater than `100 MB` | Big files, for clean-ups and as a retention candidate (R2) |
+| T4 | `Temporary` (restricted) | Request URL matches `/\/remote\.php\/(dav\/files\/[^\/]+\|webdav)\/Temporary\//i`; File MIME type is not `httpd/unix-directory` | Only together with retention rule R1: a top-level folder `Temporary` that empties itself |
+
+**Limits.**
+
+- T1 and T4 read the address of the request, so they tag a file uploaded straight into the folder
+  with one request (as NoMail does). They don't tag a file moved or copied there, a browser upload
+  sent in parts (over 50 MiB; its address is `/remote.php/dav/uploads/…`), or a file the server
+  writes itself. If Task 6's `nourax_api` saves files for NoMail on the server, it should add the
+  tag itself (`OCP\SystemTag\ISystemTagObjectMapper::assignTags`).
+- T3 reads the size from the upload's `OC-Total-Length` or `Content-Length` header, so it sees
+  uploads (also those sent in parts), not files the server writes itself.
+
+**Rule bodies.** For the workflow API (`POST /ocs/v2.php/apps/workflowengine/api/v1/workflows/global`,
+admins only) and for the PHP below. Put the tag's id in `operation` (several ids: comma-separated).
+T1:
+
+```json
+{"class": "OCA\\FilesAutomatedTagging\\Operation", "name": "",
+ "checks": [
+  {"class": "OCA\\WorkflowEngine\\Check\\RequestURL", "operator": "matches",
+   "value": "/\\/remote\\.php\\/(dav\\/files\\/[^\\/]+|webdav)\\/NoMail\\/Received\\//i"},
+  {"class": "OCA\\WorkflowEngine\\Check\\FileMimeType", "operator": "!is", "value": "httpd/unix-directory"}],
+ "operation": "<id of NoMail>", "entity": "OCA\\WorkflowEngine\\Entity\\File", "events": []}
+```
+
+T2, T3 and T4 use the same frame with these `checks`:
+
+```json
+[{"class": "OCA\\WorkflowEngine\\Check\\FileMimeType", "operator": "is", "value": "application/pdf"},
+ {"class": "OCA\\WorkflowEngine\\Check\\FileName", "operator": "matches", "value": "/(^|[^a-z])(invoice|receipt|bill)s?([^a-z]|$)/i"}]
+
+[{"class": "OCA\\WorkflowEngine\\Check\\FileSize", "operator": "greater", "value": "100 MB"}]
+
+[{"class": "OCA\\WorkflowEngine\\Check\\RequestURL", "operator": "matches",
+  "value": "/\\/remote\\.php\\/(dav\\/files\\/[^\\/]+|webdav)\\/Temporary\\//i"},
+ {"class": "OCA\\WorkflowEngine\\Check\\FileMimeType", "operator": "!is", "value": "httpd/unix-directory"}]
+```
+
+How to make one, after the owner's yes:
+
+1. **Easiest:** sign in as the admin from the owner's PC, open Administration settings > Flow,
+   "Automated tagging", "Add new flow", and enter the checks and the tag from the table.
+2. **On the server:** make the tag, then add the rule with the server's own service. The workflow
+   API refuses an app password (it asks for a password confirmation), and only an admin may put a
+   restricted tag in a rule, so the script acts as the admin account for this one call:
+
+   ```
+   OCC tag:add "NoMail" restricted --output=json      # note the id
+   sudo docker compose exec -T -u www-data app php <<'PHP'
+   <?php
+   require '/var/www/html/lib/base.php';
+   use OCP\Server;
+   Server::get(\OCP\IUserSession::class)->setUser(Server::get(\OCP\IUserManager::class)->get('nodrive'));
+   $rule = json_decode(<<<'JSON'
+   (the rule body from above, with the tag's id in "operation")
+   JSON, true, 512, JSON_THROW_ON_ERROR);
+   $op = Server::get(\OCA\WorkflowEngine\Manager::class)->addOperation($rule['class'], $rule['name'],
+   	$rule['checks'], $rule['operation'], new \OCA\WorkflowEngine\Helper\ScopeContext(0),
+   	$rule['entity'], $rule['events']);
+   echo 'tagging rule ', $op['id'], PHP_EOL;
+   PHP
+   ```
+
+Undo: delete the rule on the Flow page, or in the same PHP
+`Server::get(\OCA\WorkflowEngine\Manager::class)->deleteOperation(<rule id>, new \OCA\WorkflowEngine\Helper\ScopeContext(0))`.
+Tags it already added stay on the files; `OCC tag:files:delete <file id or path> <tag> <access>`
+removes one.
+
+**Test after switching one on:** as a QA account, upload a matching file (for T1: `MKCOL`
+`NoMail/`, `NoMail/Received/`, `NoMail/Received/2026-10/`, then `PUT` a PDF there), and read its
+tags with a `PROPFIND` of `<nc:system-tags/>`: the answer lists `NoMail`.
+
+### Names on screen (retention, automatic tagging)
+
+- **Texts:** the branding sweep rewrote both apps' translations as soon as they were switched on
+  (the app descriptions named the upstream). `scripts/check-branding.sh --server --only l10n` found
+  nothing.
+- **What people see:** tags on their files and, if `notify_before` is on, the retention
+  notification above; neither names the upstream.
+- **Admins only:** the Flow page. Its "Open documentation" links lead to our help page
+  (`/apps/nourax_branding/help/…`), not the upstream docs.
+
+### Tested on 2026-10-25
+
+| Check | Result |
+|---|---|
+| `OCC app:list --output=json \| jq -r '.enabled.files_retention, .enabled.files_automatedtagging'` | `6.0.0`, `6.0.1` (installed by `50-apps.sh`: "files_retention 6.0.0 installed", "files_automatedtagging 6.0.1 installed") |
+| `OCC workflows:list admin` (the scope is `admin` or `user`; `global` is refused as "Invalid scope") | `[]` |
+| Database, read only: `select count(*)` of `oc_retention`, `oc_flow_operations`, `oc_systemtag`, and `oc_jobs` of class `OCA\Files_Retention\BackgroundJob\RetentionJob` | 0, 0, 0, 0: no rules, no tags, no retention jobs |
+| Read-only PHP: the admin settings of the Flow section (`IManager::getAdminSettings('workflow')`, after loading the apps) | `OCA\WorkflowEngine\Settings\Admin`, `OCA\Files_Retention\Settings\Admin` (priority 80). files_automatedtagging has no settings class of its own in 6.0.1 |
+| Read-only PHP: the data of the admin Flow page (`workflowengine-operators`) | offers `OCA\FilesAutomatedTagging\Operation` "Automated tagging" (for admins and per person) and `OCA\Files_Versions\BlockVersioningOperation`; `files_retention-notify_before` false |
+| `Operation::isTaggingPath` for `qa-t5-1` (storage `object::user:qa-t5-1`, in R2) | `files/…` yes, including `files/NoMail/Received/2026-10/x.pdf`; `uploads/…`, `files_versions/…`, `files_trashbin/…` no; a file in the QA team folder (`object::store:object::groupfolder:1…`) yes |
+| The checks of T1 to T4 (`validateCheck`) and the two patterns | all valid for a global rule on files. T1's pattern matches `…/dav/files/<uid>/NoMail/Received/2026-10/a b.pdf`, not `…/NoMail/Sent/…` or `…/dav/uploads/…` |
+| Dry run in one database transaction, then rolled back: 4 tags (public, as no admin was signed in), rules T1 to T4 through `Manager::addOperation`, R1 and R2 through `RetentionService::addRetention` | all made; a second retention rule on the same tag refused (`tagid`); a restricted tag without an admin session refused ("At least one of the given tags is invalid"). After the rollback all counts were 0 again. The audit log kept 5 "System tag … created" lines for these tags, which never existed |
+| As `qa-t5-1` (not an admin): `GET` and `POST …/files_retention/api/v1/retentions`, `GET …/workflowengine/api/v1/workflows/global` | HTTP 403 "Logged in account must be an admin"; no rule made |
+| As `qa-t5-1`: `GET …/workflowengine/api/v1/workflows/user` | HTTP 200, `[]` |
+| As `qa-t5-1`: WebDAV `PUT qa-t5-6/invoice-2026-10.txt`, `PROPFIND` of tags, `GET` | 201, no tags, 200; no log lines from the two apps |
+| `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server --only l10n` | `8443 checked, 0 FAIL` |
+| The app and cron containers | not recreated |
 
 ## Suspicious login
 

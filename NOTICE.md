@@ -31,6 +31,8 @@ this repository.
 | Notes (`notes`) 6.1 | NoNotes, the Markdown notes (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/notes |
 | Forms (`forms`) 5.4 | NoForms, forms and surveys (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/forms |
 | Suspicious Login (`suspicious_login`) 13, shipped with the server | Warns people about sign-ins from unusual addresses (`scripts/configure.d/50-audit.sh`); bundles Rubix ML and other libraries under MIT, and joomla/string under GPL-2.0-or-later | AGPL-3.0-or-later | https://github.com/nextcloud/suspicious_login |
+| Retention (`files_retention`) 6.0 | Deletes files with a given tag after a set time; installed with no rules (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_retention |
+| Files automated tagging (`files_automatedtagging`) 6.0 | Tags files by rules as they are written; installed with no rules (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_automatedtagging |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
