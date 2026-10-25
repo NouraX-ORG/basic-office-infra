@@ -113,7 +113,9 @@ async function putChunk(dav: Dav, t: Ticket, n: number, request: Request, cors: 
 		"OC-Total-Length": String(t.size),
 		"Content-Type": "application/octet-stream",
 	}, readable);
-	if (res.status !== 201 && res.status !== 204) throw new UpstreamError(res.status, `upload chunk ${n}`);
+	// Nextcloud 35 on object storage answers a stored chunk with an empty 200, not 201: its
+	// ChunkingV2Plugin stops Sabre's PUT handling before Sabre sends the 201 it set.
+	if (res.status !== 200 && res.status !== 201 && res.status !== 204) throw new UpstreamError(res.status, `upload chunk ${n}`);
 	return json(cors, 201, { chunk: n, size: expected });
 }
 

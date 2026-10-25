@@ -1,8 +1,9 @@
 // Reference implementation of upload-ticket minting, for tests and for NoMail's Edge Function.
 // The function below uses only WebCrypto, so it runs unchanged in Deno (Supabase) and Node 20+.
 //
-// CLI (used by tests/nomail-contract.sh):
+// CLI (used by tests/worker-local.sh):
 //   node tools/mint-ticket.mjs <key-file> <uid> <login> <app-password-file> <path> <size> [chunk] [upload-id]
+// <key-file> "-" reads the key from stdin, so it can be piped from the server without a file.
 // Prints the ticket on stdout. Never log it: it is a bearer credential for one upload.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -56,7 +57,7 @@ if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}` || pr
 		console.error("usage: mint-ticket.mjs <key-file> <uid> <login> <app-password-file> <path> <size> [chunk] [upload-id]");
 		process.exit(2);
 	}
-	const ticket = await mintUploadTicket(readFileSync(keyFile, "utf8"), {
+	const ticket = await mintUploadTicket(readFileSync(keyFile === "-" ? 0 : keyFile, "utf8"), {
 		uid,
 		login,
 		pass: readFileSync(passFile, "utf8").trim(),

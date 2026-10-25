@@ -3,10 +3,13 @@
   "name": "nodrive-upload",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-20",
+  // No workers.dev URL, no preview URLs and no route: a deploy only uploads the script.
   "workers_dev": false,
   "preview_urls": false,
-  // Only this path on the Drive hostname runs the Worker; everything else goes straight to Nextcloud.
-  "routes": [{ "pattern": "drive.nourax.org/nomail-upload/*", "zone_name": "nourax.org" }],
+  // The route is added only after the owner's yes (docs/nomail-contract.md, "Upload Worker").
+  // Then this line goes back in, so later deploys keep the route:
+  //   "routes": [{ "pattern": "drive.nourax.org/nomail-upload/*", "zone_name": "nourax.org" }],
+  // Only that path on the Drive hostname runs the Worker; everything else goes straight to Nextcloud.
   "observability": { "enabled": true },
   "vars": {
     "ORIGIN_BASE": "https://drive.nourax.org",
@@ -16,4 +19,5 @@
   }
   // Secret (set with `wrangler secret put`, never committed):
   //   UPLOAD_TICKET_KEY   32 random bytes, base64url. NoMail holds the same value as DRIVE_UPLOAD_TICKET_KEY.
+  //                       The server keeps it as /etc/nourax/secrets/upload_ticket_key.
 }

@@ -108,6 +108,22 @@ describe("chunks", () => {
 		expect(res.status).toBe(201);
 	});
 
+	it("accepts the empty 200 that Nextcloud 35 sends for a chunk on object storage", async () => {
+		// ChunkingV2Plugin::beforePut sets 201 and stops the event chain, so Sabre never sends its
+		// response and PHP's default 200 (text/html, no body) goes out. The chunk is stored.
+		mockDrive([new Response(null, { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } })]);
+		const res = await call("/chunks/1", { method: "PUT", body: new Uint8Array(5 * MiB) });
+		expect(res.status).toBe(201);
+		expect(await res.json()).toEqual({ chunk: 1, size: 5 * MiB });
+	});
+
+	it("does not take a redirect for a stored chunk", async () => {
+		mockDrive([new Response(null, { status: 302, headers: { Location: "https://drive.test/login" } })]);
+		const res = await call("/chunks/1", { method: "PUT", body: new Uint8Array(5 * MiB) });
+		expect(res.status).toBe(502);
+		expect(((await res.json()) as { error: { code: string } }).error.code).toBe("drive_error");
+	});
+
 	it("rejects a chunk of the wrong length before calling the Drive", async () => {
 		const calls = mockDrive([]);
 		const res = await call("/chunks/1", { method: "PUT", body: new Uint8Array(4 * MiB) });
