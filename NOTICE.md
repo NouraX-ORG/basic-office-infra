@@ -23,6 +23,8 @@ this repository.
 | cloudflared | Cloudflare Tunnel connector | Apache-2.0 | https://github.com/cloudflare/cloudflared |
 | nc_Gantt 2.4.1 (`nc_gantt`, by fds2610) | NoGantt, the project planner; its texts reworded by theme translation overrides (`scripts/configure.d/55-gantt.sh`) | AGPL-3.0-or-later | https://codeberg.org/fds2610/NC-Gantt |
 | Team Folders (`groupfolders`) 23 | Team folders shared by a group (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/groupfolders |
+| ClamAV 1.5 (official `clamav/clamav` image) | The virus scanner (compose service `clamav`, `config/clamav/`) | GPL-2.0-only | https://github.com/Cisco-Talos/clamav |
+| Antivirus for files (`files_antivirus`) 6.5 | Sends uploads to ClamAV and refuses infected files (`scripts/configure.d/50-virus-scanner.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_antivirus |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
