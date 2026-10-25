@@ -25,6 +25,8 @@ this repository.
 | Team Folders (`groupfolders`) 23 | Team folders shared by a group (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/groupfolders |
 | ClamAV 1.5 (official `clamav/clamav` image) | The virus scanner (compose service `clamav`, `config/clamav/`) | GPL-2.0-only | https://github.com/Cisco-Talos/clamav |
 | Antivirus for files (`files_antivirus`) 6.5 | Sends uploads to ClamAV and refuses infected files (`scripts/configure.d/50-virus-scanner.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/files_antivirus |
+| Elasticsearch 9.5 (official `elasticsearch` image) | The search engine for search inside files (compose service `elasticsearch`, `config/elasticsearch/`), used only inside this service | Elastic License 2.0 (binaries); source also AGPL-3.0 or SSPL-1.0 | https://github.com/elastic/elasticsearch |
+| Full text search (`fulltextsearch`, `fulltextsearch_elasticsearch`, `files_fulltextsearch`) 35 | Indexes the text of files and NoBoard cards and adds the results to the search box (`scripts/configure.d/50-search.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/fulltextsearch |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
