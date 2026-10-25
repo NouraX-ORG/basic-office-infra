@@ -12,5 +12,6 @@ declare(strict_types=1);
 return [
 	'routes' => [
 		['name' => 'nomail#health', 'url' => '/v1/health', 'verb' => 'GET'],
+		['name' => 'nomail#provision', 'url' => '/v1/provision', 'verb' => 'POST'],
 	],
 ];
