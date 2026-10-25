@@ -193,7 +193,7 @@ PHP
 	# Colour: projects without their own colour get the upstream brand blue (#0082c9) from the app.
 	# Show Nourax cobalt instead, in the chart bars, the colour dots and the colour swatches.
 	log "  colours: Nourax cobalt in place of the upstream default project colour"
-	gantt_css_block='/* NoGantt:start - Nourax cobalt in place of the default project colour #0082c9 (scripts/configure.d/55-gantt.sh) */
+	gantt_css_block='/* NoGantt:start - Nourax cobalt in place of the upstream default project colour (scripts/configure.d/55-gantt.sh) */
 body:has(#content.app-nc_gantt) .gantt-fill-0082c9 .bar { fill: #2563EB !important; }
 body:has(#content.app-nc_gantt) .gantt-fill-0082c9 .bar-progress { fill: #2563EBcc !important; }
 body:has(#content.app-nc_gantt) [style*="background: rgb(0, 130, 201)"],
