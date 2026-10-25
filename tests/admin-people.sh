@@ -37,6 +37,9 @@ OCS="https://${DRIVE_HOST}/ocs/v2.php"
 DECK="https://${DRIVE_HOST}/index.php/apps/deck/api/v1.0"
 
 log "base URL: $API_BASE"
+# Start from the stored state: the drift job takes out what earlier tests added with occ (for
+# example qa-t6-5 from admin-api.sh), and its next run is then 15 minutes away, longer than this test.
+log "drift job run now (next run in 15 minutes); last run $(drift_job_now)"
 
 # --- Helpers -------------------------------------------------------------------------------------
 
