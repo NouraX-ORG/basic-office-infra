@@ -198,10 +198,13 @@ services:
       ingest.geoip.downloader.enabled: "false"
       # Heap, then the JVM's own log: warnings only, to the container log (docker compose logs),
       # instead of the default GC log files inside the container (up to 2 GB, and file cache that
-      # counts against the limit below).
+      # counts against the limit below). Last, once a minute the JVM gives the C memory it has
+      # freed back to the system (glibc's malloc_trim). Without that, memory the Java compiler
+      # used once and freed stays counted against the limit.
       ES_JAVA_OPTS: >-
         -Xms${ES_JAVA_HEAP:-512m} -Xmx${ES_JAVA_HEAP:-512m}
         -Xlog:disable -Xlog:all=warning:stderr:utctime,level,tags
+        -XX:TrimNativeHeapInterval=60000
       # Fewer C memory pools (glibc arenas) for Elasticsearch's many threads: less memory outside
       # the heap on a small server.
       MALLOC_ARENA_MAX: "2"

@@ -433,11 +433,15 @@ both, indexes every file again in `jobs`, searches each word as the given person
 
 `/proc/swaps` both times: `/swapfile`, size 4194300 kB, used 1198044 kB. So search inside files
 takes about 830 MB of the server's memory, nearly all of it Elasticsearch. Swap does not go down
-when it stops: it was filled at 04:50, the first time Elasticsearch started, when the kernel moved
-memory that was rarely used there, mostly ClamAV's signatures (851 MiB of ClamAV is in swap) and
-part of the editors. Both keep working (clamd answered `VERSION` in 0.4 seconds and a clean upload
-was scanned and stored in 0.9 seconds afterwards); the first scans after a quiet time are a little
-slower while the signatures come back from swap.
+when Elasticsearch stops because very little of it is Elasticsearch's. It was filled between 04:40
+and 04:50 UTC (sar: from 180 MB to 1.1 GB, while the virus scanner's large-upload tests ran; about
+3.4 GB were written to the disk in those ten minutes, swap included), before Elasticsearch ever
+started: its data volume was made at 04:53:07. The kernel moved memory that was rarely used to
+swap, mostly ClamAV's signatures and part of the editors. Swap by service at 10:44 UTC (each
+container's `memory.swap.current`, now the report's *swap by service* line): clamav 880 MiB,
+onlyoffice 271, elasticsearch 29, db 11, all the others 3. Both keep working (clamd answered
+`VERSION` in 0.4 seconds and a clean upload was scanned and stored in 0.9 seconds afterwards); the
+first scans after a quiet time are a little slower while the signatures come back from swap.
 
 **What fills Elasticsearch's 1 GiB.** The Java heap (512 MiB) is taken in full at the start
 (`-XX:+AlwaysPreTouch`, Elastic's default), so it never grows. Outside the heap Java keeps the

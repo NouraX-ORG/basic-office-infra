@@ -2,7 +2,8 @@
 # Memory of the server and of the add-on services (search engine, virus scanner, jobs).
 #   sudo config/elasticsearch/memory-report.sh [LABEL]
 #       One report: free -m, /proc/swaps, docker stats, the add-ons' memory as the kernel counts
-#       it (limit, use, highest use, times at the limit, OOM kills, swap) and Elasticsearch's heap.
+#       it (limit, use, highest use, times at the limit, OOM kills, swap), the swap of every
+#       service, and Elasticsearch's heap.
 #   sudo config/elasticsearch/memory-report.sh --around-start [USER WORD...]
 #       Before and after Elasticsearch: stops the services "elasticsearch" and "jobs", waits a
 #       minute, reports "before"; starts both again, indexes all files again (in "jobs"), searches
@@ -17,16 +18,24 @@ need_root
 # shellcheck disable=SC1090
 . <(sed -n '/^es_api()/,/^}/p' "$REPO_DIR/scripts/configure.d/50-search.sh")
 
+# cgroup_dir SERVICE: the directory of the service's running container in the cgroup (v2) tree,
+# or nothing when it is not running.
+cgroup_dir() {
+	local id
+	id="$(dc ps -q "$1" 2>/dev/null)"
+	[ -n "$id" ] || return 0
+	id="$(docker inspect -f '{{.Id}}' "$id")"
+	printf '/sys/fs/cgroup/system.slice/docker-%s.scope' "$id"
+}
+
 # cgroup_line SERVICE: the container's memory as its cgroup (v2) counts it, in MiB.
 cgroup_line() {
-	local id dir
-	id="$(dc ps -q "$1" 2>/dev/null)"
-	if [ -z "$id" ]; then
+	local dir
+	dir="$(cgroup_dir "$1")"
+	if [ -z "$dir" ]; then
 		printf '%-14s not running\n' "$1"
 		return 0
 	fi
-	id="$(docker inspect -f '{{.Id}}' "$id")"
-	dir="/sys/fs/cgroup/system.slice/docker-$id.scope"
 	if [ ! -r "$dir/memory.current" ]; then
 		printf '%-14s no cgroup v2 numbers\n' "$1"
 		return 0
@@ -64,6 +73,15 @@ report() {
 	for svc in elasticsearch clamav jobs; do
 		cgroup_line "$svc"
 	done
+	# Whose memory is in swap: the swap used above, per running service (swap stays used after the
+	# memory was needed elsewhere, until the service reads that memory again or restarts).
+	local line="" dir
+	for svc in $(dc ps --format '{{.Service}}' 2>/dev/null); do
+		dir="$(cgroup_dir "$svc")"
+		[ -r "$dir/memory.swap.current" ] || continue
+		line+="$svc $(( $(<"$dir/memory.swap.current") / 1048576 ))  "
+	done
+	echo "--- swap by service, in MiB: ${line:-no cgroup v2 numbers}"
 	if [ "$(dc ps --format '{{.Health}}' elasticsearch 2>/dev/null)" = healthy ]; then
 		echo '--- Elasticsearch Java, in MiB'
 		es_api GET '/_nodes/_local/stats/jvm?filter_path=nodes.*.jvm.mem,nodes.*.jvm.threads' </dev/null \
