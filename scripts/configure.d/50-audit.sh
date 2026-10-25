@@ -77,8 +77,8 @@ nourax_audit() {
 
 	# The apps' own background jobs, registered when they are switched on: suspicious_login moves new
 	# sign-ins into its table every hour (ETLJob) and trains its models once a day in the night window
-	# (TrainJobIpV4, TrainJobIpV6; maintenance_window_start = 1, so 01:00-05:00 UTC); admin_audit's
-	# Rotate job rotates the audit log. A missing one is only logged.
+	# (TrainJobIpV4, TrainJobIpV6; maintenance_window_start = 1, so 01:00-06:00 UTC, after one first
+	# run straight away); admin_audit's Rotate job rotates the audit log. A missing one is only logged.
 	local job count missing=""
 	for job in 'OCA\SuspiciousLogin\BackgroundJob\ETLJob' 'OCA\SuspiciousLogin\BackgroundJob\TrainJobIpV4' \
 		'OCA\SuspiciousLogin\BackgroundJob\TrainJobIpV6' 'OCA\AdminAudit\BackgroundJobs\Rotate'; do

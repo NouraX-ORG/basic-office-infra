@@ -279,7 +279,7 @@ it has no settings of ours.
 | Job | When | What it does |
 |---|---|---|
 | `OCA\SuspiciousLogin\BackgroundJob\ETLJob` | every hour | Moves new sign-ins (`oc_login_address`: account, address, time) into one row per account and address (`oc_login_ips_aggregated`: how often, first and last seen), up to 10,000 per run |
-| `OCA\SuspiciousLogin\BackgroundJob\TrainJobIpV4` and `…TrainJobIpV6` | once a day, between 01:00 and 05:00 UTC (`maintenance_window_start` = 1) | Trains a small neural network (Rubix ML, in PHP, in the cron container) on up to 60 days of sign-ins, keeping the last 7 days to test it |
+| `OCA\SuspiciousLogin\BackgroundJob\TrainJobIpV4` and `…TrainJobIpV6` | once, minutes after the app is switched on; then once a day in the night window, 01:00 to 06:00 UTC (`maintenance_window_start` = 1 lets such jobs run in the hours 1 to 5) | Trains a small neural network (Rubix ML, in PHP, in the cron container) on up to 60 days of sign-ins, keeping the last 7 days to test it |
 
 The app trains only when it has an IPv4 address first seen at least 60 days earlier, so **the first
 model comes about 60 days after the app was switched on (from about 24 December 2026)**. Until then
@@ -391,7 +391,7 @@ sudo docker compose exec -T app grep -h 'Login failed' data/audit.log | jq -c '{
 | `OCC app:list --output=json \| jq -r '.enabled.suspicious_login, .enabled.admin_audit'` | `13.0.0`, `2.0.0` |
 | `OCC config:system:get log.condition --output=json` | exactly the `matches` value above. Not the upstream `{"apps":["admin_audit"]}`, on purpose: core `lib/private/Log.php` (`getLogLevel`) lets every line of an app named in a plain `apps` entry through before it reads `matches`, and admin_audit's `ConsoleEventListener` writes each occ command with all its arguments. With the plain value, the ONLYOFFICE key that `configure.sh` hands to occ would be written to `audit.log` in plain text on every run |
 | `OCC config:system:get log_rotate_size` | `52428800` |
-| `OCC background-job:list --class=<job> --output=json \| jq length` for ETLJob, TrainJobIpV4, TrainJobIpV6 and admin_audit's Rotate | 1 each. ETLJob ran at 11:50 UTC, minutes after the app was switched on; the others wait for their time |
+| `OCC background-job:list --class=<job> --output=json \| jq length` for ETLJob, TrainJobIpV4, TrainJobIpV6 and admin_audit's Rotate | 1 each. All four ran at 11:50 UTC, minutes after the apps were switched on (a new job runs once straight away). The training jobs found too little data; since then `oc_jobs` marks them for the night window (`time_sensitive` 0, read only), so with their 24-hour interval they next run on 27 October between 01:00 and 06:00 UTC |
 | As `qa-t5-1` from the server's address: WebDAV `PUT` (201), then `GET` (200) of `audit-test.txt` | `audit.log` got "Login successful", "File with id "1126" created", "… written to", then "… accessed", each with `remoteAddr` 57.129.185.78 and the user `qa-t5-1` |
 | The same after the "Login attempt" rule (`PUT` 204, `GET` 200) | the same lines; no "Login attempt" lines from then on |
 | `grep -c "Console command executed" data/audit.log` after dozens of occ commands | 0 |
