@@ -105,6 +105,95 @@ finds), and fails on any spelling of the name. The rules have their own tests:
 
 **Undo.** `occ config:system:delete theme` switches the overrides off; the files stay and do nothing.
 
+## Links and assets
+
+Nothing a person can click may lead to an upstream website (nextcloud.com and its docs, apps, help
+and newsletter sites, github.com/nextcloud, the upstream's social media and app store pages), and no
+page may show the upstream logo, icon or blue. Checked against Nextcloud 35.0.2 on 2026-10-25. Four
+parts do it; all of them come back by themselves when `sudo scripts/configure.sh` runs.
+
+**Settings** (`scripts/configure.d/20-branding.sh`):
+
+| Setting | What it hides or changes | Undo |
+|---|---|---|
+| `customclient_desktop`, `customclient_android`, `customclient_ios`, `customclient_fdroid`, `customclient_ios_appid` set to `""` | The upstream's download page and app store links (the welcome e-mail's "Install Client" button, the page setting `syncClientUrl`), and the upstream iOS app banner (`<meta name="apple-itunes-app">`) on every page. | Set our own addresses when the NoDrive apps ship (`handoffs/2026-10-25-workspace-to-nodrive-clients.md`); `customclient_ios_appid` is the App Store id. |
+| theming `docBaseUrl` = `https://<drive host>/apps/nourax_branding/help` | Every help link Nextcloud builds (`<docBaseUrl>/server/35/go.php?to=<topic>`): Security, Sharing and the other settings pages, the page settings `docBaseUrl` and `docPlaceholderUrl`. | `occ config:app:delete theming docBaseUrl` |
+| core `appstore_link_shown` = false | The "App store" tile of the app menu (see the core row below). | `occ config:app:delete core appstore_link_shown` |
+
+`knowledgebaseenabled` is false (no Help entry in the user menu) and `simpleSignUpLink.shown` is false
+(no upstream sign-up link on public pages); both were set before this sweep. Sharing with other
+servers (federation) belongs to privacy between organisations (`scripts/configure.d/60-org-privacy.sh`,
+docs/teams.md); the branding holds with it on or off.
+
+**The nourax_branding app** (`nextcloud-apps/nourax_branding`):
+
+- *Help page* (`Controller/HelpController.php`, public): `/apps/nourax_branding/help` and every address
+  below it say, in the person's language (English, German, Arabic), that our help pages are on their
+  way and to ask the person who looks after their account, with "Back to NoDrive". `/settings/help`,
+  which upstream fills with links to its manual and forum, now leads there.
+- *WebDAV page* (`Dav/BrandedGetPlugin.php`): opening `/remote.php/dav`, `/remote.php/webdav` or a
+  folder below them in a web browser shows "This is the WebDAV address of NoDrive. Open it in a WebDAV
+  client, such as a file manager or a sync app, not in a web browser." and the address of the site,
+  instead of the upstream text that names its desktop client. It answers just before the upstream's
+  own answer (Sabre priority 199 against 200), after everything that serves files, zip downloads,
+  calendar exports and contact photos, so those still work.
+- *Fixes in other apps' answers* (`Middleware/UpstreamPagesMiddleware.php`, rules in
+  `Service/UpstreamAssets.php`, tested by `tests/run.php`):
+  - the theming app's manifests (`/apps/theming/manifest/<app>`) get the text sweep: their summaries
+    come from the apps' info.xml files ("A Calendar app for Nextcloud"), which no translation holds;
+  - the theming stylesheets (`/apps/theming/theme/<theme>.css`): the upstream blue (`#00679E`, also
+    `#0082c9`) becomes the Nourax cobalt `#2563EB`; Nextcloud 35 uses it in the Assistant gradient;
+  - Appearance and accessibility: the two backgrounds credited to "Nextcloud GmbH" (Fluid, Globe) are
+    left out of the picker; the others stay;
+  - Sharing (when federation is on): the "share it" buttons point at our help page;
+  - `/settings/download/reasons`, the upstream's "Reasons to use Nextcloud" PDF, answers 404.
+- *No NoBoard welcome board* (`Listener/NewAccountListener.php`): see the deck row below.
+
+**Theme files** (`branding/theme`, copied as they are into `themes/nourax` by
+`scripts/branding-sweep.sh`; Nextcloud 35 looks there first for pictures and app templates):
+
+- `core/img/manifest.json`: the web app manifest of every page ("Nourax Workspace", start page `/`,
+  our icon from the theming app, cobalt `#2563EB` on `#0B1220`). Upstream sign-in, public and error
+  pages linked the core file, named "Nextcloud", with the upstream icon. Because Nextcloud looks in the
+  theme before it asks the theming app, signed-in pages use this one too; it replaces the per-app
+  manifests, which are still fixed (above) for anyone who opens them.
+- `core/img/favicon-mask.svg`: the Safari pinned-tab icon of every page, a plain rounded square in one
+  colour (the browser fills it with our cobalt). It is not the logo: the logo is never redrawn.
+- `apps/settings/templates/settings/personal/development.notice.php`: the notice at the end of
+  Personal settings > Profile and contact. Upstream it links the upstream community, GitHub, Facebook,
+  Bluesky, Mastodon, blog and newsletter and offers a "Reasons to use Nextcloud" PDF. Ours says
+  "Nourax Workspace is open-source software: get its source code, licensed under the GNU AGPL", with
+  links to github.com/NouraX-ORG/basic-office-infra and the licence. That is the source offer the AGPL
+  (section 13) asks of software people use over a network; keep it.
+
+When a theme file changes, the sweep raises the theming cache buster and clears the cached picture
+paths (Nextcloud keeps them in Redis with no end date), so pages use the new files at once.
+
+**CSS** (`branding/custom.css`, applied by `scripts/configure.sh`): a few upstream scripts write
+upstream links into pages themselves (the "How to access files using WebDAV" link in the NoDrive
+settings, the issue tracker and design team links under Appearance and accessibility). Links whose
+address *starts with* an upstream website are hidden on every page, admin pages too, with
+the row or sentence around them where it would make no sense alone. Links that people write
+themselves in documents, comments and cards are left alone, and a file that is only named like an
+upstream address is never hidden.
+
+**What is left, on purpose:**
+
+- Fallback values in stylesheets that are never used while the theming app works: the static
+  `apps/theming/css/default.css` (upstream primary blue), and `var(--…, <upstream blue or logo>)`
+  defaults in `core/css/guest.css` and in the Calendar and Forms stylesheets. The theming app defines
+  every one of these variables on every page. `scripts/check-branding.sh --only css` lists them.
+- `PRODID:-//Nextcloud/Nextcloud CalDAV Server//EN` inside calendar invitation files: a program id that
+  calendar programs do not show.
+- An upload error text written in English inside the dav app ("Expected filesize of … (from Nextcloud
+  client)"), shown only when an upload breaks off half way.
+- Boards that Deck made before the welcome board was switched off, including the owner's, if any:
+  people's data. They can be renamed or deleted by their owners.
+- The Administration overview's release name (admin page only; see the admin table below).
+
+**Check:** `scripts/check-branding.sh CREDENTIALS_FILE` (pages, theming, share, dav, errors) and, on the
+server, `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` (also config and mail).
+
 ## Apps and their upstream branding
 
 Every app that is switched on was checked for the upstream name and links in its texts (en_GB
@@ -143,11 +232,11 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 | App | Version | Upstream branding found | Fix |
 |---|---|---|---|
 | core (the app menu) | 35.0.2 | An "App store" tile at the end of the app menu of people who are not admins. It opens apps.nextcloud.com in a new tab. It is part of Nextcloud itself, not of the `appstore` app, and shows while the core setting `appstore_link_shown` is unset. | `scripts/configure.d/20-branding.sh` sets `appstore_link_shown` to false, which hides only this tile. Admins still install and update apps from Administration > Apps. |
-| `deck` (NoBoard) | 1.19.1 | A welcome board is made on a person's first visit. Its title, "Welcome to Nextcloud Deck!", is a translation, but its card texts come from a fixed file inside the app and name the upstream 15 times. | The text sweep renames the title. The card texts need more: the nourax_branding app should set the person's Deck setting `firstRun` to `no` when the account is made, so no welcome board is made. Boards that already exist are people's data and stay. |
-| `federatedfilesharing` | 2.0.0 | Personal settings > Sharing: the Federated Cloud ID, "Share with me via Nextcloud" and a link to nextcloud.com/sharing; "Add to your Nextcloud" on public share pages. | Always on. Links and assets: turn federation off. |
-| `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets (theme template overrides and CSS). |
-| `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; "Adjust the Nextcloud theme". | Always on. Links and assets (CSS), text sweep. |
-| `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; some error texts. | Always on. Links and assets (a page plugin), text sweep. |
+| `deck` (NoBoard) | 1.19.1 | A welcome board is made on a person's first visit. Its title, "Welcome to Nextcloud Deck!", is a translation, but its card texts come from a fixed file inside the app and name the upstream 15 times. | The text sweep renames the title. The nourax_branding app sets the person's Deck setting `firstRun` to `no` as soon as an account is made (or signs in for the first time), so no welcome board is made. Boards that already exist are people's data and stay. |
+| `federatedfilesharing` | 2.0.0 | Personal settings > Sharing: the Federated Cloud ID, "Share with me via Nextcloud" and "share it" buttons pointing at nextcloud.com/sharing; "Add to your Nextcloud" on public share pages. | Always on. Sharing with other servers is off while privacy between organisations is on (`60-org-privacy.sh`), which hides all of it. When it is on: the texts are swept, "Add to your …" uses the product name, and the "share it" buttons point at our help page (links and assets). |
+| `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice with social links, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets: our notice in place of the developer notice, `/settings/help` goes to our help page, the PDF answers 404, help links open our help page. |
+| `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; "Adjust the Nextcloud theme"; the upstream blue in the Assistant gradient; app summaries such as "A Calendar app for Nextcloud" in the app manifests. | Always on. Links and assets (CSS, the two backgrounds left out, blue and manifests fixed where they are made), text sweep. |
+| `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; some error texts. | Always on. Links and assets (our own WebDAV page text), text sweep. |
 | `circles` (Teams) | 35.0.0 | 8 texts, for example "Nextcloud Account". | Text sweep. |
 | `calendar` (NoCalendar) | 6.6.3 | 4 texts, mostly the app description. | Text sweep. |
 | `contacts` (NoContacts) | 8.9.2 | 4 texts, mostly the app description. | Text sweep. |
@@ -165,7 +254,7 @@ Admin pages only (people never see them; admin pages are not part of the user ch
 | App | Version | Upstream branding found | Fix |
 |---|---|---|---|
 | `appstore` | 2.0.0 | Administration > Apps: the "More apps" tile links to apps.nextcloud.com; "Nextcloud Appstore". The "App store" tile in the app menu of people who are not admins is not part of this app: see the core row above. | Always on. Links hidden by CSS, text sweep. |
-| `settings` (Administration overview) | 2.0.0 | A release name written into a template, "Nextcloud Hub 26 Summer". | Links and assets (theme template override). |
+| `settings` (Administration overview) | 2.0.0 | A release name written into a template, "Nextcloud Hub 26 Summer". | Not fixed: admin page only. A copy of that whole template in the theme would hide upstream changes to it after an update. |
 | `notifications` | 8.0.1 | Notices about the upstream's free push service limits, with links to nextcloud.com. | Text sweep; the links show to admins only. |
 | `serverinfo`, `logreader`, `bruteforcesettings` | 7.0.0, 8.0.0, 8.0.0 | Links to docs.nextcloud.com and descriptions. | Links hidden by CSS, text sweep. |
 | `webhook_listeners` | 2.0.0 | "Nextcloud Webhook Support" and other descriptions. | Text sweep. |

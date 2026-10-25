@@ -1,6 +1,7 @@
 <?php
 /**
- * The help page (Controller\HelpController), shown in the guest layout.
+ * The help page (Controller\HelpController), shown in the guest layout. The guest layout of
+ * Nextcloud 35 sets no text direction, so the box sets its own (right to left for Arabic).
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 /** @var array $_ */
@@ -8,7 +9,7 @@
 /** @var \OCP\Defaults $theme */
 \OCP\Util::addStyle('nourax_branding', 'help');
 ?>
-<div class="guest-box nourax-help">
+<div class="guest-box nourax-help" dir="<?php p($_['direction']); ?>">
 	<h2><?php p($l->t('Help')); ?></h2>
 	<p><?php p($l->t('Help pages for %s are on their way.', [$theme->getName()])); ?></p>
 	<p><?php p($l->t('Until then, please ask the person who looks after your account.')); ?></p>

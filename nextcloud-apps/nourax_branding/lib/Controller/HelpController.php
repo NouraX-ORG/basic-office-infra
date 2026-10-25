@@ -19,6 +19,7 @@ use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IRequest;
 use OCP\IURLGenerator;
+use OCP\L10N\IFactory;
 
 /**
  * The help page of Nourax Workspace: /apps/nourax_branding/help, and every address below it.
@@ -36,6 +37,7 @@ final class HelpController extends Controller {
 	public function __construct(
 		IRequest $request,
 		private IURLGenerator $urlGenerator,
+		private IFactory $l10nFactory,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -63,6 +65,7 @@ final class HelpController extends Controller {
 		return new TemplateResponse(Application::APP_ID, 'help', [
 			// The start page: NoDrive when signed in, the login page otherwise.
 			'backUrl' => $this->urlGenerator->getAbsoluteURL('/'),
+			'direction' => $this->l10nFactory->getLanguageDirection($this->l10nFactory->findLanguage()),
 		], TemplateResponse::RENDER_AS_GUEST);
 	}
 }
