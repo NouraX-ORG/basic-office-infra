@@ -110,10 +110,16 @@ nourax_search() {
 	# The first index: every file that is already stored. Later files are added by the waiting list
 	# (below). It runs in the background, in the service "jobs" when it runs (its own memory limit),
 	# otherwise in the file server; how far it got: docs/search-and-antivirus.md.
-	local indexer=app
+	# Only Elasticsearch's own "no such index" (404 index_not_found_exception) starts it. Any other
+	# error (the engine restarting, out of memory, a timeout) only logs "skipped": a full index of
+	# every file then would add load at the worst moment, and the next run checks again.
+	local indexer=app count_json
 	[ "$(dc ps --format '{{.State}}' jobs 2>/dev/null)" != running ] || indexer=jobs
-	if es_api GET /nourax_drive/_count </dev/null >/dev/null 2>&1; then
-		log "  index nourax_drive exists: $(es_api GET /nourax_drive/_count </dev/null | jq -r '.count') documents"
+	if count_json="$(es_api GET /nourax_drive/_count </dev/null 2>/dev/null)"; then
+		log "  index nourax_drive exists: $(jq -r '.count' <<<"$count_json") documents"
+	elif ! jq -e '.status == 404 and .error.type == "index_not_found_exception"' <<<"$count_json" >/dev/null 2>&1; then
+		log "  skipped: Elasticsearch did not say whether the index nourax_drive exists, so no first index"
+		log "  is started now (the next configure run checks again) - see: docker compose logs elasticsearch"
 	elif dc exec -d -u www-data "$indexer" php occ fulltextsearch:index --no-readline; then
 		log "  first index of all stored files started in the background (in '$indexer')"
 	else

@@ -2,10 +2,13 @@
 # Memory of the server and of the add-on services (search engine, virus scanner, jobs, Nourax AI).
 #   sudo config/elasticsearch/memory-report.sh [LABEL]
 #       One report: free -m, /proc/swaps, docker stats, every container's memory limit and OOM
-#       score, the add-ons' memory as the kernel counts it (limit, use, highest use, times at the
-#       limit, OOM kills, swap), the swap of every service, the 5 biggest processes, and
-#       Elasticsearch's heap. A WARNING line says when memory is too tight for the time before the
-#       upgrade (docs/search-and-antivirus.md, "If memory gets too tight").
+#       score, how often each container started again by itself and how it last stopped, the
+#       out-of-memory crashes in the add-ons' logs of the last 24 hours, the add-ons' memory as the
+#       kernel counts it (limit, use, highest use, times at the limit, OOM kills, swap), the swap of
+#       every service, the 5 biggest processes, Elasticsearch's heap and heap dump files, and the
+#       free disk. A WARNING line says when a service crashed or started again by itself in the last
+#       24 hours, or when memory or disk is too tight for the time before the upgrade
+#       (docs/search-and-antivirus.md, "If memory gets too tight").
 #   sudo config/elasticsearch/memory-report.sh --around-start [USER WORD...]
 #       Before and after Elasticsearch: stops the services "elasticsearch" and "jobs", waits a
 #       minute, reports "before"; starts both again, indexes all files again (in "jobs"), searches
@@ -63,6 +66,56 @@ cgroup_line() {
 		}' "$dir/memory.stat"
 }
 
+# restart_lines: for every container of the stack, how often Docker started it again by itself
+# (RestartCount, counted from when the container was made), its state, the exit code of its last
+# stop, whether the kernel stopped it at its limit (OOMKilled), and when it last started and was
+# made. These are the numbers that show a crash loop: the kernel's counters in the add-on lines
+# start from 0 again at every restart, and a Java heap crash is not a kernel OOM kill at all.
+restart_lines() {
+	local id now
+	now="$(date -u +%s)"
+	for id in $(dc ps -aq 2>/dev/null); do
+		docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.State.StartedAt}} {{.Created}}' "$id"
+	done | sort | while read -r name rc state code oomk started made; do
+		name="${name#/}"
+		printf '%-34s restarts %4s  %-10s last exit code %3s  kernel OOM kill %-5s  started %s  made %s\n' \
+			"$name" "$rc" "$state" "$code" "$oomk" "${started%.*}Z" "${made%.*}Z"
+		if [ "$rc" -gt 0 ]; then
+			if [ $((now - $(date -u -d "$started" +%s))) -lt 86400 ]; then
+				echo "WARNING: $name was started again by itself $rc times since it was made; the last time in the last 24 hours - see docs/search-and-antivirus.md, \"Restarts and crashes\""
+			else
+				echo "  (note: $name was started again by itself $rc times since it was made, the last time over a day ago)"
+			fi
+		fi
+		# A stopped or restarting container keeps the exit code of its last stop: 3 is Java's own
+		# stop when its heap is full (-XX:+ExitOnOutOfMemoryError), 137 a forced stop (SIGKILL),
+		# most often the kernel at the container's limit.
+		if [ "$state" != running ]; then
+			case "$code" in
+				3) echo "WARNING: $name stopped because its Java heap was full (exit code 3)" ;;
+				137) echo "WARNING: $name was stopped by force (exit code 137), most often by the kernel at its memory limit" ;;
+			esac
+		fi
+		[ "$oomk" != true ] || echo "WARNING: $name was stopped by the kernel at its memory limit (OOMKilled)"
+	done
+}
+
+# log_crashes SERVICE TEXT WHAT: how often TEXT is in the service's log of the last 24 hours, and
+# when it was there last. WHAT names it in the line.
+log_crashes() {
+	local lines n last
+	lines="$(dc logs --no-log-prefix --timestamps --since 24h "$1" 2>&1 | grep -F -- "$2" || true)"
+	n=0
+	[ -z "$lines" ] || n="$(printf '%s\n' "$lines" | wc -l)"
+	if [ "$n" -eq 0 ]; then
+		printf '%-14s %s: 0\n' "$1" "$3"
+		return 0
+	fi
+	last="$(printf '%s\n' "$lines" | tail -n 1 | cut -d' ' -f1)"
+	printf '%-14s %s: %s, the last at %s\n' "$1" "$3" "$n" "${last%.*}Z"
+	echo "WARNING: $1: $3 $n times in the last 24 hours - see docs/search-and-antivirus.md, \"Restarts and crashes\""
+}
+
 report() {
 	printf '\n===== %s: %s (up %s)\n' "$1" "$(date -u '+%Y-%m-%d %H:%M:%SZ')" "$(uptime -p | sed 's/^up //')"
 	echo '--- free -m'
@@ -80,7 +133,15 @@ report() {
 		function mib(b) { return (b <= 0) ? "none" : sprintf("%dm", b / 1048576) }
 		{ name = $1; sub("^/", "", name)
 		  printf "%-34s limit %6s  with swap %6s  OOM score %s\n", name, mib($2), mib($3), $4 }'
-	echo '--- add-ons, in MiB (program = memory that is not file cache)'
+	echo '--- restarts and crashes of each container (docker inspect: RestartCount, State)'
+	restart_lines
+	# Out-of-memory crashes the kernel does not count: Java's own stop when the search engine's heap
+	# is full, and a PHP run that needed more than its PHP_MEMORY_LIMIT.
+	echo '--- out-of-memory crashes in the logs of the last 24 hours'
+	log_crashes elasticsearch 'Terminating due to java.lang.OutOfMemoryError' 'Java heap full, Elasticsearch stopped'
+	log_crashes jobs 'Allowed memory size of' 'PHP memory limit reached'
+	log_crashes ai-worker 'Allowed memory size of' 'PHP memory limit reached'
+	echo '--- add-ons, in MiB (program = memory that is not file cache; the kernel counts from 0 again at each restart)'
 	for svc in elasticsearch clamav jobs ai-relay ai-worker; do
 		cgroup_line "$svc"
 	done
@@ -101,6 +162,22 @@ report() {
 			| jq -r '.nodes[].jvm | "heap used \(.mem.heap_used_in_bytes / 1048576 | floor) of \(.mem.heap_max_in_bytes / 1048576 | floor), outside the heap \(.mem.non_heap_committed_in_bytes / 1048576 | floor), threads \(.threads.count)"' \
 			|| echo 'Elasticsearch did not answer'
 	fi
+	# Heap dumps (java_pid*.hprof): the JVM writes one, the size of its heap, each time the heap is
+	# full, unless -XX:-HeapDumpOnOutOfMemoryError (compose.yaml). They stay in the container's own
+	# layer until the container is made again. Since Elasticsearch 9.1 they go to logs/, before to data/.
+	if [ "$(dc ps --format '{{.State}}' elasticsearch 2>/dev/null)" = running ]; then
+		local sizes n_dumps
+		if sizes="$(dc exec -T elasticsearch find /usr/share/elasticsearch/logs /usr/share/elasticsearch/data \
+			-maxdepth 1 -name '*.hprof' -printf '%s\n' 2>/dev/null)"; then
+			n_dumps="$(printf '%s' "$sizes" | grep -c . || true)"
+			echo "--- Elasticsearch heap dump files (*.hprof): $n_dumps, $(printf '%s\n' "$sizes" | awk '{ s += $1 } END { printf "%d", s / 1048576 }') MiB"
+			if [ "$n_dumps" -gt 0 ]; then
+				echo 'WARNING: heap dump files fill the disk - see docs/search-and-antivirus.md, "Restarts and crashes"'
+			fi
+		else
+			echo '--- Elasticsearch heap dump files (*.hprof): could not be read'
+		fi
+	fi
 	# Too tight for the time before the upgrade: under 150 MB available, or over 1.5 GB of swap that
 	# keeps growing (one report can't tell growing, so it asks for a second one).
 	local avail swap_used
@@ -113,6 +190,13 @@ report() {
 	if [ "$swap_used" -gt 1536 ]; then
 		echo 'WARNING: over 1.5 GB of swap used - run this report again in 10 minutes; if it is still growing,'
 		echo '         see docs/search-and-antivirus.md, "If memory gets too tight"'
+	fi
+	# The disk holds the containers, their logs and the swap file; the files themselves are in R2.
+	local disk_free
+	disk_free="$(df -BG --output=avail / | awk 'NR == 2 { sub("G", ""); print $1 }')"
+	echo "--- disk check: ${disk_free} GB free on / (tight under 5)"
+	if [ "$disk_free" -lt 5 ]; then
+		echo 'WARNING: under 5 GB free on the disk - see docs/search-and-antivirus.md, "Restarts and crashes"'
 	fi
 }
 
