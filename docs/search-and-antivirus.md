@@ -85,7 +85,10 @@ container's own addresses, and no published port, so only this stack's container
 `/var/log/clamav/clamd.log` inside the container, rotated at 5 MB.
 
 The image's own `CLAMD_CONF_*` variables are not used: its start script appends them to the
-config file again on every start.
+config file again on every start. After a change to a file in `config/clamav/`, run
+`sudo docker compose restart clamav` (a `git pull` replaces the file, and the running container
+keeps reading the old one until it starts again). Uploads are refused for the 30 seconds or so
+that clamd needs to load.
 
 ### The stored-file scan (`nourax-virus-scan.timer`)
 
