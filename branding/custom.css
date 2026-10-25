@@ -63,13 +63,20 @@ body[data-theme-dark-highcontrast] {
 	a[href^="https://portal.nextcloud.com" i], a[href^="https://github.com/nextcloud" i],
 	a[href^="https://www.facebook.com/Nextclouders" i], a[href^="https://mastodon.xyz/@nextcloud" i],
 	a[href^="https://bsky.app/profile/nextcloud" i], a[href^="https://twitter.com/nextclouders" i],
-	a[href^="https://x.com/nextclouders" i], a[href^="https://www.youtube.com/@Nextcloud" i]
+	a[href^="https://x.com/nextclouders" i], a[href^="https://www.youtube.com/@Nextcloud" i],
+	a[href^="https://explore.transifex.com/nextcloud" i], a[href^="https://app.transifex.com/nextcloud" i],
+	a[href^="https://www.transifex.com/nextcloud" i]
 ):not(:where(.ProseMirror, .text-editor__content, .rich-text--wrapper, .comment__message, [contenteditable="true"]) *) {
 	display: none !important;
 }
 
 /* NoDrive settings > WebDAV: the row that held the upstream "How to access files using WebDAV" link. */
 [class*="_formBoxItem_"]:has(a[href^="https://docs.nextcloud.com" i]) {
+	display: none !important;
+}
+
+/* Personal settings > Language & locale: the "Help translate" row, a link to the upstream project's translations. */
+[class*="_formBoxItem_"]:has(a[href*="transifex.com/nextcloud" i]) {
 	display: none !important;
 }
 

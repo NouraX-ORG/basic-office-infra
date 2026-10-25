@@ -1,0 +1,14 @@
+{
+  "name": "nourax-branding-audit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser audit of the Nourax Workspace branding: what a normal user sees, page by page.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "audit": "node run-audit.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.64.0"
+  }
+}

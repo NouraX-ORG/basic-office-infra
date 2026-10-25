@@ -1,0 +1,12 @@
+{
+ "base": "https://drive.nourax.org",
+ "out": "C:/path/to/a/scratch/folder/t3-audit",
+ "langs": ["en_GB", "en", "de", "ar"],
+ "themes": ["light", "dark"],
+ "chrome": {"channel": "chrome"},
+ "accounts": {
+  "main": {"login": "qa-t3-4", "password_file": "C:/path/to/qa/qa-t3-4.pass", "netrc": "C:/path/to/qa/qa-t3-4.netrc"},
+  "sharer": {"login": "qa-t3-2", "password_file": "C:/path/to/qa/qa-t3-2.pass", "netrc": "C:/path/to/qa/qa-t3-2.netrc"},
+  "fresh": [{"login": "qa-t3-3", "password_file": "C:/path/to/qa/qa-t3-3.pass"}]
+ }
+}

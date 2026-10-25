@@ -7,8 +7,12 @@
 //   const rules = JSON.parse(fs.readFileSync('nextcloud-apps/nourax_branding/sweep/rules.json', 'utf8'));
 //   const result = await page.evaluate(`(${src})(${JSON.stringify(rules)}, {})`);
 // options: {expectRtl: true|false (default: from <html lang>), maxFindings: 500}.
-// It returns {url, title, lang, dir, rtlOk, elements, counts, findings: [{kind, where, snippet}]};
-// kind is name, link, blue, meta or rtl. Same rules as scripts/check-branding.sh.
+// It returns {url, title, lang, dir, rtlOk, elements, counts, findings: [{kind, where, snippet}],
+// hidden: [...]}; kind is name, link, blue, meta or rtl. Same rules as scripts/check-branding.sh.
+// An element of the page body that is not drawn at all (display: none on it or around it, so no box)
+// cannot be seen, clicked or read out by a screen reader: what its attributes hold goes to `hidden`,
+// not to `findings` (for example an upstream link that branding/custom.css hides). The <head> always
+// counts: its icons, manifest and meta tags reach people through the browser.
 function nouraxScanPage(rules, options) {
 	'use strict';
 	const opts = Object.assign({ expectRtl: null, maxFindings: 500 }, options || {});
@@ -36,16 +40,23 @@ function nouraxScanPage(rules, options) {
 	});
 	const host = location.hostname.toLowerCase();
 	const findings = [];
+	const hidden = [];
 	const counts = { name: 0, link: 0, blue: 0, meta: 0, rtl: 0 };
 	const seen = new Set();
+	// True while the attributes of an element that is not drawn are looked at.
+	let notDrawn = false;
 
 	const add = (kind, where, snippet) => {
 		const s = String(snippet).replace(/\s+/g, ' ').trim().slice(0, 160);
 		const w = String(where).slice(0, 120);
-		const key = kind + '|' + w + '|' + s;
+		const key = (notDrawn ? 'hidden|' : '') + kind + '|' + w + '|' + s;
 		if (seen.has(key)) return;
 		if (ALLOW.some((a) => (!a.url || a.url.test(location.href)) && (!a.where || a.where.test(w)) && (!a.snippet || a.snippet.test(s)))) return;
 		seen.add(key);
+		if (notDrawn) {
+			if (hidden.length < opts.maxFindings) hidden.push({ kind, where: w, snippet: s });
+			return;
+		}
 		counts[kind] += 1;
 		if (findings.length < opts.maxFindings) findings.push({ kind, where: w, snippet: s });
 	};
@@ -197,8 +208,12 @@ function nouraxScanPage(rules, options) {
 		'border-left-color', 'outline-color', 'fill', 'stroke', 'text-decoration-color', 'accent-color'];
 	const IMAGE_PROPS = ['background-image', 'border-image-source', 'mask-image', '-webkit-mask-image', 'list-style-image'];
 
+	const head = document.head;
 	for (const el of all) {
 		const tag = describe(el);
+		// Inside <body>: an element with no box at all is not drawn (see the top of this file).
+		notDrawn = !(head && head.contains(el)) && el !== document.documentElement && el !== document.body
+			&& el.getClientRects().length === 0;
 		for (const a of TEXT_ATTRS) {
 			const v = el.getAttribute(a);
 			if (v) names(tag + '[' + a + ']', v);
@@ -229,6 +244,7 @@ function nouraxScanPage(rules, options) {
 			const v = el.getAttribute(a);
 			if (v) blues(tag + '[' + a + ']', v);
 		}
+		notDrawn = false;
 		let cs;
 		try {
 			cs = getComputedStyle(el);
@@ -279,5 +295,5 @@ function nouraxScanPage(rules, options) {
 	const rtlOk = !expectRtl || dir === 'rtl';
 	if (!rtlOk) add('rtl', 'html[dir]', 'lang="' + lang + '" but the page direction is ' + (dir || 'unset') + ', not rtl');
 
-	return { url: location.href, title: document.title, lang, dir, rtlOk, elements: all.length, counts, findings };
+	return { url: location.href, title: document.title, lang, dir, rtlOk, elements: all.length, counts, findings, hidden };
 }

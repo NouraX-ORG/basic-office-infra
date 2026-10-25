@@ -171,7 +171,8 @@ paths (Nextcloud keeps them in Redis with no end date), so pages use the new fil
 
 **CSS** (`branding/custom.css`, applied by `scripts/configure.sh`): a few upstream scripts write
 upstream links into pages themselves (the "How to access files using WebDAV" link in the NoDrive
-settings, the issue tracker and design team links under Appearance and accessibility). Links whose
+settings, the issue tracker and design team links under Appearance and accessibility, the "Help
+translate" link to the upstream translation project under Language & locale). Links whose
 address *starts with* an upstream website are hidden on every page, admin pages too, with
 the row or sentence around them where it would make no sense alone. Links that people write
 themselves in documents, comments and cards are left alone, and a file that is only named like an
@@ -194,6 +195,73 @@ page that hold the source of its placeholder pictures, upstream copyright line i
 
 **Check:** `scripts/check-branding.sh CREDENTIALS_FILE` (pages, theming, share, dav, errors) and, on the
 server, `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` (also config and mail).
+
+## Browser audit
+
+`scripts/check-branding.sh` reads what the server sends. The browser audit looks at what a person
+actually sees once the page's scripts have run: it signs in through the normal login form as a QA
+account, opens every page and menu below in a real browser (Google Chrome, driven by Playwright), and
+on each one runs `branding/audit/scan-page.js`. That scanner checks the drawn text, the page title,
+link addresses, pictures (`src`, `alt`), `title`, `aria-label` and `placeholder` texts, the labels CSS
+draws (the app names in the app menu), meta tags and icons, the colours every drawn element really
+gets (text, background, border, outline, SVG fill and stroke) against the upstream blue, background
+pictures, and, for Arabic, that the page runs right to left. It uses the same patterns as the sweep
+and the guard (`sweep/rules.json`). An element that is not drawn at all (hidden by
+`branding/custom.css`, for example) cannot be seen, clicked or read out, so a hit there is listed
+apart, in `hidden.json`, and does not fail the audit.
+
+It also watches every request the browser makes: none may go to an upstream host, and a translation
+file fetched as `/l10n/<language>.json` (which would skip the theme overrides) must not hold the name.
+
+**Pages**, each in English (British), English (US), German and Arabic, in the light and the dark
+theme (the browser's setting, with the account's theme on "System default"), with a screenshot of each:
+
+- signed in: NoDrive (file list, the folder of test files, New menu, sharing tab of the sidebar, NoDrive
+  settings and their WebDAV part, shared with you, shares, recent, deleted files, team folders), the
+  picture viewer, a Markdown file in Text, the PDF viewer, a document in ONLYOFFICE (also the editor's
+  own frames; ONLYOFFICE keeps its name), the app menu (NoMail must be in it), the user menu, the QR
+  code for the mobile app, the status menu, the contacts menu, notifications, the search (Ctrl+K),
+  Photos, Activity, NoCalendar (month, an event, its settings, editing and sharing a calendar),
+  NoContacts, NoBoard (boards, a board, a card), NoNotes, NoTasks, NoForms, NoGantt, every Personal
+  settings page, the help page, the old "sync clients" address, a profile page, `/remote.php/dav` and a
+  folder below it, a missing page and an admin-only page (as a person who is not an admin), and last
+  signing out;
+- signed out: the login page, "Forgot password?", "Log in with a device", the four test links of the QA
+  account's `branding-check` folder (a file with its menu, a folder with its menu, a file drop, a
+  password-protected link, also with a wrong password), a link that does not exist (an expired link
+  shows the same page), a missing page and the help page;
+- once: the language changed through the Personal settings language menu (German), the Appearance
+  page's own "Dark theme" (pages must stay dark with a light browser; then back to "System default"),
+  and the first sign-in of a fresh account (its NoCalendar example event and its NoBoard boards: no
+  welcome board) and of the account that shares a file with the main QA account.
+
+The audit makes its own test data in the QA accounts, once, and finds it again on later runs: four
+files in `branding-check`, a board with a card, a calendar event (moved to the next day on each run), a
+contact, a file the second account shares with the first, and a comment on it that mentions the first
+account (so the first account has a notification).
+
+**Admin pages are not part of it**, and it never signs in as `nodrive` or as a real person: it refuses
+any account whose name does not start with `qa-`.
+
+**Run it** on a PC whose address may open `/login` (Cloudflare rule `1f4cc937…`):
+
+```
+cd branding/audit
+npm ci                                    # playwright-core 1.64.0; uses the installed Google Chrome
+node run-audit.mjs CONFIG.json            # [--langs en_GB,de] [--themes dark] [--pages files,deck*] [--passes user,public,extras]
+```
+
+`CONFIG.json` is like `audit.config.example.json`: the site, an output folder, and for each QA account a
+file with its password (for the login form) and a netrc file with its app password (for the test data).
+Keep it and those files outside the repo. Passwords are never printed. The output folder gets a
+screenshot per page, language and theme (`<language>-<theme>-<page>.png`), `index.html` (a table of
+every page scanned), `findings.json`, `problems.json` (a page or menu that could not be opened),
+`hidden.json`, `network.json` and `notes.json`. The exit code is 0 only when `findings.json` and
+`problems.json` are both empty. A full run takes about 45 minutes.
+
+A finding is fixed where it comes from (a new spelling in `sweep/rules.json` or a sentence in
+`sweep/en-overrides.json` and a sweep; a link in `branding/custom.css`; a page in the theme or the
+nourax_branding app), then the page is audited again with `--pages`.
 
 ## Apps and their upstream branding
 
