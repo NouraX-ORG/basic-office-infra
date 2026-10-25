@@ -653,6 +653,41 @@ What this shows:
   content search tool). `sudo docker compose up -d --no-deps elasticsearch`, under the lock, does it
   any time (2–3 minutes without results from inside files).
 
+#### At the end of Task 5 (23:53 UTC)
+
+The same report, `sudo config/elasticsearch/memory-report.sh "end of Task 5"`, at the very end of
+Task 5 (exit 0, reads only), with other tasks still testing:
+
+| `free -m` (MB) | Used | Free | Buffers and cache | Available | Swap used (of 4095) |
+|---|---|---|---|---|---|
+| End of Task 5 | 2220 | 382 | 1690 | 1599 | 1245 |
+
+`/proc/swaps`: `/swapfile`, size 4194300 kB, used 1275860 kB.
+
+| `docker stats` (MiB) | Limit | Use | In swap |
+|---|---|---|---|
+| elasticsearch | 1g | 985.7 (96%) | 0 |
+| app | none | 650.9 | 18 |
+| onlyoffice | none | 184.6 | 271 |
+| db | none | 87.9 | 13 |
+| clamav | 1600m | 85.8 | 880 |
+| ai-worker | 320m | 52.7 | 0 |
+| cloudflared | none | 31.0 | 2 |
+| ai-relay | 64m | 27.2 | 8 |
+| redis | none | 10.9 | 2 |
+| jobs | 384m | 2.0 | 0 |
+| cron | none | 1.9 | 0 |
+
+- **Restarts:** every container `restarts 0` and no kernel OOM kill, apart from Elasticsearch:
+  `restarts 152`, *Java heap full, Elasticsearch stopped: 152, the last at 2026-10-25T22:09:36Z*
+  (the crash loop below; none since), started again 22:09:37, made 05:44:56.
+- **WARNING lines:** those two for Elasticsearch, *program memory and swap are over 90% of the
+  limit* (program 950 of 1024 MiB; heap used 298 of 512, outside the heap 295), and *heap dump
+  files (\*.hprof): 12, 3897 MiB*. All four are known and described here.
+- **Memory check:** *available 1606 MB (tight under 150), swap used 1245 MB (tight over 1536 and
+  growing)*: not tight. Swap is higher than at 16:08, mostly ClamAV's signatures (880 MiB) and the
+  editors (271 MiB). **Disk check:** 17 GB free on `/` (the dumps take about 4 GB of it).
+
 ### Which service the kernel stops first
 
 When the whole server runs out of memory, the kernel stops the process with the highest OOM score
@@ -887,6 +922,9 @@ All on 2026-10-25 on the live server.
 | No more heap dumps (23:16 UTC, under the lock) | `jcmd 125 VM.set_flag HeapDumpOnOutOfMemoryError false`: *Command executed successfully*; `VM.flags -all` then shows `HeapDumpOnOutOfMemoryError = false {manageable} {management}`; the options file is in `config/jvm.options.d/`. Elasticsearch was not restarted (still `restarts 152`, same start time). `docker compose config --hash elasticsearch` now differs from the running container's label: the change in `compose.yaml` waits for the container to be made again (the owner's step) |
 | `scripts/configure.sh` after the pull (23:17 UTC, `6823421`) | exit 0 in 204 seconds; no WARNING or ERROR line; *index nourax_drive exists: 1163 documents*; *Talk (spreed) is off (not installed)*; Elasticsearch not restarted |
 | The search step's index check, with stand-in answers (on the server, for its `jq`) | an answer with a count: *index nourax_drive exists: 42 documents*; Elasticsearch's 404 `index_not_found_exception`: the first index starts; a 503 or no answer at all: *skipped*, no full index |
+| Memory report at the very end of Task 5 (23:53 UTC, `memory-report.sh "end of Task 5"`, reads only) | see [At the end of Task 5](#at-the-end-of-task-5-2353-utc) |
+| `scripts/check-branding.sh` from `main` (`6df688b`) at the very end of Task 5, as `qa-t5-4` (switched on for the check only, then off again) | On the server, `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-4.netrc --server` (23:53 UTC, 41 seconds, exit 0): pages 44 checked (37 SKIP, the owner-IP pages), l10n 8713, theming 73, share 18, dav 4, errors 18 (4 SKIP), config 1, mail 4: 0 FAIL each, *RESULT PASS (0 hits)*. From the owner's PC, `--only pages,errors` (23:55 UTC, exit 0): pages 81 and errors 21 checked, 0 FAIL, 0 SKIP, *RESULT PASS (0 hits)*. The check made `qa-t5-4`'s test folder `/branding-check` with 4 links (drop, file, folder, password); they stay with the account |
+| The QA accounts at the very end of Task 5 (23:54 and 23:56 UTC, under the lock) | `OCC user:disable` for `qa-t5-1`, `qa-t5-2`, `qa-t5-3` and `qa-t5-4`; `OCC user:info` shows `"enabled":false` for each, and `OCC user:list --disabled` lists all four. Their files, the group `qa-t5-team` and its team folder stay; deleting them needs the owner's yes |
 
 *Shown as stopped:* for those two runs a stand-in `docker` program, first in `PATH`, answered
 `docker compose ps … clamav|elasticsearch` with nothing and `docker compose exec … clamav|elasticsearch`

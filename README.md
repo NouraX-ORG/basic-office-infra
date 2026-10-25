@@ -64,6 +64,8 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
 | `ai-relay/` | The Nourax AI relay for the Assistant (compose service `ai-relay`, Python standard library) and the AI task worker (`ai-worker`), with tests against a stand-in for NIG ([docs/assistant.md](docs/assistant.md)) |
 | `config/onlyoffice/` | The editors' Nourax AI settings |
+| `config/clamav/` | The virus scanner's settings (clamd, freshclam) and the stored-file scan timer ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#virus-scanner)) |
+| `config/elasticsearch/` | Search inside files: the index template, the search account's role, the indexing loop of the `jobs` service, and the memory report `memory-report.sh` ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#search-inside-files)) |
 | `cloudflare/` | Tunnel routes and the WAF rule, as applied |
 | `tests/` | `curl` tests, run on the server: the NoMail API (health, accounts, virus scan), the admin teams API, privacy between organisations, the NoMail contract U1–U5 with a 1.1 GB upload, and the upload Worker; `qa-wrapup.sh` archives and disables the QA objects after a round ([tests/README.md](tests/README.md)) |
 | `docs/` | Architecture, operations, upgrades, restore, security, branding, NoMail contract |

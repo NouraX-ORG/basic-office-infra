@@ -19,6 +19,10 @@ The app-menu names (NoTasks, NoNotes, NoForms) are in `config/nextcloud/app-labe
 `scripts/configure.sh` turns them into the theme CSS. Retention and automatic tagging have no
 app-menu entry.
 
+The other add-ons have their own docs: the virus scanner and search inside files
+(`50-virus-scanner.sh`, `50-search.sh`) in [docs/search-and-antivirus.md](search-and-antivirus.md),
+and Nourax AI for the Assistant (`50-assistant.sh`) in [docs/assistant.md](assistant.md).
+
 Two more apps ship with the server itself, so nothing is downloaded. `scripts/configure.d/50-audit.sh`
 switches them on ([Suspicious login](#suspicious-login), [Audit log](#audit-log)):
 

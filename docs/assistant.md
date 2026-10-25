@@ -185,6 +185,7 @@ each one handles one task at a time.
 | A test relay and the NIG stand-in on the compose network, called from the `app` container | NIG got `Authorization: Bearer <its key>`, `X-Nourax-Feature: assistant`, body keys `messages, model, temperature, user` only (`n`, `logit_bias`, `stream` dropped); 429 became the limit message; `<think>` moved to `reasoning_content`. Both test containers were removed |
 | `scripts/check-branding.sh … --server --only l10n,pages` | l10n: 8713 checked, 0 FAIL (the two new apps included). pages: one FAIL outside this feature, NoBoard's welcome board title of the QA account |
 | `GET /apps/assistant/` as `qa-t5-1` | 200, title "Nourax Workspace" |
+| At the very end of Task 5 (23:51 UTC) | `curl -s http://ai-relay:8080/healthz` from the `app` container: `"status":"ok"`, `"nig_key":"unset"`, `"token":"set"`, `"stream":"off"`, so the Assistant still answers "Nourax AI is not available yet." until NIG's key arrives. `ai-relay` and `ai-worker` `restarts 0`; the 16 relay tests OK again on this PC (Python 3.12, `python -I -B ai-relay/test/test_relay.py`) |
 
 ## Undo
 
