@@ -457,7 +457,7 @@ class Page(HTMLParser):
 			self.text.append(data)
 
 
-def check_html(area, url, page_url, body, names_in_states=True):
+def check_html(area, url, page_url, body, names_in_states=True, skip_icons=False):
 	p = Page()
 	try:
 		p.feed(body)
@@ -484,6 +484,8 @@ def check_html(area, url, page_url, body, names_in_states=True):
 		if name in ('theme-color', 'msapplication-tilecolor'):
 			scan_blues(area, url, 'meta %s' % name, content)
 	for tag, k, v in p.urls:
+		if skip_icons and tag.startswith('link[rel=') and ('icon' in tag or 'manifest' in tag):
+			continue
 		values = [x.strip().split()[0] for x in v.split(',') if x.strip()] if k == 'srcset' else [v]
 		for one in values:
 			scan_url(area, url, '%s[%s]' % (tag, k), one, page_url)
@@ -1247,7 +1249,9 @@ def run_server(http, upstream):
 				a, b = (hits[0][0], hits[0][1]) if hits else (0, 0)
 				rep.fail('l10n', url, where, around(v, a, b))
 		elif k == 'page':
-			check_html(o['area'], o['name'], BASE + '/', o['html'])
+			# Rendered from the command line, Nextcloud links the plain icons, not the theming ones;
+			# the icons of the same guest layout are checked on the real pages over HTTP.
+			check_html(o['area'], o['name'], BASE + '/', o['html'], skip_icons=True)
 		elif k == 'l10n_count':
 			rep.checked('l10n', o['langs'])
 			rep.more('l10n', o['dir'], o['values'] + o['missing'] - o['sent'])
