@@ -1,0 +1,10 @@
+{ "translations": {
+    "Help" : "مساعدة",
+    "Help pages for %s are on their way." : "صفحات المساعدة الخاصة بـ %s قيد الإعداد.",
+    "Until then, please ask the person who looks after your account." : "حتى ذلك الحين، يُرجى سؤال الشخص المسؤول عن حسابك.",
+    "Back to NoDrive" : "العودة إلى NoDrive",
+    "This is the WebDAV address of NoDrive. Open it in a WebDAV client, such as a file manager or a sync app, not in a web browser." : "هذا هو عنوان WebDAV الخاص بـ NoDrive. افتحه في برنامج WebDAV، مثل مدير الملفات أو تطبيق مزامنة، وليس في متصفح الويب.",
+    "To see your files in a web browser, go to %s" : "لعرض ملفاتك في متصفح الويب، انتقل إلى %s",
+    "%s is open-source software: get its {sourceopen}source code{linkclose}, licensed under the {licenseopen}GNU AGPL{linkclose}." : "%s برنامج مفتوح المصدر: احصل على {sourceopen}الشيفرة المصدرية{linkclose} المرخّصة بموجب {licenseopen}رخصة GNU AGPL{linkclose}."
+},"pluralForm" :"nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5;"
+}

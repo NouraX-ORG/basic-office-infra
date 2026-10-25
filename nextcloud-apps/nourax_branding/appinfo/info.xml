@@ -3,15 +3,16 @@
   - SPDX-License-Identifier: AGPL-3.0-or-later
   -
   - Nourax Workspace branding. The app id and namespace leave out the upstream name on purpose
-  - (docs/branding.md). Event listeners and occ commands need no version bump. The background job
-  - below is also added by occ nourax_branding:sweep itself, so it needed no version bump either; a
-  - new database table would, followed by `occ upgrade`.
+  - (docs/branding.md). Event listeners, middleware, occ commands and routes need no version bump. The
+  - background job below is also added by occ nourax_branding:sweep itself, so it needed no version
+  - bump either; a new database table would, followed by `occ upgrade`. New routes are matched once
+  - the web server forgets its cached route list (an hour at most; a graceful Apache restart clears it).
 -->
 <info>
 	<id>nourax_branding</id>
 	<name>Nourax Branding</name>
 	<summary>The Nourax Workspace look and wording, and NoMail in the app menu</summary>
-	<description>Adds NoMail to the app menu of every signed-in person; it opens Nourax mail in a new tab. Its text sweep rewrites the upstream name in the translations of every enabled app, in every language, and runs again by itself when apps change.</description>
+	<description>Adds NoMail to the app menu of every signed-in person; it opens Nourax mail in a new tab. Its text sweep rewrites the upstream name in the translations of every enabled app, in every language, and runs again by itself when apps change. It also gives Nourax Workspace its own help page, WebDAV page and settings notice, and keeps the upstream's links, pictures and colours off the pages people see.</description>
 	<version>1.0.0</version>
 	<licence>agpl</licence>
 	<author>Nourax</author>

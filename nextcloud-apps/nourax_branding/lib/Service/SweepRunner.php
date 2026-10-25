@@ -14,6 +14,7 @@ use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
 use OCP\BackgroundJob\IJobList;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IConfig;
 use OCP\ServerVersion;
 use Psr\Log\LoggerInterface;
@@ -42,6 +43,7 @@ class SweepRunner {
 		private IJobList $jobList,
 		private ServerVersion $serverVersion,
 		private LoggerInterface $logger,
+		private ICacheFactory $cacheFactory,
 	) {
 	}
 
@@ -366,13 +368,24 @@ class SweepRunner {
 		$this->put($path, $content, false, $out);
 	}
 
-	/** Browsers fetch scripts again when the theming cache buster in their ?v= part changes. */
+	/**
+	 * Browsers fetch scripts again when the theming cache buster in their ?v= part changes. The
+	 * server also forgets where it found each picture (IURLGenerator::imagePath keeps that in the
+	 * distributed cache with no end date), so pictures newly put into the theme folder, such as
+	 * core/img/favicon-mask.svg and core/img/manifest.json from branding/theme, are used at once.
+	 */
 	private function bumpCache(): void {
 		try {
 			\OCP\Server::get(\OCA\Theming\ThemingDefaults::class)->increaseCacheBuster();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Branding sweep: theming could not raise its cache buster, raising it here', ['app' => Application::APP_ID, 'exception' => $e]);
 			$this->appConfig->setValueInt('theming', 'cachebuster', $this->appConfig->getValueInt('theming', 'cachebuster', 0) + 1);
+		}
+		try {
+			// One prefix per base address ("imagePath-<md5 of the address>-"): this clears them all.
+			$this->cacheFactory->createDistributed('imagePath-')->clear();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Branding sweep: could not clear the cached picture paths', ['app' => Application::APP_ID, 'exception' => $e]);
 		}
 	}
 

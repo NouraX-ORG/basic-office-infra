@@ -1,0 +1,10 @@
+{ "translations": {
+    "Help" : "Hilfe",
+    "Help pages for %s are on their way." : "Hilfeseiten für %s sind in Arbeit.",
+    "Until then, please ask the person who looks after your account." : "Bis dahin wende dich bitte an die Person, die dein Konto betreut.",
+    "Back to NoDrive" : "Zurück zu NoDrive",
+    "This is the WebDAV address of NoDrive. Open it in a WebDAV client, such as a file manager or a sync app, not in a web browser." : "Dies ist die WebDAV-Adresse von NoDrive. Öffne sie in einem WebDAV-Programm, etwa einem Dateimanager oder einer Sync-App, nicht in einem Webbrowser.",
+    "To see your files in a web browser, go to %s" : "Deine Dateien siehst du im Webbrowser unter %s",
+    "%s is open-source software: get its {sourceopen}source code{linkclose}, licensed under the {licenseopen}GNU AGPL{linkclose}." : "%s ist Open-Source-Software: Hier gibt es den {sourceopen}Quellcode{linkclose}, lizenziert unter der {licenseopen}GNU AGPL{linkclose}."
+},"pluralForm" :"nplurals=2; plural=(n != 1);"
+}

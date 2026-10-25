@@ -49,5 +49,37 @@ body[data-theme-dark-highcontrast] {
 	}
 }
 
+/*
+ * No links to the upstream project's websites (docs/branding.md, "Links and assets"). A few upstream
+ * scripts write them into pages themselves, for example the WebDAV help link in the NoDrive
+ * settings. The addresses are matched from their start, so a file or a text that only mentions such
+ * an address stays; links that people write themselves (documents, comments, cards) stay too.
+ */
+:is(
+	a[href^="https://nextcloud.com" i], a[href^="http://nextcloud.com" i],
+	a[href^="https://www.nextcloud.com" i], a[href^="http://www.nextcloud.com" i],
+	a[href^="https://docs.nextcloud.com" i], a[href^="https://apps.nextcloud.com" i],
+	a[href^="https://help.nextcloud.com" i], a[href^="https://newsletter.nextcloud.com" i],
+	a[href^="https://portal.nextcloud.com" i], a[href^="https://github.com/nextcloud" i],
+	a[href^="https://www.facebook.com/Nextclouders" i], a[href^="https://mastodon.xyz/@nextcloud" i],
+	a[href^="https://bsky.app/profile/nextcloud" i], a[href^="https://twitter.com/nextclouders" i],
+	a[href^="https://x.com/nextclouders" i], a[href^="https://www.youtube.com/@Nextcloud" i]
+):not(:where(.ProseMirror, .text-editor__content, .rich-text--wrapper, .comment__message, [contenteditable="true"]) *) {
+	display: none !important;
+}
+
+/* NoDrive settings > WebDAV: the row that held the upstream "How to access files using WebDAV" link. */
+[class*="_formBoxItem_"]:has(a[href^="https://docs.nextcloud.com" i]) {
+	display: none !important;
+}
+
+/*
+ * Appearance and accessibility: the sentence that asks people to report problems on the upstream
+ * issue tracker and to join the upstream design team. Without its links it would make no sense.
+ */
+.settings-section.theming > p:has(a[href^="https://github.com/nextcloud" i], a[href^="https://nextcloud.com" i]) {
+	display: none !important;
+}
+
 /* Product names in the app menu and beside its button (the apps keep their technical ids). */
 __APP_LABELS__

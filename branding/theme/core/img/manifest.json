@@ -1,0 +1,17 @@
+{
+	"name": "Nourax Workspace",
+	"short_name": "Nourax Workspace",
+	"start_url": "/",
+	"theme_color": "#2563EB",
+	"background_color": "#0B1220",
+	"description": "Files, calendar, contacts, documents and boards",
+	"icons": [
+		{
+			"src": "/apps/theming/icon",
+			"type": "image/png",
+			"sizes": "512x512"
+		}
+	],
+	"display_override": ["minimal-ui"],
+	"display": "standalone"
+}

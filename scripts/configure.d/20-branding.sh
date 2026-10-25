@@ -1,7 +1,8 @@
 # Nourax branding: the nourax_branding app (nextcloud-apps/nourax_branding). It puts NoMail in the
 # app menu of every signed-in person, right after NoBoard, and opens it in a new tab.
 # Then it switches off the leftover upstream apps that show the upstream name, hides the App store
-# tile of the app menu, and runs the text sweep of every translation (see docs/branding.md).
+# tile of the app menu, hides the upstream's app download links, sends help links to our own help
+# page, and runs the text sweep of every translation (see docs/branding.md).
 # Sourced by scripts/configure.sh with its helpers (occ, dc, log, secret_path, have_secret).
 # To run only this step on the server:
 #   sudo bash -c '. scripts/lib.sh; load_env; . scripts/configure.d/20-branding.sh'
@@ -49,6 +50,24 @@ unset branding_enabled branding_app
 # to false hides only that tile: admins still install and update apps from Administration > Apps.
 log "branding: hide the App store tile in the app menu of people who are not admins"
 occ config:app:set core appstore_link_shown --type=boolean --value=false >/dev/null
+
+# The upstream's desktop and mobile apps: without these settings Nextcloud links its own download page
+# and app stores (the "Install Client" button of welcome e-mails, the theme's syncClientUrl) and puts
+# its iOS app banner (<meta name="apple-itunes-app">) on every page. An empty value hides each of them.
+# When the NoDrive apps ship (handoffs/2026-10-25-workspace-to-nodrive-clients.md), set our own
+# addresses here instead (customclient_ios_appid is the App Store id, a number).
+log "branding: hide the upstream desktop and mobile app links until the NoDrive apps ship"
+for branding_key in customclient_desktop customclient_android customclient_ios customclient_fdroid customclient_ios_appid; do
+	occ config:system:set "$branding_key" --value ''
+done
+unset branding_key
+
+# Help links (Security, Sharing and the other settings pages; /settings/help) open the help page of
+# the nourax_branding app instead of the upstream manual: Nextcloud builds each one as
+# <docBaseUrl>/server/<version>/go.php?to=<topic>, and the app answers every address below /help.
+# Undo: occ config:app:delete theming docBaseUrl
+log "branding: help links open https://${DRIVE_HOST}/apps/nourax_branding/help"
+occ config:app:set theming docBaseUrl --value="https://${DRIVE_HOST}/apps/nourax_branding/help" >/dev/null
 
 # Text sweep: the upstream name in the translations of core and every enabled app, in every language
 # (scripts/branding-sweep.sh). Apps that later steps switch on are swept by the nourax_branding app as

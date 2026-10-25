@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Tests of the text sweep's rules and of the language list fix, with the real sweep/rules.json and
- * sweep/en-overrides.json. Plain PHP, no test framework and no Nextcloud needed:
+ * Tests of the text sweep's rules, of the language list fix and of the upstream colour, background
+ * and address rules, with the real sweep/rules.json and sweep/en-overrides.json. Plain PHP, no test framework and no Nextcloud needed:
  *   docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php
  * Prints one line per check and exits 1 when any check fails.
  *
@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/Service/L10nSweeper.php';
 require_once __DIR__ . '/../lib/Service/LanguageList.php';
+require_once __DIR__ . '/../lib/Service/UpstreamAssets.php';
 
 use OCA\NouraxBranding\Service\L10nSweeper;
 use OCA\NouraxBranding\Service\LanguageList;
+use OCA\NouraxBranding\Service\UpstreamAssets;
 
 $passed = 0;
 $failed = 0;
@@ -300,6 +302,23 @@ $want = '{"languageMap":{"activeLanguage":{"code":"en_GB","name":"English (Briti
 same($fixed, $want, 'language list: doubles removed, everything else as it was');
 same(LanguageList::fix($want, 'languageMap'), null, 'language list: nothing to fix');
 same(LanguageList::fix('{"other":1}', 'languageMap'), null, 'language list: other states left alone');
+
+// Upstream colours, backgrounds and addresses (Middleware\UpstreamPagesMiddleware).
+$css = ':root { --color-element-assistant:linear-gradient(214deg, #A569D3 12%, #00679E 39%, #422083 86%); --a:#0082c9; --b:#0082c980; --c:#00679e1; --d:#10082c9; }';
+same(UpstreamAssets::recolourCss($css),
+	':root { --color-element-assistant:linear-gradient(214deg, #A569D3 12%, #2563EB 39%, #422083 86%); --a:#2563EB; --b:#2563EB80; --c:#00679e1; --d:#10082c9; }',
+	'theme CSS: upstream blues become cobalt, alpha kept, longer colours left alone');
+$shipped = [
+	'jo-myoung-hee-fluid.webp' => ['attribution' => 'Fluid (Jo Myoung Hee - Nextcloud GmbH, CC-BY-SA-4.0)', 'attribution_url' => 'https://nextcloud.com/trademarks/'],
+	'kamil-porembinski-clouds.jpg' => ['attribution' => 'Clouds (Kamil Porembiński, CC BY-SA)', 'attribution_url' => 'https://www.flickr.com/photos/paszczak000/8715851521/'],
+	'other.webp' => ['attribution' => 'Other (someone)', 'attribution_url' => 'https://github.com/nextcloud/server'],
+];
+same(array_keys(UpstreamAssets::filterBackgrounds($shipped)), ['kamil-porembinski-clouds.jpg'], 'backgrounds: those crediting or linking the upstream are left out');
+same(UpstreamAssets::isUpstreamUrl('https://docs.nextcloud.com/server/35/go.php?to=user'), true, 'upstream address: docs');
+same(UpstreamAssets::isUpstreamUrl('https://github.com/NextCloud'), true, 'upstream address: GitHub organisation, any case');
+same(UpstreamAssets::isUpstreamUrl('https://github.com/nextcloudfan/x'), false, 'upstream address: another GitHub account');
+same(UpstreamAssets::isUpstreamUrl('https://notnextcloud.com/'), false, 'upstream address: a look-alike host');
+same(UpstreamAssets::isUpstreamUrl('/apps/files/?dir=/nextcloud.com'), false, 'upstream address: a path on our site');
 
 echo "\n$passed passed, $failed failed\n";
 exit($failed === 0 ? 0 : 1);
