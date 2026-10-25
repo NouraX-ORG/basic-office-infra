@@ -16,6 +16,7 @@ again finishes a call that stopped half way and reports `unchanged` for what was
 | Where it runs | The `nourax_api` app (`nextcloud-apps/nourax_api`), next to the [NoMail API](nomail-api.md) |
 | Key | Server secret `nodrive_admin_api_key` (48 characters), imported by `scripts/configure.d/60-nomail-api.sh` |
 | Tests | `sudo tests/admin-api.sh` (part 1), `sudo tests/admin-people.sh` (part 2) and `sudo tests/privacy.sh` (privacy between organisations) on the server |
+| Demo data | `sudo tests/demo-accounts.sh` makes and checks the owner's kept [demo accounts](#demo-accounts) (`--check` reads only) |
 
 **Part 1 (live):** request signing, the audit, organisations and teams.
 **Part 2 (live):** people (`PUT /v1/admin/people/{user_id}`: joins, moves, leaves, leaving the
@@ -202,7 +203,9 @@ stay listed. `leads` are the team's leads (people PUT with role `lead`).
 ### `PUT /v1/admin/people/{user_id}`
 
 A person's **whole** desired state. `user_id` is the account's uid: the person's Supabase user id
-(a lowercase UUID; `qa-t<task>-<n>` for tests).
+(a lowercase UUID; `qa-t<task>-<n>` for tests; `^demo-[a-z0-9-]{1,40}$` for the owner's kept
+[demo accounts](#demo-accounts)). A demo person belongs only to a demo organisation, and a demo
+organisation holds only demo people (400 `invalid_request` otherwise).
 
 ```
 {"email":"ana@acme.example","display_name":"Ana Diaz","org_id":"<org_id>",
@@ -394,7 +397,7 @@ The newest audit rows first (`limit` 1-500, default 100), optionally for one obj
 | 200 | `{"ok":true,"applied":true,"version","steps":[...]}` | Every step worked (a reconcile: everything matches afterwards) |
 | 200 | `{"ok":true,"applied":false,"reason":"stale_version","version":<sent>,"current_version":<stored>,"steps":[]}` | A newer version is already stored; nothing changed. `version` is the one you sent, `current_version` the one stored. |
 | 502 | `{"ok":false,"applied":true,...}`, the failed step with a `detail` | Send the same call again later; it finishes what is missing |
-| 400 | `{"error":"invalid_request"}` | An id that is not a lowercase UUID or a QA id `qa-...`, a bad body, a query on a PUT |
+| 400 | `{"error":"invalid_request"}` | An id that is not a lowercase UUID, a QA id `qa-...` or a demo id `demo-...`; a demo id mixed with a non-demo one (a team or a person and its organisation); a bad body; a query on a PUT |
 | 401 | `{"error":"unauthorized"}` | No signature, a wrong one, an unknown key id. Counted by the brute-force protection. |
 | 401 | `{"error":"stale_timestamp"}` | The signature is right but the timestamp is more than 300 seconds off, either way (check the clock) |
 | 401 | `{"error":"replayed"}` | This nonce was used before |
@@ -423,7 +426,13 @@ holds `current_version`, which is higher than the version the call sent. NoMail 
 path that does not match): fix the data, do not send it again as is. A 404 `not_found` on a GET
 means that organisation, team or person was never sent (send it first, if it should exist).
 
-**Ids:** `org_id` and `team_id` are lowercase UUIDs; `^qa-[a-z0-9-]{1,40}$` is allowed for tests.
+**Ids:** `org_id` and `team_id` are lowercase UUIDs; `^qa-[a-z0-9-]{1,40}$` is allowed for tests,
+and `^demo-[a-z0-9-]{1,40}$` (organisations, teams and people) for the owner's kept
+[demo accounts](#demo-accounts). A Supabase id is always a UUID, so a `demo-` id can never be a
+real person or one of NoMail's organisations. Demo ids only go together: a `demo-` team or person
+belongs only to a `demo-` organisation, and the other way round. `POST /v1/provision` (NoMail's
+key) still takes only UUIDs and `qa-t<task>-<n>` ids, so it can never make a demo account or give
+one an app password, and the scheduled delete never deletes one.
 The API reads them from the signed path, never from the body.
 
 ## Safety
@@ -610,6 +619,125 @@ When NoMail calls:
 | A move to another organisation | One person PUT with the new `org_id` (supported; not tested across organisations) |
 | Leaving the organisation, or closing the NoMail account | The person PUT with `"active": false`, before NoMail deletes anything |
 | Every night | `POST /v1/admin/orgs/{org_id}/reconcile`, per organisation |
+
+## Demo accounts
+
+Demo data for the owner, to see how organisations, teams, team folders and privacy work. It is
+made through this API, signed with the admin key, exactly as NoMail would call it. **It is kept,
+and it belongs to the owner: no task may disable, change or delete these accounts.** They are not
+QA objects, and no test round touches them.
+
+| Organisation | Team | People (the lead first) |
+|---|---|---|
+| Demo Alpha (`demo-alpha`) | Sales (`demo-alpha-sales`) | `demo-a01` Amina (lead), `demo-a02` Ben, `demo-a03` Chloe, `demo-a04` Daniel, `demo-a05` Elif, `demo-a06` Omar, `demo-a07` Priya |
+| | Engineering (`demo-alpha-engineering`) | `demo-a08` Farah (lead), `demo-a09` George, `demo-a10` Hana, `demo-a11` Ivan, `demo-a12` Jade, `demo-a06` Omar, `demo-a07` Priya |
+| Demo Beta (`demo-beta`) | Marketing (`demo-beta-marketing`) | `demo-b01` Karim (lead), `demo-b02` Lena, `demo-b03` Mateo, `demo-b04` Nadia, `demo-b05` Oscar, `demo-b06` Rania, `demo-b07` Sami |
+| | Support (`demo-beta-support`) | `demo-b08` Tara (lead), `demo-b09` Umar, `demo-b10` Vera, `demo-b11` Wes, `demo-b12` Yusuf, `demo-b06` Rania, `demo-b07` Sami |
+
+- Omar, Priya, Rania and Sami are in both teams of their organisation, so each team has 7 people
+  and each organisation 12.
+- The name shown is the first name and the team: "Amina (Sales)", "Omar (Sales + Engineering)".
+- The emails are `<uid>@demo-alpha.invalid` and `<uid>@demo-beta.invalid`. The `.invalid` ending
+  can never receive mail.
+- They are "Log in with Nourax" accounts (backend `user_oidc`), made by the people PUT like real
+  people, so they get everything a real member gets.
+
+What is in them:
+
+- In each team folder, "Welcome to <team>.md" (who is in the team, and what to try) and
+  "<team> plan.docx", an ONLYOFFICE document. Each team's lead writes them, and only when they are
+  missing, so changes the owner makes are kept.
+- "Ben's notes for George.md" in the own files of Ben (`demo-a02`, Sales), shared read-only with
+  George (`demo-a09`, Engineering): the same organisation, another team.
+- Each team's calendar "Team: <team>", its board "Team: <team>" and its read-only address book, as
+  for every team.
+
+**Making and checking them:** `sudo tests/demo-accounts.sh` on the server. It takes the
+server-change lock itself (never wrap it in `flock`; set `NOURAX_LOCK_HELD=1` if you already hold
+the lock), makes what is missing, puts back what changed, then checks everything.
+`sudo tests/demo-accounts.sh --check` only reads. Both are safe to run again, and neither deletes
+anything.
+
+### Signing in as a demo person
+
+Each demo account has one app password called "Demo sign-in" (its key). The keys are kept in two
+places only:
+
+- on the server, `/etc/nourax/demo/demo-accounts.txt` (root only: folder 0700, file 0600);
+- on the owner's PC, `_private\nourax-workspace-demo-accounts.txt` in the folder that holds the
+  repo checkouts (outside every git repo; only the owner's Windows account can read it). It is
+  copied straight from the server, so the keys are never shown. In Git Bash, in that folder:
+
+  ```
+  mkdir -p _private
+  ssh -i ~/.ssh/nourax_workspace_ed25519 nourax@57.129.185.78 'sudo cat /etc/nourax/demo/demo-accounts.txt' > _private/nourax-workspace-demo-accounts.txt
+  MSYS_NO_PATHCONV=1 icacls '_private\nourax-workspace-demo-accounts.txt' /inheritance:r /grant:r "$USERNAME:F"
+  ```
+
+Each file has one line per account, with tabs between: uid, name, organisation, teams, key.
+
+**The sign-in page does not take these keys.** Its form asks only the kinds of accounts that have
+a password (core's `LoginController::tryLogin`, then `UidLoginCommand` and
+`Manager::checkPasswordNoLogging`). "Log in with Nourax" accounts (`user_oidc`) have none, and app
+passwords are checked only for apps and WebDAV (`Session::logClientIn`). So the form refuses a
+demo key as a wrong password (checked: the POST goes back to `/login?direct=1&user=demo-a01`, and
+that page's reason is `invalidpassword`), while the same request with a local QA account's
+password signs in (to `/apps/files/`).
+
+**The way in, in a private browser window:**
+
+1. Open a private window (Chrome Incognito, Edge InPrivate or a Firefox private window).
+2. Go to `https://drive.nourax.org/remote.php/webdav/`. The browser asks for a user name and a
+   password for "Nourax Workspace".
+3. Type the uid (for example `demo-a01`) and that person's key from the file. A short WebDAV page
+   shows.
+4. Go to `https://drive.nourax.org/apps/files/`. You are now that person, in the normal pages:
+   files, team folders, calendar, board and ONLYOFFICE.
+5. To stop, choose "Log out" in the user menu or close the private window. The key keeps working.
+
+All private windows of one browser share one sign-in. To be two demo people at the same time, use
+two browsers, or two browser profiles.
+
+Why this way: it uses only what is already there for the desktop and phone apps, an app password
+over HTTPS on the WebDAV address, which is open to the internet anyway and takes only app
+passwords and sessions (`token_auth_enforced`). Nothing changes for real people: "Log in with
+Nourax" and the sign-in page stay as they are, no page is opened to more people, and the demo
+accounts get no login password. Left out on purpose: a local password for each demo account (a
+second kind of account, and passwords the sign-in page would take), an "impersonate" app (it needs
+admin rights and the admin pages), and any change to the sign-in page.
+
+`tests/demo-signin.sh` checks this from the owner's PC (Git Bash, from the repo; the sign-in page
+is open only to the owner's address). Run on 2026-10-25 for all 24 accounts: the sign-in form
+refuses the key, and its reason is a wrong password; WebDAV `PROPFIND` with the key answers 207;
+`/remote.php/webdav/` with the key answers 200 and starts a session; with only that session's
+cookies, `/ocs/v2.php/cloud/user` names the uid and `/apps/files/` is that person's page; the
+page's own "Log out" link ends the session, and the key still answers 207.
+
+### What keeps them as they are
+
+Checked on 2026-10-25 in this repo and in the other tasks' work:
+
+- `POST /v1/provision` (NoMail's key) refuses `demo-` ids: it can never make a demo account or
+  give one an app password.
+- The scheduled delete (`LeaverDeletion`, off) takes only Supabase and QA ids, never a `demo-` id.
+- A demo person or team belongs only to a demo organisation (400 otherwise). NoMail's PUTs and its
+  nightly reconcile name only NoMail's own organisations (UUIDs), so they never list, move, leave,
+  archive or disable a demo person or team.
+- The drift job (every 15 minutes) only puts the `org:demo-*` and `team:demo-*` groups back the way
+  they are stored. It keeps the demo accounts as they are and disables nobody.
+- `tests/qa-wrapup.sh` touches only `org:qa-t6*` organisations and `qa-t6-<number>` accounts. The
+  other tests, and Task 1's MCP tests, touch only their own `qa-t<task>-*` accounts.
+- `user_oidc` has no job that disables accounts, and demo people never sign in through it (a
+  Supabase id is always a UUID), so it never rewrites their names or emails.
+- The retention app has no rules.
+
+So nothing needed a `demo-` exception. They change only through a signed admin call that names a
+`demo-` id (only `tests/demo-accounts.sh` sends those) or through an admin (occ or the admin pages).
+
+**One limit:** the server's regular clean-up removes an app password that has not been used for a
+year (core's `token_auth_token_retention`, 365 days by default). If a key stops working, run
+`sudo tests/demo-accounts.sh` again: it makes a new key only for a person whose stored key gets 401
+and writes it to the server file. Then copy the file to the PC again (above).
 
 ## QA objects made by the test
 

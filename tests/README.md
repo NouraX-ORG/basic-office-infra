@@ -15,6 +15,13 @@ sudo tests/nomail-contract.sh  # U1-U5 as qa-t6-1, after api-provision.sh; a few
 sudo tests/qa-wrapup.sh      # at the end of a round: QA teams archived, QA accounts disabled
 ```
 
+The owner's kept demo accounts (not QA objects; [docs/teams.md](../docs/teams.md#demo-accounts)):
+
+```
+sudo tests/demo-accounts.sh          # make what is missing, put back what changed, then check
+sudo tests/demo-accounts.sh --check  # read only
+```
+
 After a wrap-up, start the next round with `sudo tests/qa-wrapup.sh --enable` (it enables
 `qa-t6-1` to `qa-t6-5` again).
 
@@ -26,6 +33,13 @@ because it starts the upload Worker with `wrangler dev`:
 ```
 tests/worker-local.sh <scratch-dir>                                                  # local Worker
 WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch-dir>  # after the route's yes
+```
+
+And one checks, from the owner's PC, how the owner signs in as a demo person (the sign-in page is
+open only to the owner's address):
+
+```
+tests/demo-signin.sh [keys-file]   # default ../_private/nourax-workspace-demo-accounts.txt
 ```
 
 | Test | What it checks |
@@ -46,6 +60,9 @@ WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch
 | `u4-raw-image.sh` | U4: a PNG made in the script, put at `/NoMail/Images/<yyyy-mm>/<uuid>.png`, and a link without `expireDate` (expiration null); `/s/<token>/download` is one 303 with no body, then 200 `image/png` with the PNG's bytes and `nosniff`, with no login or cookie; also `/public.php/dav/files/<token>`, `/index.php/s/<token>/download`, `/s/<token>/preview` and the page. Leaves the file. |
 | `u5-shares.sh` | U5: lists the shares (every public link passes NoMail's `readShare`) and finds the links U2 and U4 made; changes the first one as NoMail's `updatePublicShare()` does (a `PUT` with 90 days and a password, then the password taken off; the end date stays); deletes each (200); then a `GET` by id and a second `DELETE` give 404 (NoMail: already gone) and the list no longer has them; the first one's `/s/<token>` page gives 404. Removes only this run's links (run on its own, one it makes first). |
 | `qa-wrapup.sh` | The end of a test round, under the lock: every `org:qa-t6*` organisation gets a reconcile with an empty state through the admin API (everybody leaves its teams and group, every team is archived: folder "<name> (archived)", board archived; the group, folder, files, book and calendar stay), checked with the status calls; then every `qa-t6-<number>` account is disabled with `occ user:disable` and checked. Deletes nothing. `--enable` enables `qa-t6-1` to `qa-t6-5` again for the next round. |
+| `demo-accounts.sh` | The owner's kept demo data ([docs/teams.md](../docs/teams.md#demo-accounts)), through the signed admin API: organisations `demo-alpha` and `demo-beta`, four teams of seven, 24 people `demo-a01`..`demo-a12` and `demo-b01`..`demo-b12` (four of them in two teams), one lead per team; one "Demo sign-in" app password each, kept only in `/etc/nourax/demo/demo-accounts.txt` (0600; a key that still answers 207 is kept); a welcome note and an ONLYOFFICE document in each team folder and one read-only share inside Demo Alpha, written only when missing. The checks: accounts enabled with the right names, emails and groups, the leads, no drift, every key signs in, the file's shape and mode, the files, the share, and a first privacy look (Demo Alpha finds its own people, never Demo Beta's). Takes the lock itself, except with `--check`. Runs `admin-ids.php` first. Deletes nothing and never prints a key. |
+| `demo-signin.sh` | On the owner's PC, for every account in the owner's copy of the demo keys ([docs/teams.md](../docs/teams.md#signing-in-as-a-demo-person)): the sign-in form (CSRF token, cookies, Origin) refuses the key and its reason is `invalidpassword`; WebDAV `PROPFIND` with the key 207; `/remote.php/webdav/` with the key 200 and a session; with only the session cookies the OCS user call names the person and `/apps/files/` is their page; the page's own Log out link ends the session and the key still answers 207. Also the 401 Basic prompt "Nourax Workspace". Changes nothing. |
+| `admin-ids.php` | The id rules of the admin API and `/v1/provision`, inside the app container: `sudo docker compose exec -T app php < tests/admin-ids.php`. `demo-` ids are taken for organisations, teams and people, only together with a `demo-` organisation; `/v1/provision` and the scheduled delete still refuse them; the UUID and `qa-` rules are unchanged. |
 | `propfind.xml` | NoMail's `PROPFIND` body (`PROPFIND_BODY` in `driveFiles.ts`), used by the U-scripts |
 | `worker-local.sh` | The upload Worker ([worker/README.md](../worker/README.md), [docs/nomail-contract.md](../docs/nomail-contract.md#upload-worker)), end to end into the live Drive as `qa-t6-2`: a 120 MiB file in three chunks (50, 50 and 20 MiB) through `/start`, `/chunks/{n}`, `GET /chunks` and `/finish`, then a WebDAV `PROPFIND` (size, file id) and a SHA-256 compare of a `GET`; CORS (`mail.nourax.org` 204 with the header, `evil.example` 403), tickets missing or sealed with another key (401), bad chunk numbers and lengths (400), a taken name (409), cancelling. A second, 6 MiB upload (chunks of 5 and 1 MiB) finishes too early on purpose: before any chunk and then with chunk 2 missing, each 409 `incomplete` with the missing numbers and no file, the session still usable; then a finish sent twice (201 both times, the same file id) and a size and SHA-256 compare. Locally it runs the Worker with `wrangler dev --env-file` and a throwaway key; with `WORKER_URL` it tests the live route and pipes the real key from the server into `mint-ticket.mjs` on stdin. It reads `qa-t6-2`'s netrc file from the server over SSH into the scratch folder. |
 
@@ -57,7 +74,8 @@ WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch
   through `-K <(...)`; app passwords go into netrc files and curl reads them with `--netrc-file`.
   The output shows statuses, lengths and yes/no, never a key or a password.
 - **QA accounts only.** Ids are `qa-t6-N`. `lib.sh` stops the test if any request would name the
-  owner's account.
+  owner's account. The one exception is `demo-accounts.sh`, which keeps the owner's demo accounts
+  (`demo-*`) the way they should be; no other test may touch those.
 - **The server-change lock.** A test that adds or changes accounts or writes under `/etc` takes
   `/run/nourax-deploy.lock` for its whole run (`take_lock`). Set `NOURAX_LOCK_HELD=1` when you
   already hold it.
@@ -76,6 +94,7 @@ Kept in `/etc/nourax/qa/` (root, folder 0700, files 0600), never in the repo:
 | `qa-t6-8` | `api-provision.sh`, through the API | none | The disabled-account check; left disabled |
 | `qa-t6-9` | `api-provision.sh`, as a local account | `qa-t6-9.pass` | The local-account check; left disabled |
 | `qa-t6-62` | a review run, through `/v1/provision` | none | A rename check ("QA t6 62 renamed"); left disabled |
+| `qa-t6b-1` | `lib.sh` `qa_local_user`, a local account (Task 6b) | `qa-t6b-1.pass` | Once, the control for `demo-signin.sh`: the same sign-in form request with its password signs in (to `/apps/files/`); left disabled |
 
 Running `api-provision.sh` again gives `qa-t6-1` a new app password and updates its netrc file.
 `qa-wrapup.sh` disables all of them at the end of a round. Deleting QA accounts needs the owner's

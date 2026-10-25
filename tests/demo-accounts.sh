@@ -27,6 +27,10 @@
 # zipfile) in each team folder, and "Ben's notes for George.md" in Ben's (demo-a02, Sales) own
 # files, shared read-only with George (demo-a09, Engineering): same organisation, another team.
 #
+# The checks also show that NoMail's key cannot touch them: /v1/provision refuses demo-a01 (400,
+# nothing made) and no demo account has a "NoMail" app password. How the owner signs in with a key
+# is checked from the owner's PC by tests/demo-signin.sh (the sign-in page is open only there).
+#
 # It takes the server-change lock (not with --check). It deletes nothing and never prints a key;
 # the netrc files curl reads the keys from live only in the test's own temporary folder.
 # Exit 0 when every check passes.
@@ -34,6 +38,7 @@
 
 . "$(dirname "$0")/lib.sh"
 need_admin_key
+need_nomail_key
 
 MODE=make
 case "${1-}" in
@@ -148,8 +153,8 @@ key_status() { # uid -> the HTTP status of a PROPFIND of the person's home with 
 	write_netrc "$1"
 	propfind "$(netrc_of "$1")" "$1/" 0
 }
-demo_tokens() { # uid -> the number of "Demo sign-in" app passwords
-	occ user:auth-tokens:list "$1" --output=json </dev/null | jq --arg n "$KEY_NAME" '[.[] | select(.name == $n)] | length'
+tokens_named() { # uid name -> the number of the person's app passwords with that name
+	occ user:auth-tokens:list "$1" --output=json </dev/null | jq --arg n "$2" '[.[] | select(.name == $n)] | length'
 }
 
 # Writes the keys file from KEY: every person that has a key, in table order, through a new file
@@ -382,12 +387,19 @@ for uid in "${UIDS[@]}"; do
 	else
 		check "$uid: has a key in $KEYS_FILE" yes no
 	fi
-	n="$(demo_tokens "$uid")"
+	n="$(tokens_named "$uid" "$KEY_NAME")"
 	if [ "$n" -gt 1 ]; then
 		log "WARN $uid has $n \"$KEY_NAME\" app passwords (a run stopped half way); only the one in $KEYS_FILE is used. Removing the others needs the owner's yes."
 	fi
 	check "$uid: has a \"$KEY_NAME\" app password" yes "$([ "$n" -ge 1 ] && echo yes || echo no)"
+	# NoMail's key never gives a demo account an app password (see the /v1/provision check below).
+	check "$uid: has no \"NoMail\" app password" 0 "$(tokens_named "$uid" NoMail)"
 done
+
+# NoMail's key can never make a demo account or give one an app password: /v1/provision refuses a
+# demo- id (ProvisionRequest::validUserId), so nothing is made or changed.
+check "POST /v1/provision with demo-a01 (NoMail's key) -> 400 invalid_request" "400 invalid_request" \
+	"$(provision demo-a01 "$(email_of demo-a01)" "$(display_name demo-a01)") $(jq -r '.error // "none"' "$T_OUT/body")"
 
 # The keys file: 24 lines of 5 fields, each key 72 letters and digits; only root can read it.
 check "$KEYS_FILE: owner, group and mode" "root root 600" "$(stat -c '%U %G %a' "$KEYS_FILE" 2>/dev/null || echo missing)"
