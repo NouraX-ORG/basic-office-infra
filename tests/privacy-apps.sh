@@ -22,6 +22,9 @@
 # (qa-t6b-4's): a folder qa-t6b-privacy, a NoGantt project, a NoForms form, a NoBoard board with
 # one list and card, a Photos album, a task list (calendar), and a folder qa-t6b-acl in the team
 # folder; plus "QA t6b transfer" board and form passed to qa-t6b-2 and back. It deletes nothing.
+# An object that an earlier leak reached (a project, form or album shared with org B, a folder with
+# a rule for org B, a board handed to qa-t6b-3) is never used again: the test makes a new one with
+# the same name (or "... 2", qa-t6b-acl-2), so every run starts from one that org B cannot see.
 #
 # Keys and app passwords are never printed. Exit 0 when every check passes.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -83,6 +86,19 @@ uri() { jq -rn --arg s "$1" '$s | @uri'; }
 names_none() {
 	local n
 	for n in "$@"; do
+		if grep -qF -- "$n" "$T_OUT/r"; then
+			echo "no: $n"
+			return
+		fi
+	done
+	echo yes
+}
+# The same, leaving out what the search term itself holds (a typed address comes back as itself).
+names_none_but() { # term names...
+	local term="$1" n
+	shift
+	for n in "$@"; do
+		case "$term" in *"$n"*) continue ;; esac
 		if grep -qF -- "$n" "$T_OUT/r"; then
 			echo "no: $n"
 			return
@@ -228,8 +244,8 @@ for side in "demo-a01:demo-b:Karim:demo-b01:demo-b01@demo-beta.invalid:Karim (Ma
 		for kind in file calendar deck principals; do
 			call "$me" GET "$OCS/apps/files_sharing/api/v1/sharees?search=$(uri "$term")&itemType=$kind&perPage=200&lookup=false" >/dev/null
 			# A typed address is offered back as itself (a link by email); nothing else may name them.
-			check "$me sharees ($kind) \"$term\": nobody of the other organisation" "no people, no groups" \
-				"$([ -z "$(users_found)" ] && echo "no people" || echo "people $(users_found)"), $([ -z "$(groups_found)" ] && echo "no groups" || echo "groups $(groups_found)")"
+			check "$me sharees ($kind) \"$term\": nobody of the other organisation" "no people, no groups, no names" \
+				"$([ -z "$(users_found)" ] && echo "no people" || echo "people $(users_found)"), $([ -z "$(groups_found)" ] && echo "no groups" || echo "groups $(groups_found)"), $(r="$(names_none_but "$term" "${OTHER[@]}")"; [ "$r" = yes ] && echo "no names" || echo "$r")"
 		done
 	done
 	call "$me" GET "$OCS/apps/files_sharing/api/v1/sharees?search=$(uri "$MATE")&itemType=file&perPage=200&lookup=false" >/dev/null
@@ -359,10 +375,18 @@ done
 # === 3. Sharing and handing over (the QA accounts try; nothing may reach org B) ===================
 
 # --- NoGantt: project shares and planning resources ---
+# No org B id in a list of shares (the last answer): an object an earlier leak reached is never
+# used again, so every run starts from one that org B cannot see.
+no_org_b() { jq -e --arg p "$QA3" --arg g "org:$ORG_B" --arg f "$1" '[.. | objects | .[$f]? | select(. == $p or . == $g)] | length == 0' "$T_OUT/r" >/dev/null; }
 call "$QA1" GET "$GANTT/projects" >/dev/null
-project="$(jq -r --arg u "$QA1" '[.ocs.data[]? | select(.title == "QA t6b privacy" and .owner_id == $u)][0].id // empty' "$T_OUT/r")"
+project=""
+for pid in $(jq -r --arg u "$QA1" '.ocs.data[]? | select(.title == "QA t6b privacy" and .owner_id == $u) | .id' "$T_OUT/r"); do
+	call "$QA1" GET "$GANTT/projects/$pid/shares" >/dev/null
+	if no_org_b principal_id; then project="$pid"; break; fi
+done
 if [ -z "$project" ]; then
-	check "$QA1 makes the NoGantt project -> 200" 200 "$(json "$QA1" POST "$GANTT/projects" '{"title":"QA t6b privacy","color":"#2563EB"}')"
+	check "$QA1 makes the NoGantt project (201)" yes \
+		"$(code="$(json "$QA1" POST "$GANTT/projects" '{"title":"QA t6b privacy","color":"#2563EB"}')"; [[ "$code" =~ ^20[01]$ ]] && echo yes || echo "no ($code)")"
 	project="$(jq -r '.ocs.data.id // empty' "$T_OUT/r")"
 fi
 check "the NoGantt project is there" yes "$([ -n "$project" ] && echo yes || echo no)"
@@ -393,15 +417,16 @@ check "NoGantt resource changed to $QA3 (org B) -> 403" yes "$(refused "$(json "
 check "NoGantt: no resource stands for $QA3 after those tries" "$before" "$(gantt_resources "$QA3")"
 
 # --- NoForms: shares and a new owner ---
-forms_owned() { call "$QA1" GET "$FORMS/forms?type=owned" >/dev/null; jq -r --arg t "$1" '[.ocs.data[]? | select(.title == $t)][0].id // empty' "$T_OUT/r"; }
-form_of() { # title -> a form of the lead (QA1) with that title, made when missing
+forms_owned() { call "$QA1" GET "$FORMS/forms?type=owned" >/dev/null; jq -r --arg t "$1" '.ocs.data[]? | select(.title == $t) | .id' "$T_OUT/r"; }
+form_of() { # title -> a form of the lead (QA1) with that title that org B has no share of, made when missing
 	local id
-	id="$(forms_owned "$1")"
-	if [ -z "$id" ]; then
-		json "$QA1" POST "$FORMS/forms" '{}' >/dev/null
-		id="$(jq -r '.ocs.data.id // empty' "$T_OUT/r")"
-		[ -n "$id" ] && json "$QA1" PATCH "$FORMS/forms/$id" "$(jq -cn --arg t "$1" '{keyValuePairs: {title: $t}}')" >/dev/null
-	fi
+	for id in $(forms_owned "$1"); do
+		call "$QA1" GET "$FORMS/forms/$id" >/dev/null
+		if no_org_b shareWith; then echo "$id"; return; fi
+	done
+	json "$QA1" POST "$FORMS/forms" '{}' >/dev/null
+	id="$(jq -r '.ocs.data.id // empty' "$T_OUT/r")"
+	[ -n "$id" ] && json "$QA1" PATCH "$FORMS/forms/$id" "$(jq -cn --arg t "$1" '{keyValuePairs: {title: $t}}')" >/dev/null
 	echo "$id"
 }
 form="$(form_of "QA t6b privacy")"
@@ -414,18 +439,21 @@ check "NoForms share with an id that does not exist -> 403 (the same answer)" ye
 check "NoForms share with the group org:$ORG_B -> 403" yes "$(refused "$(new_form_share 1 "org:$ORG_B")")"
 check "NoForms: not shared with org B by those tries" "$before" "$(form_shares "$QA3") $(form_shares "org:$ORG_B")"
 if [ "$(form_shares "$QA2")" = 0 ]; then
-	check "NoForms share with $QA2 (org A) -> 200" 200 "$(new_form_share 0 "$QA2")"
+	check "NoForms share with $QA2 (org A) -> 201" yes "$(code="$(new_form_share 0 "$QA2")"; [[ "$code" =~ ^20[01]$ ]] && echo yes || echo "no ($code)")"
 fi
 check "NoForms owner -> $QA3 (org B) -> 403" yes "$(refused "$(json "$QA1" PATCH "$FORMS/forms/$form" "$(jq -cn --arg u "$QA3" '{keyValuePairs: {ownerId: $u}}')")")"
 check "NoForms owner -> an id that does not exist -> 403" yes "$(refused "$(json "$QA1" PATCH "$FORMS/forms/$form" "$(jq -cn --arg u "$NOBODY" '{keyValuePairs: {ownerId: $u}}')")")"
-check "NoForms: $QA1 still owns the form" "$form" "$(forms_owned "QA t6b privacy")"
+check "NoForms: $QA1 still owns the form" yes "$(forms_owned "QA t6b privacy" | grep -qx -- "$form" && echo yes || echo no)"
+privacy_form="$form"
 form="$(form_of "QA t6b transfer")"
 check "NoForms owner -> $QA2 (org A) -> 200" 200 "$(json "$QA1" PATCH "$FORMS/forms/$form" "$(jq -cn --arg u "$QA2" '{keyValuePairs: {ownerId: $u}}')")"
 check "NoForms: $QA2 gives it back -> 200" 200 "$(json "$QA2" PATCH "$FORMS/forms/$form" "$(jq -cn --arg u "$QA1" '{keyValuePairs: {ownerId: $u}}')")"
-check "NoForms: no form for everyone on the server" "false false" \
-	"$(occ config:app:get forms allowPermitAll </dev/null 2>/dev/null || echo unset) $(occ config:app:get forms allowShowToAll </dev/null 2>/dev/null || echo unset)"
+# Stored as booleans (50-apps.sh): occ prints false as 0.
+check "NoForms: no form for everyone on the server" "off off" \
+	"$(for key in allowPermitAll allowShowToAll; do v="$(occ config:app:get forms "$key" </dev/null 2>/dev/null || echo unset)"; case "$v" in 0 | false) printf 'off ' ;; *) printf '%s ' "$v" ;; esac; done | sed 's/ $//')"
 call "$QA3" GET "$FORMS/forms?type=shared" >/dev/null
-check "$QA3's shared forms: none of $QA1's" yes "$(names_none 'QA t6b privacy' 'QA t6b transfer')"
+check "$QA3's shared forms: neither of $QA1's" yes \
+	"$(yes_no jq -e --argjson a "$privacy_form" --argjson b "$form" '[.ocs.data[]? | select(.id == $a or .id == $b)] | length == 0' "$T_OUT/r")"
 
 # --- NoBoard: a new owner, board imports and card people ---
 boards_of() { call "$1" GET "$DECK/boards" >/dev/null; jq -r --arg t "$2" --arg u "$1" '[.[]? | select(.title == $t and .owner.uid == $u and .deletedAt == 0)][0].id // empty' "$T_OUT/r"; }
@@ -462,9 +490,10 @@ if [ -z "$card" ]; then
 fi
 check "card people: $QA3 (org B) is refused" yes \
 	"$(code="$(json "$QA1" PUT "$DECK/boards/$board/stacks/$stack/cards/$card/assignUser" "$(jq -cn --arg u "$QA3" '{userId: $u}')")"; [[ "$code" =~ ^40[03]$ ]] && echo yes || echo "no ($code)")"
-# Imports name people and groups that Deck writes as they are (BoardImportService).
+# Imports name people and groups that Deck writes as they are (BoardImportService). The config must
+# be a JSON object for Deck ({} arrives as an empty list, which its schema refuses with 409).
 import_json() { # acl-type participant
-	jq -cn --arg o "$QA1" --argjson t "$1" --arg p "$2" '{system: "DeckJson", config: {uidRelation: {}}, data: {boards: [{title: "QA t6b import", owner: $o,
+	jq -cn --arg o "$QA1" --argjson t "$1" --arg p "$2" '{system: "DeckJson", config: {owner: $o}, data: {boards: [{title: "QA t6b import", owner: $o,
 		color: "2563eb", archived: false, deletedAt: 0, lastModified: 0, labels: [], stacks: [],
 		acl: [{type: $t, participant: {primaryKey: $p, uid: $p, type: $t}, permissionEdit: false, permissionShare: false, permissionManage: false}]}]}}'
 }
@@ -476,6 +505,15 @@ check "board import mapping an account to $QA3 (uidRelation) -> 403" yes \
 	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 someone | jq -c --arg u "$QA3" '.config.uidRelation = {someone: $u}')")")"
 check "board upload (the web import) shared with $QA3 -> 403" yes \
 	"$(refused "$(import_json 0 "$QA3" | jq -c .data | call "$QA1" POST "$WEB/apps/deck/boards/import" -F 'file=@-;filename=board.json;type=application/json')")"
+card_import() { # field-of-the-card json -> an import with one list and one card holding it
+	import_json 0 "$QA1" | jq -c --argjson f "$1" '.data.boards[0].stacks = [{id: 1, title: "QA t6b", order: 0, lastModified: 0,
+		cards: [{id: 1, title: "QA t6b card", description: "", lastModified: 0, lastEditor: null, createdAt: 0, archived: false,
+			order: 0, duedate: null} + $f]}]'
+}
+check "board import with a card for $QA3 (org B) -> 403" yes \
+	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{assignedUsers: [{participant: {primaryKey: $u, uid: $u, type: 0}}]}')")")")"
+check "board import with a comment by $QA3 (org B) -> 403" yes \
+	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{comments: [{id: 1, actorType: "users", actorId: $u, message: "QA t6b", creationDateTime: "2026-10-25T12:00:00+00:00"}]}')")")")"
 check "board imports: $QA3 got no board from those tries" "$before" "$(imports "$QA3")"
 if [ "$(boards_of "$QA1" "QA t6b import (same organisation)")" = "" ]; then
 	check "board import shared with $QA2 (org A) -> 200" 200 \
@@ -497,9 +535,6 @@ if [ "$(notifications_from "$QA2" files)" = 0 ]; then
 fi
 
 # --- Photos: album collaborators ---
-ALBUM="$DAV_BASE/photos/$QA1/albums/QA%20t6b%20privacy"
-code="$(call "$QA1" MKCOL "$ALBUM")"
-check "$QA1 has the album (201 new, 405 there)" yes "$([[ "$code" =~ ^(201|405)$ ]] && echo yes || echo "no ($code)")"
 collaborators() { # -> the album's collaborators as JSON [{id, type}]
 	xml "$QA1" PROPFIND "$ALBUM" 0 '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:collaborators/></d:prop></d:propfind>' >/dev/null
 	python3 -I - "$T_OUT/r" <<'PY'
@@ -507,14 +542,22 @@ import json, sys, xml.etree.ElementTree as ET
 ns = {"d": "DAV:", "nc": "http://nextcloud.org/ns"}
 out = []
 for c in ET.parse(sys.argv[1]).getroot().iter("{http://nextcloud.org/ns}collaborator"):
-	out.append({"id": c.findtext("nc:id", "", ns), "type": int(c.findtext("nc:type", "0", ns) or 0)})
+	# Photos writes id, label and type without a namespace.
+	out.append({"id": c.findtext("id") or c.findtext("nc:id", "", ns), "type": int(c.findtext("type") or c.findtext("nc:type", "0", ns) or 0)})
 print(json.dumps(out))
 PY
 }
-set_collaborators() { # json-list
+set_collaborators() { # json-list (Photos replaces the whole list with it)
 	xml "$QA1" PROPPATCH "$ALBUM" 0 "<?xml version=\"1.0\"?><d:propertyupdate xmlns:d=\"DAV:\" xmlns:nc=\"http://nextcloud.org/ns\"><d:set><d:prop><nc:collaborators>$1</nc:collaborators></d:prop></d:set></d:propertyupdate>"
 }
-current="$(collaborators)"
+# The first of "QA t6b privacy", "QA t6b privacy 2", ... that has nobody of org B.
+for ALBUM_NAME in "QA t6b privacy" "QA t6b privacy 2" "QA t6b privacy 3" "QA t6b privacy 4"; do
+	ALBUM="$DAV_BASE/photos/$QA1/albums/$(uri "$ALBUM_NAME")"
+	code="$(call "$QA1" MKCOL "$ALBUM")"
+	current="$(collaborators)"
+	if ! jq -e --arg p "$QA3" --arg g "org:$ORG_B" 'any(.id == $p or .id == $g)' <<<"$current" >/dev/null; then break; fi
+done
+check "$QA1 has the album \"$ALBUM_NAME\" (201 new, 405 there)" yes "$([[ "$code" =~ ^(201|405)$ ]] && echo yes || echo "no ($code)")"
 if ! jq -e --arg u "$QA2" 'any(.id == $u and .type == 0)' <<<"$current" >/dev/null; then
 	code="$(set_collaborators "$(jq -c --arg u "$QA2" '. + [{id: $u, type: 0}]' <<<"$current")")"
 	check "album shared with $QA2 (org A) -> 207, accepted" "207 no" "$code $(grep -q 'HTTP/1.1 [45]' "$T_OUT/r" && echo yes || echo no)"
@@ -525,8 +568,15 @@ check "album shared with the group org:$ORG_B -> 403" yes "$(refused "$(set_coll
 check "the album's collaborators are as before those tries" "$current" "$(collaborators)"
 
 # --- Team folders: a lead's advanced permissions ---
-ACL_DIR="$DAV_BASE/files/$QA1/$(uri "$QA_FOLDER")/qa-t6b-acl"
-call "$QA1" MKCOL "$ACL_DIR" >/dev/null
+# The first of qa-t6b-acl, qa-t6b-acl-2, ... whose rules name nobody of org B (an earlier leak's
+# rules are kept, and a rule the folder has is not checked again).
+for ACL_NAME in qa-t6b-acl qa-t6b-acl-2 qa-t6b-acl-3 qa-t6b-acl-4; do
+	ACL_DIR="$DAV_BASE/files/$QA1/$(uri "$QA_FOLDER")/$ACL_NAME"
+	call "$QA1" MKCOL "$ACL_DIR" >/dev/null
+	call "$QA1" PROPFIND "$ACL_DIR" -H 'Depth: 0' --data-binary '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:acl-list/></d:prop></d:propfind>' >/dev/null
+	if ! grep -qE "<nc:acl-mapping-id>($QA3|org:$ORG_B)<" "$T_OUT/r"; then break; fi
+done
+log "team folder rules are tried on $ACL_NAME"
 acl_rules() { # -> the folder's own rules, as <nc:acl> elements
 	xml "$QA1" PROPFIND "$ACL_DIR" 0 '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:acl-list/></d:prop></d:propfind>' >/dev/null
 	python3 -I - "$T_OUT/r" <<'PY'
