@@ -14,12 +14,12 @@
 #
 # Who tries to share and hand things over (the write checks): three QA accounts in two QA
 # organisations, made through the admin API, with their NoMail app passwords from /v1/provision:
-#   qa-t6b-org-a: qa-t6b-1 (team qa-t6b-team-a1, lead), qa-t6b-2 (team qa-t6b-team-a1)
+#   qa-t6b-org-a: qa-t6b-4 (team qa-t6b-team-a1, lead), qa-t6b-2 (team qa-t6b-team-a1)
 #   qa-t6b-org-b: qa-t6b-3 (team qa-t6b-team-b1)
 # Each write check tries qa-t6b-3 (another organisation), an id that does not exist and, where it
 # applies, org B's group; each is refused with 403 and changes nothing. A same-organisation try
 # with qa-t6b-2 still works. The QA objects are kept for the next run, under the names below
-# (qa-t6b-1's): a folder qa-t6b-privacy, a NoGantt project, a NoForms form, a NoBoard board with
+# (qa-t6b-4's): a folder qa-t6b-privacy, a NoGantt project, a NoForms form, a NoBoard board with
 # one list and card, a Photos album, a task list (calendar), and a folder qa-t6b-acl in the team
 # folder; plus "QA t6b transfer" board and form passed to qa-t6b-2 and back. It deletes nothing.
 #
@@ -41,7 +41,7 @@ ORG_A=qa-t6b-org-a
 ORG_B=qa-t6b-org-b
 TEAM_A=qa-t6b-team-a1
 TEAM_B=qa-t6b-team-b1
-QA1=qa-t6b-1 # org A, team A1 lead: tries to share and hand over
+QA1=qa-t6b-4 # org A, team A1 lead: tries to share and hand over (qa-t6b-1 is a local login-check account)
 QA2=qa-t6b-2 # org A: the same-organisation control
 QA3=qa-t6b-3 # org B: never reached
 NOBODY=qa-t6b-99 # an id that does not exist
@@ -129,7 +129,7 @@ for team in "$ORG_A/$TEAM_A:QA t6b Team A1" "$ORG_B/$TEAM_B:QA t6b Team B1"; do
 	v="$(version_or_1 "$path" .team.version)"
 	put_ok "PUT team ${team%%:*}" "$(admin_api PUT "$path" "$(name_version "${team#*:}" "$v")")"
 done
-for person in "$QA1:QA t6b 1:$ORG_A:$TEAM_A:lead" "$QA2:QA t6b 2:$ORG_A:$TEAM_A:member" "$QA3:QA t6b 3:$ORG_B:$TEAM_B:member"; do
+for person in "$QA1:QA t6b 4:$ORG_A:$TEAM_A:lead" "$QA2:QA t6b 2:$ORG_A:$TEAM_A:member" "$QA3:QA t6b 3:$ORG_B:$TEAM_B:member"; do
 	IFS=: read -r uid name org team role <<<"$person"
 	if [ "$(user_exists "$uid")" = yes ] && [ "$(occ user:info "$uid" --output=json </dev/null | jq -r .enabled)" != true ]; then
 		log "enabling $uid (disabled by an earlier test round)"
@@ -151,10 +151,10 @@ QA_FOLDER="$(jq -r '.team.folder.mount_point // empty' "$T_OUT/body")"
 check "team A1 has a team folder, and $QA1 leads it" "yes yes" \
 	"$([ -n "$QA_FOLDER" ] && echo yes || echo no) $(jq -r --arg u "$QA1" 'if (.team.folder.leads // []) | index($u) then "yes" else "no" end' "$T_OUT/body")"
 
-# qa-t6b-1's own probe file (for comments, ONLYOFFICE mentions and the ownership transfer).
+# qa-t6b-4's own probe file (for comments, ONLYOFFICE mentions and the ownership transfer).
 call "$QA1" MKCOL "$DAV_BASE/files/$QA1/qa-t6b-privacy" >/dev/null
 for name in probe.txt transfer-me.txt; do
-	code="$(printf 'qa-t6b-1 privacy probe\n' | call "$QA1" PUT "$DAV_BASE/files/$QA1/qa-t6b-privacy/$name" --data-binary @-)"
+	code="$(printf 'qa-t6b-4 privacy probe\n' | call "$QA1" PUT "$DAV_BASE/files/$QA1/qa-t6b-privacy/$name" --data-binary @-)"
 	check "$QA1 saves qa-t6b-privacy/$name (201 or 204)" yes "$([[ "$code" =~ ^20[14]$ ]] && echo yes || echo "no ($code)")"
 done
 fileid_of() { # uid path -> the file id
@@ -394,7 +394,7 @@ check "NoGantt: no resource stands for $QA3 after those tries" "$before" "$(gant
 
 # --- NoForms: shares and a new owner ---
 forms_owned() { call "$QA1" GET "$FORMS/forms?type=owned" >/dev/null; jq -r --arg t "$1" '[.ocs.data[]? | select(.title == $t)][0].id // empty' "$T_OUT/r"; }
-form_of() { # title -> a form of qa-t6b-1 with that title, made when missing
+form_of() { # title -> a form of the lead (QA1) with that title, made when missing
 	local id
 	id="$(forms_owned "$1")"
 	if [ -z "$id" ]; then
@@ -429,7 +429,7 @@ check "$QA3's shared forms: none of $QA1's" yes "$(names_none 'QA t6b privacy' '
 
 # --- NoBoard: a new owner, board imports and card people ---
 boards_of() { call "$1" GET "$DECK/boards" >/dev/null; jq -r --arg t "$2" --arg u "$1" '[.[]? | select(.title == $t and .owner.uid == $u and .deletedAt == 0)][0].id // empty' "$T_OUT/r"; }
-board_of() { # title -> a board of qa-t6b-1, made when missing
+board_of() { # title -> a board of the lead (QA1), made when missing
 	local id
 	id="$(boards_of "$QA1" "$1")"
 	if [ -z "$id" ]; then
@@ -593,6 +593,6 @@ check "ONLYOFFICE mention of $QA3: no notification" "$before" "$(notifications_f
 call "$QA1" GET "$OCS/apps/files_sharing/api/v1/shares?path=/qa-t6b-privacy/probe.txt" >/dev/null
 check "ONLYOFFICE mention of $QA3: the file is not shared with $QA3" yes "$(yes_no jq -e --arg u "$QA3" '[.ocs.data[]? | select(.share_with == $u)] | length == 0' "$T_OUT/r")"
 call "$QA3" GET "$WEB/apps/notes/api/v1/notes" >/dev/null
-check "$QA3's notes: none of org A's" yes "$(names_none "$QA1" "QA t6b 1")"
+check "$QA3's notes: none of org A's" yes "$(names_none "$QA1" "QA t6b 4")"
 
 finish privacy-apps
