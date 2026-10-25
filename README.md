@@ -16,7 +16,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **Search inside files** | The words inside documents (docx, xlsx, pptx, odt, pdf, txt, md) are found in the normal search box, only by people who can open the file ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#search-inside-files)) |
 | **NoMail** | Nourax mail: the NoMail entry in the app menu, right after NoBoard, opens it in a new tab (`nextcloud-apps/nourax_branding/`) |
 | **Organisations and teams** | Each team gets a group, a team folder, a read-only team address book, a calendar and a board, made by the admin-only teams API ([docs/teams.md](docs/teams.md)) |
-| **Privacy between organisations** | People find, autocomplete and share (files, calendars, address books, boards) only with people of their own organisation; switched on once with `ORG_PRIVACY=on` ([docs/teams.md](docs/teams.md#privacy-between-organisations)) |
+| **Privacy between organisations** | People find, autocomplete and share (files, calendars, address books, boards) only with people of their own organisation; on since 2026-10-25 (`ORG_PRIVACY=on`, [docs/teams.md](docs/teams.md#privacy-between-organisations)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the
@@ -51,12 +51,12 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `scripts/` | Server hardening, secrets, first setup, backup, restore, update |
 | `systemd/` | Timers for the nightly backup and the weekly file mirror |
 | `worker/` | `nodrive-upload`, the Cloudflare Worker that takes big uploads from NoMail |
-| `nextcloud-apps/nourax_api/` | The NoMail API (health, accounts, virus scan) and the admin-only teams API, as an app inside the file server ([docs/nomail-api.md](docs/nomail-api.md)) |
+| `nextcloud-apps/nourax_api/` | The NoMail API (health, accounts, virus scan) at `https://drive.nourax.org/apps/nourax_api`, and the admin-only teams API (never an MCP tool), as an app inside the file server ([docs/nomail-api.md](docs/nomail-api.md), [docs/teams.md](docs/teams.md), [docs/nomail-contract.md](docs/nomail-contract.md)) |
 | `nextcloud-apps/nourax_antivirus/` | Makes the virus scanner work fully with files in R2: the plain refusal message, scans of uploads in parts, a stored-file scan that is never stuck ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#the-helper-app-nourax_antivirus)) |
 | `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
 | `config/onlyoffice/` | The editors' Nourax AI settings |
 | `cloudflare/` | Tunnel routes and the WAF rule, as applied |
-| `tests/` | `curl` tests for the NoMail contract (attach, share links, save, images, cancel) |
+| `tests/` | `curl` tests, run on the server: the NoMail API (health, accounts, virus scan), the admin teams API, privacy between organisations, the NoMail contract U1–U5 with a 1.1 GB upload, and the upload Worker; `qa-wrapup.sh` archives and disables the QA objects after a round ([tests/README.md](tests/README.md)) |
 | `docs/` | Architecture, operations, upgrades, restore, security, branding, NoMail contract |
 
 ## Rebuild from scratch

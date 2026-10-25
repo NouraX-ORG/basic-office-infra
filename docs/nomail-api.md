@@ -8,9 +8,11 @@ key, and is never offered as an MCP tool: see [docs/teams.md](teams.md).
 | | |
 |---|---|
 | Base URL (`NODRIVE_API_URL`) | `https://drive.nourax.org/apps/nourax_api` (no trailing slash) |
-| Where it runs | The Nextcloud app `nextcloud-apps/nourax_api` (PHP), inside the `app` container. No extra container, tunnel route or admin password. |
+| Where it runs | The app `nextcloud-apps/nourax_api` (PHP), version 1.0.0, inside the file server's `app` container. No extra container, tunnel route or admin password. |
 | Switched on by | `scripts/configure.d/60-nomail-api.sh` |
 | Auth | `Authorization: Bearer <NODRIVE_API_KEY>` |
+| Status | Live since 2026-10-25. NoMail switches it on by setting its Supabase secrets (below, [NoMail's secrets](#nomails-secrets)). |
+| Reply to NoMail | `handoffs/2026-10-25-nourax-drive-to-nomail.md` (outside this repo, in the owner's handoffs folder) |
 
 The app uses the server's own APIs (users, groups, files, app passwords), so it needs no admin
 login and opens nothing new to the internet: `/apps/nourax_api/...` is the only new path.
@@ -203,6 +205,20 @@ whether the key is close or not. Keys must be 32 to 1024 visible characters.
 
 **Changing a key:** `sudo scripts/secrets.sh gen nodrive_api_key --rotate`, run the configure step
 again, then give NoMail the new value the same way as the first time.
+
+### NoMail's secrets
+
+NoMail's Supabase Edge Functions read these. Setting them is the owner's step (it changes NoMail's
+Supabase project); the exact commands are in the reply to NoMail. The values are piped from the
+server's secret files into a short-lived env file and `supabase secrets set --env-file`, never
+shown, never on a command line on the server and never in the clipboard.
+
+| NoMail secret | Value | When |
+|---|---|---|
+| `NODRIVE_API_URL` | `https://drive.nourax.org/apps/nourax_api` (no trailing slash) | Now |
+| `NODRIVE_API_KEY` | The file `nodrive_api_key` | Now: NoMail's account set-up (`drive-provision`) and attachment scans (`scan-attachments`) switch on |
+| `NODRIVE_ADMIN_API_KEY` | The file `nodrive_admin_api_key` | Now; used only by NoMail's admin-only function for organisations and teams ([teams.md](teams.md#what-nomail-builds)) |
+| `DRIVE_UPLOAD_TICKET_KEY` | The file `upload_ticket_key` (the Worker's `UPLOAD_TICKET_KEY`) | Only after the route `drive.nourax.org/nomail-upload/*` is live ([nomail-contract.md](nomail-contract.md#the-route-waits-for-the-owners-yes)) |
 
 ## Limits and protection
 

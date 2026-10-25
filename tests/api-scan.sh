@@ -171,9 +171,21 @@ fi
 check "no new file over 1 MiB in the data folder" 0 "$(dc exec -T app find /var/www/html/data -type f -newermt "@$START" -size +1M ! -name '*.log' </dev/null | wc -l)"
 check "no PHP upload file left in the app container" 0 "$(dc exec -T app find /tmp -maxdepth 1 -type f -name 'php*' -newermt "@$START" -size +1M </dev/null | wc -l)"
 # The clamav image has BusyBox find: no -newermt, so minutes since the start, and any size.
-since_min=$(( ( $(date -u +%s) - START ) / 60 + 1 ))
-clamav_tmp="$(dc exec -T clamav find /tmp -type f -mmin "-$since_min" </dev/null)" \
-	|| die "could not look in the clamav container's /tmp"
+# The same clamd scans every upload of the Drive, so a file here may belong to another task's scan
+# that is still running (seen on 2026-10-25: 100 MB files of the virus scanner's own tests). Such
+# a file goes away when its scan ends; a file this test left would stay. So the files seen now
+# must all be gone within 2 minutes (a 95 MiB scan takes about 10 s).
+clamav_tmp_now() {
+	dc exec -T clamav find /tmp -type f -mmin "-$(( ( $(date -u +%s) - START ) / 60 + 1 ))" </dev/null \
+		|| die "could not look in the clamav container's /tmp"
+}
+clamav_tmp="$(clamav_tmp_now)"
+for _ in $(seq 1 24); do
+	[ -n "$clamav_tmp" ] || break
+	[ -n "$(comm -12 <(printf '%s\n' "$clamav_tmp" | sort) <(clamav_tmp_now | sort))" ] || { clamav_tmp=""; break; }
+	sleep 5
+done
+[ -z "$clamav_tmp" ] || clamav_tmp="$(comm -12 <(printf '%s\n' "$clamav_tmp" | sort) <(clamav_tmp_now | sort))"
 check "no clamd temporary file left" 0 "$(printf '%s' "$clamav_tmp" | grep -c . || true)"
 # File names go to the debug log only (the server logs warnings and up); bytes never do.
 check "no test file name in the server log" 0 "$(dc exec -T app grep -c -F -e 'parallel-1.bin' -e 'limit 95 MiB.bin' /var/www/html/data/nextcloud.log </dev/null || true)"

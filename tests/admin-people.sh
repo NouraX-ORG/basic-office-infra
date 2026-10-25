@@ -7,7 +7,8 @@
 #   organisations qa-t6-org-a and qa-t6-org-b; teams qa-t6-team-a1 ("QA t6 Team A1 Renamed"),
 #   qa-t6-team-a2 ("QA t6 Team A2") in org A and qa-t6-team-b1 ("QA t6 Team B1") in org B;
 #   people qa-t6-1 (A1 member, later moved to A2), qa-t6-2 (A1 lead), qa-t6-3 (B1, then leaves the
-#   organisation and comes back) and qa-t6-4 (added to A1 with occ: the drift the API undoes).
+#   organisation and comes back) and qa-t6-4 (added to A1 with occ: the drift the API undoes);
+#   qa-t6-5 is taken out of B1 (tests/privacy.sh puts it there), so qa-t6-3 is B1's last member.
 # Logins are the people's newest NoMail app passwords from /v1/provision, in /etc/nourax/qa.
 # It takes the server-change lock for its whole run (a few minutes), because it changes accounts
 # and groups. It deletes only what it made itself: QA shares and locks, through the leave, and the
@@ -34,6 +35,7 @@ QA1=qa-t6-1
 QA2=qa-t6-2
 QA3=qa-t6-3
 QA4=qa-t6-4
+QA5=qa-t6-5 # put into B1 by tests/privacy.sh; taken out of its teams at the start
 OCS="https://${DRIVE_HOST}/ocs/v2.php"
 DECK="https://${DRIVE_HOST}/index.php/apps/deck/api/v1.0"
 
@@ -164,6 +166,14 @@ check "unknown person -> 404" 404 "$(admin_api GET /v1/admin/people/qa-t6-99)"
 # --- Joins: qa-t6-1 member of A1, qa-t6-2 lead of A1, qa-t6-3 in B1 ---------------------------
 enable_qa_account "$QA2"
 enable_qa_account "$QA3"
+# tests/privacy.sh puts qa-t6-5 into team B1 as well. Here qa-t6-3 must be B1's only member (the
+# "last member leaves" checks below), so qa-t6-5 stays in its organisation without a team.
+# Empty email and name leave them as they are.
+if [ "$(admin_api GET "/v1/admin/people/$QA5")" = 200 ] && [ "$(jq -r '.person.teams | length' "$T_OUT/body")" != 0 ]; then
+	qa5_org="$(jq -r .person.org_id "$T_OUT/body")"
+	enable_qa_account "$QA5"
+	check "PUT $QA5 ($qa5_org, no team) -> 200" 200 "$(put_person "$QA5" "" "" "$qa5_org" '[]' true)"
+fi
 check "PUT $QA1 (org A, A1 member) -> 200" 200 "$(put_person "$QA1" "$QA1@example.invalid" "QA t6 1" "$ORG_A" "$(team "$TEAM_A1" member)" true)"
 check "$QA1: account, profile, org and teams ok" ok "$(steps_ok account profile org teams directories)"
 check "PUT $QA2 (org A, A1 lead) -> 200" 200 "$(put_person "$QA2" "$QA2@example.invalid" "QA t6 2" "$ORG_A" "$(team "$TEAM_A1" lead)" true)"

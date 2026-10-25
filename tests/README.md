@@ -12,7 +12,11 @@ sudo tests/admin-api.sh      # after api-provision.sh, which makes qa-t6-1
 sudo tests/admin-people.sh   # after admin-api.sh, which makes the QA organisations and teams
 sudo tests/privacy.sh        # after admin-api.sh; once the org privacy step is on (docs/teams.md)
 sudo tests/nomail-contract.sh  # U1-U5 as qa-t6-1, after api-provision.sh; a few minutes, adds a 1.1 GB file
+sudo tests/qa-wrapup.sh      # at the end of a round: QA teams archived, QA accounts disabled
 ```
+
+After a wrap-up, start the next round with `sudo tests/qa-wrapup.sh --enable` (it enables
+`qa-t6-1` to `qa-t6-5` again).
 
 Each prints one `PASS` or `FAIL` line per check and exits 0 only when every check passed.
 
@@ -41,6 +45,7 @@ WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch
 | `u3-save-received.sh` | U3: as NoMail's `saveNewFile()`: `MKCOL` of each folder of `/NoMail/Received/<yyyy-mm>/` (201 or 405), the names in use, a `PUT` (201) of a name with a space and an umlaut, its size and type; a `PUT` to the same path replaces it (204) and a `GET` gives the new bytes. Leaves the file. |
 | `u4-raw-image.sh` | U4: a PNG made in the script, put at `/NoMail/Images/<yyyy-mm>/<uuid>.png`, and a link without `expireDate` (expiration null); `/s/<token>/download` is one 303 with no body, then 200 `image/png` with the PNG's bytes and `nosniff`, with no login or cookie; also `/public.php/dav/files/<token>`, `/index.php/s/<token>/download`, `/s/<token>/preview` and the page. Leaves the file. |
 | `u5-shares.sh` | U5: lists the shares (every public link passes NoMail's `readShare`) and finds the links U2 and U4 made; changes the first one as NoMail's `updatePublicShare()` does (a `PUT` with 90 days and a password, then the password taken off; the end date stays); deletes each (200); then a `GET` by id and a second `DELETE` give 404 (NoMail: already gone) and the list no longer has them; the first one's `/s/<token>` page gives 404. Removes only this run's links (run on its own, one it makes first). |
+| `qa-wrapup.sh` | The end of a test round, under the lock: every `org:qa-t6*` organisation gets a reconcile with an empty state through the admin API (everybody leaves its teams and group, every team is archived: folder "<name> (archived)", board archived; the group, folder, files, book and calendar stay), checked with the status calls; then every `qa-t6-<number>` account is disabled with `occ user:disable` and checked. Deletes nothing. `--enable` enables `qa-t6-1` to `qa-t6-5` again for the next round. |
 | `propfind.xml` | NoMail's `PROPFIND` body (`PROPFIND_BODY` in `driveFiles.ts`), used by the U-scripts |
 | `worker-local.sh` | The upload Worker ([worker/README.md](../worker/README.md), [docs/nomail-contract.md](../docs/nomail-contract.md#upload-worker)), end to end into the live Drive as `qa-t6-2`: a 120 MiB file in three chunks (50, 50 and 20 MiB) through `/start`, `/chunks/{n}`, `GET /chunks` and `/finish`, then a WebDAV `PROPFIND` (size, file id) and a SHA-256 compare of a `GET`; CORS (`mail.nourax.org` 204 with the header, `evil.example` 403), tickets missing or sealed with another key (401), bad chunk numbers and lengths (400), a taken name (409), cancelling. A second, 6 MiB upload (chunks of 5 and 1 MiB) finishes too early on purpose: before any chunk and then with chunk 2 missing, each 409 `incomplete` with the missing numbers and no file, the session still usable; then a finish sent twice (201 both times, the same file id) and a size and SHA-256 compare. Locally it runs the Worker with `wrangler dev --env-file` and a throwaway key; with `WORKER_URL` it tests the live route and pipes the real key from the server into `mint-ticket.mjs` on stdin. It reads `qa-t6-2`'s netrc file from the server over SSH into the scratch folder. |
 
@@ -70,6 +75,8 @@ Kept in `/etc/nourax/qa/` (root, folder 0700, files 0600), never in the repo:
 | `qa-t6-5` | `admin-api.sh`, through `/v1/provision` | `qa-t6-5.netrc` | Added with occ in part 1's member checks; the drift job takes it out again |
 | `qa-t6-8` | `api-provision.sh`, through the API | none | The disabled-account check; left disabled |
 | `qa-t6-9` | `api-provision.sh`, as a local account | `qa-t6-9.pass` | The local-account check; left disabled |
+| `qa-t6-62` | a review run, through `/v1/provision` | none | A rename check ("QA t6 62 renamed"); left disabled |
 
 Running `api-provision.sh` again gives `qa-t6-1` a new app password and updates its netrc file.
-Deleting QA accounts needs the owner's yes.
+`qa-wrapup.sh` disables all of them at the end of a round. Deleting QA accounts needs the owner's
+yes.

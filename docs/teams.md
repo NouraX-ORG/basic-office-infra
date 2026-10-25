@@ -1,8 +1,10 @@
 # Organisations and teams (admin API)
 
 The admin API makes and keeps up to date each organisation and team of Nourax Workspace. It is a
-tool for the Nourax administrator only: it is **never** offered as an MCP tool, it uses its own
-key (not NoMail's `NODRIVE_API_KEY`), and every request is signed.
+tool for the Nourax administrator only. **It is never added to the MCP tool list**: the Nourax
+Workspace MCP server (`mcp/` and `docs/mcp.md`, built by Task 1) has no tool for it and must never get one,
+and NoMail's own MCP tool provider must not offer it either. It uses its own key (not NoMail's
+`NODRIVE_API_KEY`), and every request is signed.
 
 NoMail is the source of truth. The API is keyed by NoMail's ids, never by names, and every step is
 an "ensure": it makes things the way they should be and says what it did. Sending the same call
@@ -19,9 +21,11 @@ again finishes a call that stopped half way and reports `unchanged` for what was
 **Part 2 (live):** people (`PUT /v1/admin/people/{user_id}`: joins, moves, leaves, leaving the
 organisation), the reconcile call, the drift guard that keeps the groups locked, and the scheduled
 delete of leavers, built **switched off**.
-**Privacy between organisations (built; not switched on yet):** people find, autocomplete and
-share only with people of their own organisation. See
+**Privacy between organisations (on since 2026-10-25 10:08, the owner's yes):** people find,
+autocomplete and share only with people of their own organisation. See
 [Privacy between organisations](#privacy-between-organisations).
+**NoMail's side:** NoMail is the source of truth and calls this API from one admin-only function.
+See [What NoMail builds](#what-nomail-builds).
 
 ## What one organisation and one team get
 
@@ -429,15 +433,15 @@ People find, autocomplete and share only with people of their **own organisation
 in its group `org:{org_id}` (and so in its teams). Nobody of another organisation is suggested,
 found by an exact name, email address or account id, or can be shared with.
 
-**State:** built on 2026-10-25; **not switched on yet**. These are server-wide switches (see
-"Who else this changes"), so the step `scripts/configure.d/60-org-privacy.sh` does nothing until
-it is switched on once, on purpose. Until then the nourax_api checks below do nothing either.
-Tested so far: the rule, the DAV plugin and the board check in place on the server, as if privacy
-were on (`tests/org-privacy-rules.php`, 52 checks pass), and a picture of today with
-`PRIVACY_BASELINE=1 tests/privacy.sh`: 33 checks fail, each a leak the step closes (for example
-`qa-t6-1` of organisation A is offered `qa-t6-3`, `qa-t6-5` and organisation B's groups, the
-"Accounts" address book lists every account, and profile pages answer). The search checks already
-pass: nobody finds another organisation's files or contacts.
+**State: on** since 2026-10-25 10:08 (the owner's yes; `occ nourax_api:status` shows
+`"org_privacy": "on"`, and `federation` and `circles` are disabled). These are server-wide
+switches (see "Who else this changes"), so the step `scripts/configure.d/60-org-privacy.sh` did
+nothing until it was switched on once, on purpose; it now keeps them on at every
+`scripts/configure.sh` run. Before the switch, `PRIVACY_BASELINE=1 tests/privacy.sh` showed 33
+leaks the step closes (for example `qa-t6-1` of organisation A was offered `qa-t6-3`, `qa-t6-5` and
+organisation B's groups, the "Accounts" address book listed every account, and profile pages
+answered); the search checks already passed. With privacy on, the full `tests/privacy.sh` passes:
+see [The test](#the-test) for the run of the reply to NoMail.
 
 ### What is limited, and how
 
@@ -476,8 +480,8 @@ the admin API keeps sharing the team books, calendars and boards with their team
   `nodrive` are only in `admin`, which never counts: they keep links, but no longer share with
   people directly. To share with an organisation's people, put the account in that organisation.
 - **Other tasks' QA accounts** (for example `qa-t1-7` and `qa-t1-8`, `qa-t5b-*`) are in no common
-  group: shares between them are refused once privacy is on. So it is switched on after their
-  sharing tests.
+  group: shares between them are refused now that privacy is on. QA accounts that must find each
+  other need a shared `org:` or `team:` group, made with this API.
 - The team **"hammadddd"** (made 2026-10-23 in the Teams app by `nodrive`) is hidden while the
   Teams app is off. Nothing is deleted; enabling the app shows it again.
 
@@ -526,6 +530,33 @@ still shares the team's book, calendar and board.
 `PRIVACY_BASELINE=1 sudo tests/privacy.sh` runs only the checks that read, for a picture before
 the step is on: every FAIL there is a leak the step closes. It shares nothing.
 
+## What NoMail builds
+
+NoMail is the source of truth for organisations, teams and who is in them. The Drive only
+follows. NoMail needs (the full list is in the reply to NoMail,
+`handoffs/2026-10-25-nourax-drive-to-nomail.md`):
+
+| Table | Columns |
+|---|---|
+| `organisations` | `id uuid`, `name`, `version` (an integer, +1 on every change) |
+| `teams` | `id uuid`, `org_id`, `name`, `version` |
+| `memberships` | `team_id`, `user_id`, `role` (`member` or `lead`) |
+| `people` | `user_id` (the Supabase user id), `org_id`, `active`, `version` |
+
+- **One admin-only Edge Function** signs `NOURAX-ADMIN-V1` requests with the Supabase secret
+  `NODRIVE_ADMIN_API_KEY` (recipe: [Signing a request](#signing-a-request)) and sends
+  `PUT /v1/admin/orgs/{org_id}`, `PUT …/teams/{team_id}` and `PUT /v1/admin/people/{user_id}`
+  whenever one of those rows changes, plus one `POST /v1/admin/orgs/{org_id}/reconcile` per
+  organisation every night.
+- Only NoMail's administrators can call that function. It is never an MCP tool, never reachable
+  by an ordinary signed-in person, and the key never reaches a browser.
+- Bump `version` on every change and send the newest. An answer with `applied: false,
+  reason: stale_version` means a newer state is already stored; a 502 or 423 means "send the same
+  call again later".
+- A person leaves the organisation with `"active": false`: their Drive account is disabled at once
+  and kept 30 days. There is no delete call. The account is deleted after the 30 days only if the
+  owner has switched the scheduled delete on (it is off).
+
 ## QA objects made by the test
 
 `tests/admin-api.sh` uses only these, and deletes nothing:
@@ -541,6 +572,16 @@ the step is on: every FAIL there is a leak the step closes. It shares nothing.
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team
 B1"; `tests/admin-api.sh` names them "Sales" again. Both count the versions on from what is
 stored, so they can run in any order and again.
+
+Two more QA organisations come from review runs: `qa-t6v-org-a` (teams `qa-t6v-team-a1`,
+`qa-t6v-team-a2`) and `qa-t6q3-org-a` (team `qa-t6q3-team-a1`).
+
+**At the end of a test round**, `sudo tests/qa-wrapup.sh` leaves every `org:qa-t6*` organisation's
+teams archived through the API (a reconcile with `{"teams":[],"people":[]}`: everybody leaves,
+every team is archived, nothing is deleted) and disables every `qa-t6-<number>` account with
+`occ user:disable`. Before the next round, `sudo tests/qa-wrapup.sh --enable` enables `qa-t6-1` to
+`qa-t6-5` again; the tests' own PUTs bring the teams back out of the archive. Deleting the QA
+accounts, organisations or files needs the owner's yes.
 
 Part 1's `occ group:adduser` of `qa-t6-5` is a change made outside the API, so it is real drift:
 the status of `qa-t6-org-a` and `qa-t6-team-a1` lists an open `member_added` row for it, and the
