@@ -200,6 +200,7 @@ class Report:
 		self.seen = set()
 		self.first = {}
 		self.repeat = {}
+		self.skipped = set()
 		self.redact = []
 
 	def clean(self, s, width=0):
@@ -253,8 +254,13 @@ class Report:
 			self.hidden[(area, url)] = self.hidden.get((area, url), 0) + n
 
 	def skip(self, area, url, why):
+		# Shown once per page, not once per language.
 		self.stats[area]['skip'] += 1
-		self.say('SKIP %s %s: %s' % (area, url, why))
+		key = (area, re.sub(r'[?&]forceLanguage=[A-Za-z_]+', '', url), why)
+		if key in self.skipped:
+			return
+		self.skipped.add(key)
+		self.say('SKIP %s %s: %s' % (area, key[1], why))
 
 	def info(self, text):
 		self.say('INFO ' + text)
@@ -505,7 +511,7 @@ def check_html(area, url, page_url, body, names_in_states=True):
 			continue
 		scan_json(area, url, 'initial-state %s' % sid, value, names=names_in_states)
 	for where, css in p.styles:
-		scan_blues(area, url, where, css)
+		scan_blues(area, url, where, css_declarations(css) if where == '<style>' else css)
 	return p
 
 
@@ -594,7 +600,8 @@ class Http:
 				with open(head, 'rb') as f:
 					r.headers = parse_headers(f.read().decode('latin-1'))
 				os.remove(head)
-		again = [i for i, r in enumerate(out) if r.status in (0, 502, 503, 504)]
+		# Gateway errors and dropped connections only (another task may be restarting the app).
+		again = [i for i, r in enumerate(out) if r.status in (502, 503, 504) or (r.status == 0 and r.exit in (6, 7, 28, 35, 52, 55, 56))]
 		if retry and again:
 			rep.info('%d requests failed (HTTP 502/503/504 or no answer); waiting 60 s, then trying them once more' % len(again))
 			time.sleep(60)
@@ -785,13 +792,21 @@ def parse_l10n(text):
 	return json.loads(m.group(1)), json.loads(m.group(2))
 
 
+def css_declarations(css):
+	# What CSS draws: the declarations. Comments are never shown, and a selector such as
+	# [fill="#0082c9"] { fill: #2563EB } is how a blue gets replaced, not shown.
+	css = re.sub(r'/\*.*?\*/', ' ', css, flags=re.S)
+	return ' '.join(m.group(1) for m in re.finditer(r'\{([^{}]*)\}', css))
+
+
 def check_css(area, url, css, blues=True, ignore_fallbacks=False):
 	rep.checked(area)
+	decl = css_declarations(css)
 	if blues:
-		scan_blues(area, url, 'css', css, ignore_fallbacks=ignore_fallbacks)
-	for m in re.finditer(r'''content\s*:\s*(["'])(.*?)\1''', css):
+		scan_blues(area, url, 'css', decl, ignore_fallbacks=ignore_fallbacks)
+	for m in re.finditer(r'''content\s*:\s*(["'])(.*?)\1''', decl):
 		scan_names(area, url, 'css content', m.group(2))
-	for m in re.finditer(r'''url\(\s*["']?([^"')]+)''', css):
+	for m in re.finditer(r'''url\(\s*["']?([^"')]+)''', decl):
 		scan_url(area, url, 'css url()', m.group(1), BASE + '/')
 
 
@@ -985,6 +1000,9 @@ def run_http(http, cred):
 		for name in ('default', 'light', 'dark', 'light-highcontrast', 'dark-highcontrast'):
 			themecss.setdefault('%s/apps/theming/theme/%s.css?plain=1' % (BASE, name), True)
 		themecss.setdefault(BASE + '/apps/theming_customcss/styles', True)
+		# The logos (also the one embedded in e-mails) must not be the upstream files either.
+		for name in ('logo', 'logoheader'):
+			icons.setdefault('%s/apps/theming/image/%s?useSvg=0' % (BASE, name), 'theming %s' % name)
 		mlist, clist = sorted(manifests), sorted(themecss)
 		resps = http.run([dict(url=u, auth=manifests[u]) for u in mlist] + [dict(url=u, auth=themecss[u]) for u in clist])
 		for u, resp in zip(mlist, resps[:len(mlist)]):
@@ -1228,8 +1246,9 @@ def run_server(http, upstream):
 			scan_names('mail', url, 'plain text', o['text'])
 			for m in URL_IN_TEXT.finditer(o['text']):
 				scan_url('mail', url, 'plain text', m.group(0), BASE + '/')
+			# The logo is usually embedded (cid:logo, the theming logo checked in the theming area).
 			if http is not None and upstream:
-				imgs = [urljoin(BASE + '/', v) for tag, a, v in page.urls if tag == 'img' and a == 'src']
+				imgs = [urljoin(BASE + '/', v) for tag, a, v in page.urls if tag == 'img' and a == 'src' and urljoin(BASE + '/', v).startswith(('https://', 'http://'))]
 				for u, resp in zip(imgs, http.run([dict(url=u) for u in imgs])):
 					if resp.status == 200 and hashlib.sha256(resp.body).hexdigest() in upstream:
 						rep.fail('mail', url, 'img', '%s is the upstream %s' % (label(u), upstream[hashlib.sha256(resp.body).hexdigest()]))
