@@ -102,26 +102,35 @@ nourax_search() {
 	log "  search platform Elasticsearch, index nourax_drive; files and team folders, office, PDF and text, up to 20 MB"
 
 	# The first index: every file that is already stored. Later files are added by the waiting list
-	# (below). It runs in the background; how far it got: docs/search-and-antivirus.md.
+	# (below). It runs in the background, in the service "jobs" when it runs (its own memory limit),
+	# otherwise in the file server; how far it got: docs/search-and-antivirus.md.
+	local indexer=app
+	[ "$(dc ps --format '{{.State}}' jobs 2>/dev/null)" != running ] || indexer=jobs
 	if es_api GET /nourax_drive/_count </dev/null >/dev/null 2>&1; then
 		log "  index nourax_drive exists: $(es_api GET /nourax_drive/_count </dev/null | jq -r '.count') documents"
-	elif dc exec -d -u www-data app php occ fulltextsearch:index --no-readline; then
-		log "  first index of all stored files started in the background"
+	elif dc exec -d -u www-data "$indexer" php occ fulltextsearch:index --no-readline; then
+		log "  first index of all stored files started in the background (in '$indexer')"
 	else
 		log "  WARNING: the first index could not be started - run: occ fulltextsearch:index --no-readline"
 	fi
 
-	# New, changed, shared and moved files go on a waiting list; a host timer works through it every
-	# 2 minutes (the app's own job does so only every 12 minutes).
-	if [ -d /run/systemd/system ]; then
-		if install -m 0644 "$REPO_DIR"/config/elasticsearch/nourax-search-index.{service,timer} /etc/systemd/system/ \
-			&& systemctl daemon-reload && systemctl enable --now nourax-search-index.timer; then
-			log "  waiting list indexed every 2 minutes: nourax-search-index.timer $(systemctl is-active nourax-search-index.timer)"
+	# New, changed, shared and moved files go on a waiting list; the compose service "jobs" works
+	# through it 2 minutes after each run ends (the app's own job does so only every 12 minutes).
+	# An earlier version of this step used a host timer for that. It is switched off here so the
+	# two never both run; its unit files stay in /etc/systemd/system (deleting them needs the owner).
+	if [ -d /run/systemd/system ] && { systemctl is-enabled --quiet nourax-search-index.timer 2>/dev/null \
+		|| systemctl is-active --quiet nourax-search-index.timer 2>/dev/null; }; then
+		if systemctl disable --now nourax-search-index.timer 2>/dev/null; then
+			log "  old host timer nourax-search-index.timer switched off (the service 'jobs' does its work now)"
 		else
-			log "  WARNING: nourax-search-index.timer could not be switched on - see: systemctl status nourax-search-index.timer"
+			log "  WARNING: the old host timer could not be switched off - run: systemctl disable --now nourax-search-index.timer"
 		fi
+	fi
+	if [ "$(dc ps --format '{{.State}}' jobs 2>/dev/null)" = running ]; then
+		log "  waiting list indexed every 2 minutes by the service 'jobs' ($(dc ps --format '{{.Status}}' jobs))"
 	else
-		log "  WARNING: no systemd here, so new files wait up to 12 minutes for the app's own job"
+		log "  WARNING: the service 'jobs' is not running, so new files wait up to 12 minutes for the"
+		log "  cron container. Start it with 'docker compose up -d --no-deps jobs'"
 	fi
 }
 

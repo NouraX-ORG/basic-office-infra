@@ -6,7 +6,7 @@ publishes a port, and only the containers of this stack can reach them.
 | Part | Service | What runs | Set up by |
 |---|---|---|---|
 | Virus scanner | `clamav` (clamd on TCP 3310) | ClamAV 1.5.4 (`clamav/clamav:1.5.4_base`), the files_antivirus app 6.5.0 and our helper app `nourax_antivirus` | `compose.yaml`, `config/clamav/`, `nextcloud-apps/nourax_antivirus/`, `scripts/configure.d/50-virus-scanner.sh` |
-| Search inside files | `elasticsearch` (HTTP on 9200) | Elasticsearch 9.5.5 (`elasticsearch:9.5.5`), the apps fulltextsearch 35.0.1, fulltextsearch_elasticsearch 35.0.1 and files_fulltextsearch 35.0.0 | `compose.yaml`, `config/elasticsearch/`, `scripts/configure.d/50-search.sh` |
+| Search inside files | `elasticsearch` (HTTP on 9200), and `jobs` for indexing new files | Elasticsearch 9.5.5 (`elasticsearch:9.5.5`), the apps fulltextsearch 35.0.1, fulltextsearch_elasticsearch 35.0.1 and files_fulltextsearch 35.0.0 | `compose.yaml`, `config/elasticsearch/`, `scripts/configure.d/50-search.sh` |
 
 In the commands below, `OCC` means, on the server:
 
@@ -285,30 +285,44 @@ search, and now also here.
 Every new, changed, shared, moved or deleted file goes on a waiting list in the database. The list
 is worked through:
 
-- by a host timer, `nourax-search-index.timer`, 2 minutes after each run ends. It runs
+- by the compose service **`jobs`**, 2 minutes after each run ends. Its program is
   `config/elasticsearch/index-queue.sh`, which starts the app's own indexing job at once. A run with
-  nothing waiting takes a second or two, and nothing stays in memory between runs (a permanent
-  `occ fulltextsearch:live` process would hold memory and ask the database every 3 seconds);
-- by the same job in the cron container every 12 minutes, if the timer is not running.
+  nothing waiting takes a second or two. Between runs only that small script and `sleep` are in
+  memory (a permanent `occ fulltextsearch:live` process would hold memory and ask the database
+  every 3 seconds);
+- by the same job in the cron container every 12 minutes, if `jobs` is not running.
+
+`jobs` is the file server's own image with the same files and settings as the cron container
+(`extends: cron` in `compose.yaml`), but it runs our script instead of crond, as `www-data`, with
+its own memory limit (`JOBS_MEM_LIMIT`, 384m) and a higher OOM score (500). So reading a big
+document for the index never takes memory from the file server: if a run ever needs more, only
+that run stops (PHP's limit in this container is 512M; the container may use as much swap as its
+limit first). A `docker compose stop` lets a run that has started finish (up to 2 minutes). Its
+health check says *unhealthy* only when no run has started for 65 minutes (a run is stopped after
+an hour).
 
 Two runs never overlap: the app lets only one indexing run work at a time, and another one stops
-at once. Measured: a new file was found 17 seconds after its upload, a changed one after 78
-seconds; the longest wait is about two and a half minutes.
+at once.
 
 ```
-systemctl list-timers nourax-search-index.timer   # next run
-sudo systemctl start nourax-search-index.service  # run it now
-journalctl -u nourax-search-index.service -n 20   # problems are logged here; it never fails
+sudo docker compose ps jobs                     # running, healthy
+sudo docker compose logs --tail 20 jobs         # problems are logged here; the next run tries again
+sudo docker compose restart jobs                # run it now (the first run starts at once)
+sudo docker compose up -d --no-deps jobs        # start it (after a change to compose.yaml or .env)
 ```
+
+Until 2026-10-25 a host timer, `nourax-search-index.timer`, did this work. `50-search.sh` switches
+it off if it is still on, so the two never both run; its unit files stay in `/etc/systemd/system`
+until the owner deletes them.
 
 ### The first index, and indexing everything again
 
 `50-search.sh` starts a full index of all stored files once, in the background, when the index
-`nourax_drive` does not exist yet. On 2026-10-25 that took 30 seconds for the 104 files and cards
+`nourax_drive` does not exist yet (in `jobs` when it runs, otherwise in the file server). On 2026-10-25 that took 30 seconds for the 104 files and cards
 on the server. To index everything again (after a problem, or after changing what is indexed):
 
 ```
-OCC fulltextsearch:index --no-readline   # goes through every person's files and NoBoard cards again
+sudo docker compose exec -T jobs php occ fulltextsearch:index --no-readline   # every person's files and NoBoard cards again, in jobs' memory limit
 OCC fulltextsearch:check                 # the settings, with the password shown as ********
 ```
 
@@ -335,7 +349,11 @@ nothing until the two secrets exist and Elasticsearch says healthy.
 Elasticsearch itself (`compose.yaml`): one node (`discovery.type: single-node`), security on, plain
 HTTP inside the compose network, machine learning, Watcher and the GeoIP download off, heap
 `ES_JAVA_HEAP`, limit `ES_MEM_LIMIT`, `oom_score_adj: 600`, data in the `elasticsearch_data`
-volume. In `config/elasticsearch/`: `index-template.json` (no replicas for `nourax_drive*`, so the
+volume. The JVM's own log has only warnings and goes to `docker compose logs elasticsearch`
+(`-Xlog:disable -Xlog:all=warning:stderr:…`, Elastic's documented way for Docker) instead of the
+default GC log files inside the container, which can grow to 2 GB and whose file cache counts
+against the container's limit. `MALLOC_ARENA_MAX=2` keeps fewer C memory pools for its many
+threads, so less memory is used outside the Java heap. In `config/elasticsearch/`: `index-template.json` (no replicas for `nourax_drive*`, so the
 single node stays green) and `role-nourax_drive.json`. Its log says *"Transport SSL must be enabled
 if security is enabled"* at every start: with one node that check is only a warning, and nothing
 outside the stack can reach the node.

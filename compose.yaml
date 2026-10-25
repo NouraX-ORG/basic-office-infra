@@ -196,7 +196,15 @@ services:
       xpack.ml.enabled: "false"
       xpack.watcher.enabled: "false"
       ingest.geoip.downloader.enabled: "false"
-      ES_JAVA_OPTS: -Xms${ES_JAVA_HEAP:-512m} -Xmx${ES_JAVA_HEAP:-512m}
+      # Heap, then the JVM's own log: warnings only, to the container log (docker compose logs),
+      # instead of the default GC log files inside the container (up to 2 GB, and file cache that
+      # counts against the limit below).
+      ES_JAVA_OPTS: >-
+        -Xms${ES_JAVA_HEAP:-512m} -Xmx${ES_JAVA_HEAP:-512m}
+        -Xlog:disable -Xlog:all=warning:stderr:utctime,level,tags
+      # Fewer C memory pools (glibc arenas) for Elasticsearch's many threads: less memory outside
+      # the heap on a small server.
+      MALLOC_ARENA_MAX: "2"
       # The image refuses a password file that others can read: 50-search.sh keeps it at 0640.
       ELASTIC_PASSWORD_FILE: /run/secrets/elasticsearch_password
     secrets: [elasticsearch_password]
@@ -218,6 +226,32 @@ services:
       retries: 10
       start_period: 180s
     logging: *logging
+
+  # Background jobs that must not wait for the cron container's turn, in their own container with
+  # their own memory limit, so a big document never takes memory from the file server. Today one
+  # job: the search index of new, changed, shared and moved files, 2 minutes after each run ends
+  # (config/elasticsearch/index-queue.sh). Between runs only that shell script is in memory.
+  # Same image, files and settings as "cron" (extends), but no crond. Details: docs/search-and-antivirus.md.
+  jobs:
+    extends: cron
+    user: www-data
+    entrypoint: ["/bin/bash", "/opt/nourax/jobs/index-queue.sh"]
+    environment:
+      # Nextcloud's own minimum. A PHP run that needs more stops with an error in the log; the
+      # container may also use as much swap as its limit before the kernel stops it.
+      PHP_MEMORY_LIMIT: 512M
+    volumes:
+      - ./config/elasticsearch/index-queue.sh:/opt/nourax/jobs/index-queue.sh:ro
+    mem_limit: ${JOBS_MEM_LIMIT:-384m}
+    oom_score_adj: 500
+    stop_grace_period: 2m              # a run that has started is finished first
+    healthcheck:
+      # The script touches this file before every run; older than 65 minutes means it is stuck.
+      test: ["CMD-SHELL", "find /tmp/nourax-jobs.alive -mmin -65 | grep -q ."]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
 
 
   cloudflared:
