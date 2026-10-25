@@ -45,3 +45,31 @@ log "NoTasks, NoNotes, NoForms (tasks, notes, forms)"
 nourax_app tasks 0.18.1
 nourax_app notes 6.1.0
 nourax_app forms 5.4.1
+
+# What the three apps show that the text sweep can't reach, because it is in their browser code:
+# - NoNotes: "Mobile apps" (on the empty-notes page and in the settings) shows store badges for the
+#   upstream's phone apps; one link has the upstream name in its address. There are no Nourax phone
+#   apps for notes yet, so the badges, that settings section and its menu entry are hidden. The
+#   section has no id of its own in the app, so its menu entry links to "#settings-section_undefined".
+# - NoNotes: the marker of a note in a shared folder is drawn in the upstream blue; Nourax cobalt.
+# - All three: the colour picker (for example the colour of a NoTasks list) offers a swatch named
+#   "Nextcloud blue" in the upstream blue; it is hidden. NoTasks lists start in Nourax cobalt anyway
+#   (the theme colour).
+# configure.sh writes the theme CSS fresh before this file runs; drop an older copy of the block
+# anyway, so running this file on its own does not add it twice.
+log "  hide the upstream phone-app badges and colour in NoTasks, NoNotes, NoForms"
+apps_css_block='/* NouraxApps50:start - NoTasks, NoNotes, NoForms (scripts/configure.d/50-apps.sh) */
+body:has(#content.app-notes) .help-mobile,
+body:has(#content.app-notes) .app-settings-section:has(.help-mobile),
+body:has(#content.app-notes) li:has(> a.navigation-list__link[href="#settings-section_undefined"]) { display: none !important; }
+body:has(#content.app-notes) [fill="#0082c9" i] { fill: #2563EB !important; }
+body:has(#content.app-tasks) .color-picker__simple-color-circle[style*="rgb(0, 130, 201)"],
+body:has(#content.app-notes) .color-picker__simple-color-circle[style*="rgb(0, 130, 201)"],
+body:has(#content.app-forms) .color-picker__simple-color-circle[style*="rgb(0, 130, 201)"] { display: none !important; }
+/* NouraxApps50:end */'
+apps_css="$(occ config:app:get theming_customcss customcss || true)"
+apps_css="$(printf '%s\n' "$apps_css" | sed '/\/\* NouraxApps50:start/,/\/\* NouraxApps50:end \*\//d')"
+occ config:app:set theming_customcss customcss --value="$apps_css"$'\n'"$apps_css_block" \
+	--no-lazy --no-interaction >/dev/null
+occ config:app:set theming_customcss cachebuster --value="$(date +%s)"
+unset apps_css apps_css_block
