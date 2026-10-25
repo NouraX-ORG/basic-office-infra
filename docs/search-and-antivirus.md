@@ -444,10 +444,18 @@ onlyoffice 271, elasticsearch 29, db 11, all the others 3. Both keep working (cl
 first scans after a quiet time are a little slower while the signatures come back from swap.
 
 **What fills Elasticsearch's 1 GiB.** The Java heap (512 MiB) is taken in full at the start
-(`-XX:+AlwaysPreTouch`, Elastic's default), so it never grows. Outside the heap Java keeps the
-loaded classes and compiled code (about 260–300 MiB) and about 100–150 MiB of C memory (threads,
-garbage collector). Together that is the *program* memory, about 880–950 MiB; the rest of the
-limit is file cache for the index files, which the kernel gives back first.
+(`-XX:+AlwaysPreTouch`, Elastic's default), so it never grows. Outside the heap, measured with
+`jcmd` after 5 hours (10:40 UTC): the loaded classes (*metaspace*, 196 MiB for about 42,000
+classes from Elasticsearch's built-in modules), compiled code (45 MiB) and C memory (threads,
+garbage collector, the Java compiler: 138 MiB in use). Together that is the *program* memory; the
+rest of the limit is file cache for the index files, which the kernel gives back first.
+
+C memory that Java frees is not given back to the system by itself: after 5 hours glibc kept
+80 MiB of freed memory, mostly left over from the Java compiler. `-XX:TrimNativeHeapInterval=60000`
+(a standard JDK option, in `ES_JAVA_OPTS` since fix round 2) gives it back once a minute. The same
+trim done once by hand (`jcmd … System.trim_native_heap`, 10:46 UTC) took the program memory from
+909 MiB to 859 MiB (*RSS+Swap: 969M->918M*). The option takes effect when the container is next
+made (`sudo docker compose up -d --no-deps elasticsearch`, or `memory-report.sh --around-start`).
 
 | Elasticsearch container | Before this fix (05:30, 37 minutes after its start) | After (06:01, 16 minutes after its start, two rounds of test uploads) |
 |---|---|---|
@@ -461,12 +469,14 @@ the file cache and pushed the container to its limit again and again) and part o
 (`MALLOC_ARENA_MAX=2`).
 
 **Why it is not stopped before the upgrade.** The heap cannot grow, so only the part outside it
-grows a little as more code is compiled. If the program memory ever reaches the limit, the kernel
+grows a little as more code is compiled (909 MiB after 5 hours against 888 MiB after 16 minutes,
+before the trim option). If the program memory ever reaches the limit, the kernel
 first moves Elasticsearch's own rarely used memory to swap (Docker lets a container use as much
 swap as its limit), so search gets slower; it would be stopped only at 2 GiB. If memory runs out
 on the whole server, the kernel stops Elasticsearch first (`oom_score_adj` 600, `jobs` 500,
 ClamAV 400), never the database or the file server. The search box then shows no full-text results
-until it is back; nothing else stops. Watch for the report's WARNING lines and its *swap* column.
+until it is back; nothing else stops. Watch for the report's WARNING lines, its *swap* column and
+its *swap by service* line.
 
 **`jobs`:** 1–2 MiB between runs; 89 MiB at the most while it indexed every file again and the
 test uploads below (`memory.peak`), never at its limit.
@@ -515,3 +525,5 @@ the search box's API, `GET /ocs/v2.php/search/providers/fulltextsearch/search?te
 | The service `jobs` (fix of 2026-10-25) | `docker compose ps jobs`: *Up (healthy)*; `docker inspect`: memory 402653184 (384m), swap limit 805306368, OOM score 500, user `www-data`, program `/bin/bash /opt/nourax/jobs/index-queue.sh`; between runs only `bash` (3 MB) and `sleep` run in it. The host timer is disabled and inactive |
 | New files through `jobs` (fix of 2026-10-25) | A `.docx` and a `.pdf` (`qa-t5-1`) and a `.docx` in the team folder, each with a new word: all three found 92–93 seconds after the upload, each with its sentence (*(files) Fix round check: the word … is only inside this document.*, *(files) Invoice note for the fix round: … appears on page one.*, *(files) Team plan for the fix round: … belongs to the team folder.*). The team file found by `qa-t5-2` too; all three words 0 results for `qa-t5-3`; the `.docx` and `.pdf` words 0 results for `qa-t5-2` |
 | Memory before and after (fix of 2026-10-25) | `memory-report.sh --around-start`, see Memory above |
+| No password in the process list (fix round 2) | A watcher (root, on the server) read the whole process list, containers included, every 45–75 ms and counted the samples holding either Elasticsearch password or any of 10 other secrets, never printing one. During `es_api` calls and the memory report (read-only, 10:45 UTC): 198 samples in 8.7 seconds, `es_api`'s curl caught in 37 of them, 0 samples with a password. The same watch during a full `scripts/configure.sh` run waits for the owner's go (it changes the live server) |
+| Freed C memory (fix round 2) | `jcmd … System.native_heap_info`: 80 MiB freed but kept after 5 hours; one `System.trim_native_heap`: program memory 909 → 859 MiB. Search answers were the same afterwards (`qa-t5-1` finds its `.docx`, `.pdf` and team words, `qa-t5-2` only the team word, `qa-t5-3` none) |
