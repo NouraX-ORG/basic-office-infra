@@ -2,8 +2,8 @@
 
 NoMail's Supabase Edge Functions use this API to check the Drive, create a person's Drive
 account and virus-scan attachments (NoMail's handoff `2026-10-23-nourax-nomail-to-drive-provision-scan.md`,
-section 2). The admin-only organisations and teams API lives in the same app (described in
-`docs/teams.md` when it is built) and is never offered as an MCP tool.
+section 2). The admin-only organisations and teams API lives in the same app, with its own signed
+key, and is never offered as an MCP tool: see [docs/teams.md](teams.md).
 
 | | |
 |---|---|
@@ -168,6 +168,7 @@ ClamAV state and the row counts.
 | `appinfo/routes.php` | The `/v1/...` routes |
 | `lib/Http/ApiKeyAuth.php`, `lib/Http/RateLimiter.php` | Key check; global rate limits and scan slots |
 | `lib/Controller/NomailController.php` | The NoMail endpoints |
+| `lib/Controller/AdminController.php`, `lib/Http/HmacAuth.php` | The admin API and its request signing ([docs/teams.md](teams.md)) |
 | `lib/Service/ClamdClient.php`, `HealthService.php` | clamd `PING` and `VERSION` (NUL-framed commands), the health answer |
 | `lib/Migration/Version1000Date20261025000000.php` | All tables: `nourax_api_orgs`, `_teams`, `_people`, `_members`, `_nonces`, `_drift`, `_audit` |
 | `lib/Listener/GroupDriftListener.php` | Notes changes to `org:*` and `team:*` groups made outside the API |

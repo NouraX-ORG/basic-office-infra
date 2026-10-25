@@ -150,3 +150,67 @@ qa_local_user() { # uid display-name
 			--display-name "$2" "$1" </dev/null >/dev/null
 	)
 }
+
+# --- The admin API (docs/teams.md) -------------------------------------------------------------
+# Admin requests are signed with the admin key (HMAC-SHA256, see lib/Http/HmacAuth.php). The key
+# is read by python3 from its secret file, never passed as an argument; only the one-time
+# signature headers go to curl, as a config file in $T_OUT.
+
+need_admin_key() {
+	have_secret nodrive_admin_api_key || die "nodrive_admin_api_key is missing (sudo scripts/secrets.sh gen nodrive_admin_api_key)"
+}
+
+# Writes curl config lines with the four signature headers for one request.
+# Overrides for the refusal tests: SIGN_TS (timestamp), SIGN_NONCE, SIGN_KEY_ID, SIGN_PATH (sign
+# another path than the one requested), SIGN_BAD=1 (spoil the signature).
+#   admin_headers METHOD PATH BODY-FILE > config
+admin_headers() {
+	SIGN_METHOD="$1" SIGN_REQ_PATH="${SIGN_PATH:-$2}" SIGN_BODY_FILE="$3" \
+	SIGN_KEY_FILE="$(secret_path nodrive_admin_api_key)" python3 -I -c '
+import hashlib, hmac, os, secrets, time
+with open(os.environ["SIGN_KEY_FILE"], "rb") as f:
+	key = f.read().strip(b" \t\n\r\0\x0b")
+with open(os.environ["SIGN_BODY_FILE"], "rb") as f:
+	body = f.read()
+ts = os.environ.get("SIGN_TS") or str(int(time.time()))
+nonce = os.environ.get("SIGN_NONCE") or secrets.token_urlsafe(24)
+key_id = os.environ.get("SIGN_KEY_ID", "admin-1")
+canonical = "\n".join(["NOURAX-ADMIN-V1", os.environ["SIGN_METHOD"].upper(), os.environ["SIGN_REQ_PATH"],
+	ts, nonce, hashlib.sha256(body).hexdigest()]).encode()
+sig = hmac.new(key, canonical, hashlib.sha256).hexdigest()
+if os.environ.get("SIGN_BAD") == "1":
+	sig = ("0" if sig[0] != "0" else "1") + sig[1:]
+for name, value in (("X-Nourax-Key-Id", key_id), ("X-Nourax-Timestamp", ts),
+		("X-Nourax-Nonce", nonce), ("X-Nourax-Signature", sig)):
+	print("header = \"%s: %s\"" % (name, value))
+'
+}
+
+# A signed admin API call. Prints the HTTP status; the body is left in $T_OUT/body, the headers
+# in $T_OUT/headers and the signature headers used in $T_OUT/signed (to replay them).
+#   admin_api METHOD /v1/admin/... [JSON-BODY]
+admin_api() {
+	local method="$1" path="$2" body="${3-}"
+	refuse_owner "$path" "$body"
+	printf '%s' "$body" > "$T_OUT/request"
+	admin_headers "$method" "$path" "$T_OUT/request" > "$T_OUT/signed"
+	admin_send "$method" "$path"
+}
+
+# Sends the last signed request again, as it is (for the replay test).
+#   admin_send METHOD PATH
+admin_send() {
+	local data=()
+	[ -s "$T_OUT/request" ] && data=(-H 'Content-Type: application/json' --data-binary "@$T_OUT/request")
+	curl -sS -g -X "$1" -K "$T_OUT/signed" "${data[@]}" -o "$T_OUT/body" -D "$T_OUT/headers" \
+		-w '%{http_code}' "$API_BASE$2"
+}
+
+# The JSON body {"name","version"} of an organisation or team PUT.
+name_version() { jq -cn --arg n "$1" --argjson v "$2" '{name: $n, version: $v}'; }
+
+# The result of one step in the last admin answer, e.g. step_result team_folder -> created
+step_result() { jq -r --arg s "$1" '.steps[] | select(.step == $s) | .result' "$T_OUT/body"; }
+
+# "yes" when no step of the last admin answer failed.
+no_failed_steps() { jq -e '[.steps[] | select(.result == "failed")] | length == 0' "$T_OUT/body" >/dev/null && echo yes || echo no; }

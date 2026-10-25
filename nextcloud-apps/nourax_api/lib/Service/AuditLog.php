@@ -54,4 +54,38 @@ class AuditLog {
 			$this->logger->warning('nourax_api: audit row not written: ' . get_class($e) . ': ' . $e->getMessage(), ['app' => 'nourax_api']);
 		}
 	}
+
+	/**
+	 * The newest rows first, for GET /v1/admin/audit. $target narrows them to one object
+	 * (e.g. "team:<team_id>" or a uid).
+	 *
+	 * @return list<array{id: int, at: string, key_id: string, method: string, route: string, target: ?string, http_status: int, result: ?string, remote_ip: string, duration_ms: int}>
+	 */
+	public function recent(int $limit, ?string $target = null): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')->from('nourax_api_audit')
+			->orderBy('id', 'DESC')
+			->setMaxResults(max(1, $limit));
+		if ($target !== null) {
+			$qb->where($qb->expr()->eq('target', $qb->createNamedParameter($target)));
+		}
+		$rows = [];
+		$result = $qb->executeQuery();
+		while (($row = $result->fetchAssociative()) !== false) {
+			$rows[] = [
+				'id' => (int)$row['id'],
+				'at' => gmdate('c', (int)$row['at']),
+				'key_id' => (string)$row['key_id'],
+				'method' => (string)$row['method'],
+				'route' => (string)$row['route'],
+				'target' => $row['target'] === null ? null : (string)$row['target'],
+				'http_status' => (int)$row['http_status'],
+				'result' => $row['result'] === null ? null : (string)$row['result'],
+				'remote_ip' => (string)$row['remote_ip'],
+				'duration_ms' => (int)$row['duration_ms'],
+			];
+		}
+		$result->closeCursor();
+		return $rows;
+	}
 }

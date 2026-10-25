@@ -7,6 +7,7 @@ the checkout, with sudo, because they read keys from `/etc/nourax/secrets`:
 cd /opt/nourax/basic-office-infra
 sudo tests/nomail-api-health.sh
 sudo tests/api-provision.sh
+sudo tests/admin-api.sh      # after api-provision.sh, which makes qa-t6-1
 ```
 
 Each prints one `PASS` or `FAIL` line per check and exits 0 only when every check passed.
@@ -16,6 +17,7 @@ Each prints one `PASS` or `FAIL` line per check and exits 0 only when every chec
 | `nomail-api-health.sh` | `GET /v1/health`: no key and a wrong key give 401, the right key gives 200 with `status`, `clamav` and `signatures`; `Cache-Control: no-store` |
 | `api-provision.sh` | `POST /v1/provision`: a new "Log in with Nourax" account with the four `/NoMail` folders and a 72-character app password; a second call rotates the password (the old one gets 401) and leaves exactly one `NoMail` app password; refused ids (`nodrive`, `admin`, uppercase), bad bodies, a local account, a disabled account; 413 over 16 KB; 429 with `Retry-After` past 60 calls a minute. Runs `provision-request.php` first. |
 | `provision-request.php` | The input rules of `/v1/provision` on their own, inside the app container: `sudo docker compose exec -T app php < tests/provision-request.php` |
+| `admin-api.sh` | The admin API, part 1 ([docs/teams.md](../docs/teams.md)): signing (no, wrong, old, reused signatures give 401), 413 over 2 MB, input rules, organisations and teams with every step, "Sales" and "Sales 2" in one organisation, renames that keep every id, stale versions, 423 while a call runs, a member's cards and what they can reach, the audit. QA organisations and teams `qa-t6-*` only. |
 
 `lib.sh` holds the shared helpers (`check`, `api`, `provision`, `propfind`, `save_netrc`, `qa_local_user`, `take_lock`).
 

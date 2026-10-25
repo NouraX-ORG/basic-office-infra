@@ -39,3 +39,10 @@ nomail_api_key() { # kind secret-name
 nomail_api_key api_key nodrive_api_key
 nomail_api_key admin_key nodrive_admin_api_key
 unset -f nomail_api_key
+
+# The hidden service account "nourax-teams" that owns the organisation directories and the team
+# address books, calendars and boards (docs/teams.md). --check signs in with its app password
+# over the compose network, as the team board calls do.
+if ! occ nourax_api:service-account --check; then
+	log "  WARNING: the teams service account is not ready - the admin API's team steps will fail"
+fi

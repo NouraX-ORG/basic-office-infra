@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 /**
  * occ nourax_api:status - what the app knows, as JSON: whether the keys are set (never their
- * values), ClamAV, the sign-in provider, the leaver-deletion switch and the table counts.
+ * values), ClamAV, the sign-in provider, the leaver-deletion switch, the service account and
+ * the table counts.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -14,9 +15,11 @@ namespace OCA\NouraxApi\Command;
 use OCA\NouraxApi\AppInfo\Application;
 use OCA\NouraxApi\Http\ApiKeyAuth;
 use OCA\NouraxApi\Service\HealthService;
+use OCA\NouraxApi\Service\ServiceAccountService;
 use OCA\NouraxApi\Settings;
 use OCP\App\IAppManager;
 use OCP\IDBConnection;
+use OCP\IUserManager;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -30,6 +33,7 @@ class Status extends Command {
 		private HealthService $health,
 		private IAppManager $appManager,
 		private IDBConnection $db,
+		private IUserManager $userManager,
 	) {
 		parent::__construct();
 	}
@@ -61,6 +65,9 @@ class Status extends Command {
 				array_map(fn (string $bucket): int => $this->settings->rateLimit($bucket), array_keys(Settings::RATE_LIMITS)),
 			),
 			'scan_concurrency' => $this->settings->scanConcurrency(),
+			'service_account' => $this->userManager->userExists(ServiceAccountService::UID) ? ServiceAccountService::UID : 'missing',
+			'loopback_app_password' => $this->settings->loopbackPassword() !== '' ? 'set' : 'missing',
+			'loopback_url' => $this->settings->loopbackUrl(),
 			'rows' => $counts,
 		];
 		$output->writeln((string)json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

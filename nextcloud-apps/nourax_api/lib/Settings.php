@@ -26,6 +26,10 @@ class Settings {
 	public const OIDC_PROVIDER = 'oidc_provider';
 	/** "yes" switches on the daily deletion of people who left 30+ days ago. Off until the owner says yes. */
 	public const LEAVER_DELETION = 'leaver_deletion_enabled';
+	/** The service account's app password for calls back into this server (Deck). Sensitive, lazy. */
+	public const LOOPBACK_PASSWORD = 'loopback_app_password';
+	/** How this server reaches itself from inside the compose network (the app service). */
+	public const LOOPBACK_URL = 'loopback_url';
 
 	/** Calls per minute for each bucket, over all callers together (rate_limit_<bucket>). */
 	public const RATE_LIMITS = [
@@ -82,5 +86,29 @@ class Settings {
 
 	public function setAdminKey(#[\SensitiveParameter] string $key): void {
 		$this->appConfig->setValueString(Application::APP_ID, self::ADMIN_KEY, $key, true, true);
+	}
+
+	/**
+	 * The admin API's keys by key id (header X-Nourax-Key-Id). Today there is one, "admin-1";
+	 * the id is in every request so a second key can be added later and the first one retired.
+	 *
+	 * @return array<string, string>
+	 */
+	public function adminKeys(): array {
+		$key = $this->adminKey();
+		return $key === '' ? [] : ['admin-1' => $key];
+	}
+
+	public function loopbackPassword(): string {
+		return $this->appConfig->getValueString(Application::APP_ID, self::LOOPBACK_PASSWORD, '', true);
+	}
+
+	public function setLoopbackPassword(#[\SensitiveParameter] string $password): void {
+		$this->appConfig->setValueString(Application::APP_ID, self::LOOPBACK_PASSWORD, $password, true, true);
+	}
+
+	/** Without a trailing slash, e.g. http://app */
+	public function loopbackUrl(): string {
+		return rtrim($this->appConfig->getValueString(Application::APP_ID, self::LOOPBACK_URL, 'http://app'), '/');
 	}
 }

@@ -14,6 +14,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **Team folders** | Folders that belong to a group: every member reads and writes the same files ([docs/apps.md](docs/apps.md#team-folders)) |
 | **Virus scanner** | Every upload is checked by ClamAV; infected files are refused ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#virus-scanner)) |
 | **NoMail** | Nourax mail: the NoMail entry in the app menu, right after NoBoard, opens it in a new tab (`nextcloud-apps/nourax_branding/`) |
+| **Organisations and teams** | Each team gets a group, a team folder, a read-only team address book, a calendar and a board, made by the admin-only teams API ([docs/teams.md](docs/teams.md)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the
