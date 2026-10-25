@@ -408,6 +408,21 @@ The newest audit rows first (`limit` 1-500, default 100), optionally for one obj
 **Versions:** `version` is NoMail's counter for that object, an integer of at least 1. A stored
 version greater than the incoming one changes nothing. An equal one runs every step again.
 
+**What NoMail does with `stale_version`** (one rule): the call changed nothing, because the Drive
+holds `current_version`, which is higher than the version the call sent. NoMail compares
+`current_version` with its own newest version of that object:
+
+- its own is **higher**: nothing to do. That newer call was applied already or is still on its
+  way (its retries finish it).
+- its own is **equal or lower**: NoMail's counter is behind the Drive (for example an older call
+  arrived late, or NoMail's data was restored from a backup). NoMail sets its version to
+  `current_version + 1` and sends the whole current state once more. An extra call is harmless:
+  every step is "ensure".
+
+**400 and 404:** a 400 `invalid_request` is a fault in what NoMail sent (an id, the body, or a
+path that does not match): fix the data, do not send it again as is. A 404 `not_found` on a GET
+means that organisation, team or person was never sent (send it first, if it should exist).
+
 **Ids:** `org_id` and `team_id` are lowercase UUIDs; `^qa-[a-z0-9-]{1,40}$` is allowed for tests.
 The API reads them from the signed path, never from the body.
 
@@ -576,8 +591,10 @@ needs (the full list, a table sketch and what to do with each answer are in the 
 - Only NoMail's administrators can call that function. It is never an MCP tool, never reachable
   by an ordinary signed-in person, and the key never reaches a browser.
 - Bump `version` on every change and send the newest. An answer with `applied: false,
-  reason: stale_version` means a newer state is already stored; a 502 or 423 means "send the same
-  call again later".
+  reason: stale_version` means the Drive holds a higher version; what NoMail then does is under
+  [Answers](#answers) ("What NoMail does with `stale_version`"). A 502 or 423 means "send the same
+  call again later". A 400 `invalid_request` means "fix the data, do not retry as is"; a 404
+  `not_found` on a GET means "never sent".
 - A person leaves the organisation with `"active": false`: their Drive account is disabled at once
   and kept 30 days. There is no delete call. The account is deleted after the 30 days only if the
   owner has switched the scheduled delete on (it is off).

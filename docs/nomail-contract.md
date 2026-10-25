@@ -1,7 +1,8 @@
 # The NoMail contract
 
 What NoMail uses on the Drive, and how each part was tested. NoMail's side is in the NoMail repo
-(`supabase/functions/_shared/drive.ts`, `driveFiles*.ts`, `driveTicket.ts` and `src/lib/driveApi.ts`).
+(`supabase/functions/_shared/drive.ts`, `driveFiles*.ts`, `driveTicket.ts`, and the browser's
+`src/lib/driveApi.ts` and `src/lib/driveFiles.ts`).
 
 | Part | Where it is described |
 |---|---|
@@ -103,7 +104,8 @@ curl -sS -u '<login>:<app-password>' -H 'OCS-APIRequest: true' -H 'Accept: appli
 curl -sS -u '<login>:<app-password>' -X MKCOL https://drive.nourax.org/remote.php/dav/files/<uid>/NoMail/Received/<yyyy-mm>/   # 201 or 405
 curl -sS -u '<login>:<app-password>' -X PUT -H 'Content-Type: application/pdf' --data-binary @invoice.pdf \
   'https://drive.nourax.org/remote.php/dav/files/<uid>/NoMail/Received/<yyyy-mm>/qa-t6%20Rechnung%20M%C3%A4rz.pdf'
-# 201 new; 204 when it replaced a file with the same name
+# 201 new; 204 when it replaced a file with the same name; 415 when the virus check refuses it
+# (see "Virus check on upload (415)" below)
 ```
 
 **U4 – a picture for an HTML email** (a link with no end date)
@@ -154,10 +156,13 @@ password link 401) and `https://drive.nourax.org/s/<token>/preview` (`200 image/
   `PUT`s (the quota is checked early) and the `MOVE`.
 - **Chunks.** Under 100 MB each (Cloudflare refuses bigger request bodies). Named `00001` to
   `10000`; at least 5 MiB each, and all the same size except the last (R2 multipart rules). The
-  Drive and the upload Worker use 50 MiB (52,428,800 bytes). A stored chunk answers an empty
-  **200**, not the 201 of the docs (Nextcloud 35 on object storage). The Drive does not compare
-  the chunks with `OC-Total-Length` at the `MOVE`: check the upload folder (a `PROPFIND`, Depth 1,
-  lists `1`, `2`, … with their sizes) before the `MOVE`, as the Worker's `/finish` does.
+  Drive and the upload Worker use 50 MiB (52,428,800 bytes). The Drive's own WebDAV chunk `PUT`
+  answers an empty **200** for a stored chunk, not the 201 of the docs (Nextcloud 35 on object
+  storage). This is only about the raw WebDAV request: the upload Worker's `PUT /chunks/{n}`, which
+  NoMail's page calls, still answers **201** (it takes the Drive's 200, 201 or 204 as stored). The
+  Drive does not compare the chunks with `OC-Total-Length` at the `MOVE`: check the upload folder
+  (a `PROPFIND`, Depth 1, lists `1`, `2`, … with their sizes) before the `MOVE`, as the Worker's
+  `/finish` does.
 - **Password links.** `/s/<token>/download` and `/public.php/dav/files/<token>` never give the
   bytes without the password. NoMail's `readShare()` sets `downloadUrl` for every link; for a
   link with `hasPassword` only `url` (the page) works.
@@ -170,11 +175,30 @@ password link 401) and `https://drive.nourax.org/s/<token>/preview` (`200 image/
   `readShare()` keeps the first 10 characters, which is right. No end date is enforced: a link
   without `expireDate` has `expiration: null` (U4). Changing a link: `PUT …/shares/<id>` with a
   form body, as NoMail's `updatePublicShare()` sends it. Tested in U5: a new `expireDate` with a
-  `password`, then `password=` (empty), which takes the password off and keeps the end date. An
-  empty `expireDate` (NoMail's "no end date") was not tested.
+  `password`, then `password=` (empty), which takes the password off and keeps the end date.
+  Tested in the QA review on 2026-10-25: an empty `expireDate` (NoMail's "no end date"),
+  `PUT …/shares/125` with the form body `expireDate=`, gave HTTP 200, statuscode 200 and
+  `expiration: null`, and a `GET` of the link afterwards also showed `expiration: null`.
 - **Passwords** for links: at least 10 characters, not a common or leaked password
   (`password_policy`; leaked ones are checked against haveibeenpwned.com). A refusal is a 400 with
-  a plain message, which NoMail passes on.
+  a plain message, which NoMail passes on. That message can be longer than NoMail keeps: the
+  password `abc12` gave HTTP 400, statuscode 400 and a message of three sentences, about 236
+  characters (QA review, 2026-10-25), while NoMail's `shareFailure()` keeps only
+  `message.slice(0, 200)`, so its last sentence is cut off mid-word. NoMail could keep 400.
+- **The `/NoMail` folder is not empty on a new account.** The Drive's welcome files are copied
+  into every new account: `/Welcome to Nourax Workspace.md` at the top and
+  `/NoMail/About this folder.md` (`text/markdown`, 380 bytes), which a `PROPFIND` of `/NoMail/`
+  lists next to `Sent/`, `Received/` and `Images/`. NoMail's `listFolder()` hides only names that
+  start with a dot, so its Drive picker shows that file. That is harmless (it explains the
+  folder); NoMail can hide it by name if it wants.
+- **A disabled account whose app passwords were not revoked answers 503, not 401.** When the
+  account is disabled through the admin API (`"active": false`), every app password is revoked
+  and WebDAV answers 401. But when a server administrator disables it by hand
+  (`occ user:disable`), the app password stays, and WebDAV answers **503** with
+  `OC\User\DisabledUserException: Account disabled` (seen in the QA review for `PUT`, `MKCOL` and
+  `MOVE` with `qa-t6-1` disabled). NoMail's `checkDriveLogin()` then returns `unavailable` and
+  `failure()` shows "Nourax Drive answered 503.", and it keeps trying. `/v1/provision` for that
+  person answers 409 `account_disabled` (tested), which is the way to tell the two apart.
 - **Content types** come from the file name, not the `PUT`'s `Content-Type` (`.bin` →
   `application/x-bin`, `.pdf` → `application/pdf`, `.png` → `image/png`). NoMail names pictures by
   their real type, so U4 links give the right type.
@@ -197,7 +221,46 @@ password link 401) and `https://drive.nourax.org/s/<token>/preview` (`200 image/
 - **Antivirus.** A chunked upload over 256 MiB is not scanned while it arrives; the stored-file
   scan checks it within about 15 minutes ([search-and-antivirus.md](search-and-antivirus.md)).
   Files up to 256 MiB are scanned before the `MOVE` answers, which is why the `MOVE` of a 110 MB
-  test file took 12–21 s, while the 1.1 GB file's took 1.2 s.
+  test file took 12–21 s, while the 1.1 GB file's took 1.2 s. A refused upload answers **415**:
+  see the next section.
+
+### Virus check on upload (415)
+
+The Drive's "Antivirus for files" app (`files_antivirus` 6.5.0) checks an upload when it is
+written: a plain `PUT` (U3, U4) at once, a chunked upload (U2) at its `MOVE`. It refuses with
+**HTTP 415** and a Sabre error body (its shape as the installed `sabre/dav` `Server.php` and
+`apps/dav` write it; the message as seen live):
+
+```
+<?xml version="1.0" encoding="utf-8"?>
+<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
+  <s:exception>OCA\DAV\Connector\Sabre\Exception\UnsupportedMediaType</s:exception>
+  <s:message>Virus Eicar-Test-Signature is detected in the file. Upload cannot be completed.</s:message>
+</d:error>
+```
+
+| Case | `<s:message>` (English; it follows the person's language) | How it was checked |
+|---|---|---|
+| Infected file | `Virus <signature> is detected in the file. Upload cannot be completed.` | **Tested** in the QA review on 2026-10-25 as `qa-t6-1` through Cloudflare: a plain `PUT` of the EICAR string answered 415 with this message and left no file (a `GET` afterwards 404). A chunked upload: `MKCOL` 201, `PUT 00001` 200, then `MOVE` 415 with the same message; afterwards a `PROPFIND` of the upload session answered 500 (the session is broken). |
+| The scanner cannot be reached | `No connection to anti virus. Upload cannot be completed.` | **Not tested live**; read in the installed source. The app runs with `av_block_unreachable` = 1 (checked with `occ config:app:get`), so while ClamAV is down or reloading **every** upload gets this 415 (`AvirWrapper::handleConnectionError`, then `apps/dav/lib/Connector/Sabre/File.php` turns its `InvalidContentException` into `UnsupportedMediaType`). |
+
+The Drive's chunk `PUT`s are not checked (the EICAR chunk was stored with 200); only the `MOVE` is.
+
+**How NoMail's code reads it today** (commit `a9b5f07`) and what it should do:
+
+- **U3 and U4** (`_shared/driveFiles.ts`): `putFile()` passes 415 to `failure()`, which has no
+  branch for it and returns a 502 "Saving the file: Nourax Drive answered 415." NoMail should add a
+  415 branch with a plain message (for example "Your Drive's virus scanner found a virus in this
+  file, so it was not saved." when the message starts with `Virus`, otherwise "Your Drive could not
+  check this file for viruses just now, so it was not saved. Please try again in a few minutes.")
+  and not retry it as it is. Note that `uploadEmailImage` already uses 415 for its own
+  "Only PNG, JPEG, GIF and WebP pictures" refusal; keep the two apart.
+- **U2** (the upload Worker, `src/lib/driveApi.ts`): before 2026-10-25 12:09 UTC the Worker turned
+  the `MOVE`'s 415 into 502 `drive_error`; `driveApi.ts` reads 502 as retryable and would have sent
+  `/finish` 4 more times, each failing on the broken session. **The Worker now passes the 415 on**
+  (below), and `driveApi.ts` does not retry 415, so the person sees
+  `Finishing the upload failed: <the Worker's message>.` once. NoMail can show its own plain
+  message for the codes `virus_found` and `scanner_unavailable`.
 
 ### U2 timing
 
@@ -227,11 +290,11 @@ format is v1, unchanged: NoMail seals `uid`, `login` and the "NoMail" app passwo
 
 | | |
 |---|---|
-| Script | `nodrive-upload` deployed with `npx wrangler deploy` (wrangler 4.152.0): "No targets deployed" |
+| Script | `nodrive-upload` deployed with `npx wrangler deploy` (wrangler 4.152.0): "No targets deployed". Current version `4730d701-9b74-4004-b4af-8958714a49b6`, deployed 2026-10-25 12:09:06 UTC (the 415 pass-through below); the one before was `92671026-32aa-4af0-a852-aaed05f78e67` (09:07 UTC) |
 | Route | **None.** The Cloudflare API lists only `office.nourax.org/nourax-ai/*` (`nourax-office-ai`) for the zone |
 | `workers.dev`, previews | Off: `GET …/workers/scripts/nodrive-upload/subdomain` gives `{"enabled":false,"previews_enabled":false}` |
 | Custom domains | None |
-| Secret | `UPLOAD_TICKET_KEY` set (43 characters), piped from `/etc/nourax/secrets/upload_ticket_key` on the server |
+| Secret | `UPLOAD_TICKET_KEY` set (43 characters), piped from `/etc/nourax/secrets/upload_ticket_key` on the server. **Not proven to be the same value as the server file:** `wrangler secret list` shows only the name, and `tests/worker-local.sh` runs with a throwaway key. Only the route test after the owner's yes (tickets sealed with the server file's key, `/finish` 201) proves it. |
 | Settings | `ORIGIN_BASE=https://drive.nourax.org`, `ALLOWED_ORIGINS=https://mail.nourax.org`, chunks up to 50 MiB, files up to 10 GiB |
 | Live check | `https://drive.nourax.org/nomail-upload/health` answers 404 (the Drive's own page) |
 
@@ -281,6 +344,25 @@ before (`worker-120m-20261025090525.bin`, SHA-256 equal) and the new 6 MiB one
 200 (the session still works); finish with chunk 2 missing 409, missing `2`, and no file on the
 Drive; with both chunks 201, and a second finish 201 with the same file id; size 6291456 and
 SHA-256 equal on a WebDAV `GET`.
+
+### The Drive's virus check through the Worker (415)
+
+Found in the QA review on 2026-10-25: the Drive's `MOVE` answers 415 when its virus check refuses
+the file ([above](#virus-check-on-upload-415)), and the Worker used to turn that into 502
+`drive_error`, which NoMail's page would retry 4 times against a session that is already broken.
+Since version `4730d701-…` (12:09 UTC) the Worker answers **415**, which NoMail's page does not
+retry, with a plain message:
+
+| `error.code` | When | `error.message` |
+|---|---|---|
+| `virus_found` (and `error.signature`) | The Drive's English "Virus … is detected" message | `the Drive's virus scanner found <signature> in this file, so it was not saved` |
+| `scanner_unavailable` | The Drive's English "No connection to anti virus" message | `the Drive's virus scanner could not be reached, so the file was not saved - try again in a few minutes` |
+| `file_refused` | Any other 415 (for example the message in another language) | `the Drive refused this file: <the Drive's message>` |
+
+Only a new upload can follow. NoMail's page already sends `DELETE /` when an upload fails.
+**Tested** with 6 new unit tests that feed the Worker the Drive's 415 answer (`npm test` in
+`worker/`: 56 tests pass; `tsc --noEmit` clean). **Not tested live** through the Worker: there is
+no route yet, and the local run (`tests/worker-local.sh`) has no EICAR step.
 
 ### The route (waits for the owner's yes)
 

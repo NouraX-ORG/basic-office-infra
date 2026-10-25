@@ -118,12 +118,21 @@ level. `Content-Type` is not checked.
 | 200 | `{"status":"infected","signature":"Eicar-Test-Signature"}` | clamd found something. The name is clamd's, at most 200 characters, without control characters. | infected |
 | 413 | `{"error":"too_large","max_bytes":99614720}` | `Content-Length` over the limit (refused before clamd is asked), a chunked body that goes over it while it streams, or clamd's own size limit | "Too big for the virus scanner" (not retried) |
 | 422 | `{"error":"scan_error"}` | clamd failed part-way: an `ERROR` answer, a closed connection, or no answer within 60 seconds of a wait (90 seconds in all) | a failed try for this file: retried after 2, 4, 8 and 16 minutes |
-| 429 | `{"error":"scanner_busy"}`, `Retry-After: 30` | 2 scans are already running (`scan_concurrency`) | "not ready": the run stops and tries again next minute |
+| 429 | `{"error":"scanner_busy"}`, `Retry-After: 30` | 2 scans are already running (`scan_concurrency`) | "not ready": the run stops and tries again next minute, **but the file that got this answer is counted as a failed try** (below) |
 | 429 | `{"error":"rate_limited"}`, `Retry-After: 30` | over 60 scans this minute | the same |
 | 503 | `{"error":"scanner_unavailable"}`, `Retry-After: 60` | clamd cannot be reached within 5 seconds (ClamAV is down or starting) | the same |
 
 NoMail scans one file at a time, so it only meets `scanner_busy` when something else scans at
 the same moment.
+
+**A "not ready" answer still costs that file a try** (read in NoMail's code, commit `a9b5f07`, not
+tested): in `_shared/attachmentScan.ts`, `runScan()` saves `outcomeFor(file, answer)` for the file
+it was scanning before it stops the run on an `unavailable` answer (429, 503 and the others it
+reads as "not ready"), and `outcomeFor()`'s default branch adds 1 to that file's `attempts`. After 5
+such answers (`MAX_ATTEMPTS`) the file ends as "The virus scanner could not check this file." So a
+scanner outage of a few runs can mark the first file in the queue as unscannable. Only the files
+after it are released untouched. The reply to NoMail asks NoMail not to count `unavailable`
+answers as tries.
 
 **How it works.** The body goes from the request (`php://input`) straight to clamd with the
 `INSTREAM` command: `zINSTREAM\0`, then 1 MiB pieces, each with a 4-byte big-endian length, then
@@ -181,7 +190,10 @@ Every answer is JSON with `Cache-Control: no-store`. Errors look like `{"error":
 503 `oidc_*` and `scanner_unavailable`); see their sections above.
 
 NoMail treats 401, 403, 404, 429 and 503 as "the API is not ready" and simply tries again on its
-next run, so nothing on the NoMail side breaks while the Drive side is down or not set up.
+next run, so nothing on the NoMail side breaks while the Drive side is down or not set up. For
+`/v1/provision` this costs nothing (the account is released and no try is counted). For
+`/v1/scan` the file being scanned when the answer came is counted as a failed try (see
+[`POST /v1/scan`](#post-v1scan) above).
 
 ## Keys and secrets
 

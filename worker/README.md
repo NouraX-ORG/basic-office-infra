@@ -44,7 +44,7 @@ All under `/nomail-upload`. Every request except `/health` and `OPTIONS` needs t
 | `POST /start` | Makes the `/NoMail/…` folders and the upload session | 201 `{upload, path, size, chunkSize, chunks}`; 409 `exists` when the name is taken |
 | `PUT /chunks/{n}` | Chunk `n` (from 1). Every chunk except the last is exactly `chunk` bytes; `Content-Length` is required | 201 `{chunk, size}`; 400 `bad_chunk_number` or `bad_chunk_length`; 411 without a length |
 | `GET /chunks` | The chunks the Drive has, to resume | 200 `{received:[{n, size}]}` |
-| `POST /finish` | Checks that every chunk is there with its exact length, then puts the file together | 201 `{path, fileId, size, etag, contentType}`; 409 `incomplete` with `missing:[n…]` when a chunk is missing or the wrong length (no file is made, and the session stays usable); 409 `unexpected_chunks`; 500 `size_mismatch` |
+| `POST /finish` | Checks that every chunk is there with its exact length, then puts the file together | 201 `{path, fileId, size, etag, contentType}`; 409 `incomplete` with `missing:[n…]` when a chunk is missing or the wrong length (no file is made, and the session stays usable); 409 `unexpected_chunks`; 415 when the Drive's virus check refuses the file (below); 500 `size_mismatch` |
 | `DELETE /` | Cancels the upload session | 204 |
 
 Errors look like `{"error":{"code":"…","message":"…"}}`. A bad, expired or missing ticket gives
@@ -52,6 +52,22 @@ Errors look like `{"error":{"code":"…","message":"…"}}`. A bad, expired or m
 `upload_not_found` (404), `conflict` (409), `throttled` (429), `quota_exceeded` (507) or
 `drive_error` (502). A request without an `Origin` header (a server tool, a test) is let through:
 it still needs a ticket.
+
+**The Drive's virus check (415).** The Drive's "Antivirus for files" app scans an upload when the
+`MOVE` puts it together, and answers 415 for an infected file (`Virus <signature> is detected in
+the file. Upload cannot be completed.`) and also while it cannot reach the scanner (`No connection
+to anti virus. Upload cannot be completed.`; it blocks uploads then). After such a `MOVE` the
+upload session is broken (the Drive answers 500 for it), so the Worker passes the 415 on, a status
+NoMail's page does not retry, instead of the 502 it would retry:
+
+| Code (all 415) | When | `message` |
+|---|---|---|
+| `virus_found`, with `signature` | The English "Virus … is detected" message | `the Drive's virus scanner found <signature> in this file, so it was not saved` |
+| `scanner_unavailable` | The English "No connection to anti virus" message | `the Drive's virus scanner could not be reached, so the file was not saved - try again in a few minutes` |
+| `file_refused` | Any other 415 (the Drive writes its messages in the person's language) | `the Drive refused this file: <the Drive's message>` (plain text, at most 300 characters of it) |
+
+Only a new upload (a new ticket and upload id) can follow. The same mapping applies to a chunk
+`PUT`, although the Drive does not scan chunks today.
 
 ### How `/finish` keeps files whole
 

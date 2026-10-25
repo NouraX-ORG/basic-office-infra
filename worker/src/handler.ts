@@ -71,7 +71,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
 		if (request.method === "POST" && route === "/finish") return await finish(dav, ticket, cors);
 		if (request.method === "DELETE" && route === "/") return await abort(dav, cors);
 	} catch (err) {
-		if (err instanceof UpstreamError) return fromUpstream(cors, err.status, err.step);
+		if (err instanceof UpstreamError) return fromUpstream(cors, err.status, err.step, err.detail);
 		throw err;
 	}
 	return fail(cors, 404, "not_found", "unknown path or method");
@@ -115,6 +115,7 @@ async function putChunk(dav: Dav, t: Ticket, n: number, request: Request, cors: 
 	}, readable);
 	// Nextcloud 35 on object storage answers a stored chunk with an empty 200, not 201: its
 	// ChunkingV2Plugin stops Sabre's PUT handling before Sabre sends the 201 it set.
+	if (res.status === 415) throw new UpstreamError(415, `upload chunk ${n}`, await davMessage(res));
 	if (res.status !== 200 && res.status !== 201 && res.status !== 204) throw new UpstreamError(res.status, `upload chunk ${n}`);
 	return json(cors, 201, { chunk: n, size: expected });
 }
@@ -145,6 +146,9 @@ async function finish(dav: Dav, t: Ticket, cors: Headers): Promise<Response> {
 	if (t.mtime !== undefined) headers["X-OC-Mtime"] = String(t.mtime);
 	const res = await dav.send("MOVE", dav.uploadUrl("/.file"), headers);
 	if (res.status === 400 || res.status === 412) return incomplete(cors, "some chunks", []);
+	// The Drive's virus check runs here: 415 for an infected file, and also while the scanner
+	// cannot be reached (files_antivirus blocks uploads then). The session is broken afterwards.
+	if (res.status === 415) throw new UpstreamError(415, "finish upload", await davMessage(res));
 	if (res.status !== 201 && res.status !== 204) throw new UpstreamError(res.status, "finish upload");
 
 	const file = await readFile(dav, t);
@@ -271,12 +275,15 @@ class UpstreamError extends Error {
 	constructor(
 		readonly status: number,
 		readonly step: string,
+		/** The Drive's own message (its <s:message>), when it gave one. */
+		readonly detail = "",
 	) {
 		super(`${step} failed with ${status}`);
 	}
 }
 
-function fromUpstream(cors: Cors, status: number, step: string): Response {
+function fromUpstream(cors: Cors, status: number, step: string, detail = ""): Response {
+	if (status === 415) return refused(cors, step, detail);
 	if (status === 401) return fail(cors, 401, "drive_unauthorized", "the Drive rejected the app password - reconnect the Drive");
 	if (status === 403) return fail(cors, 403, "drive_forbidden", `${step}: the Drive refused access to this place`);
 	if (status === 404) return fail(cors, 404, "upload_not_found", `${step}: upload session not found or expired - start again`);
@@ -284,6 +291,48 @@ function fromUpstream(cors: Cors, status: number, step: string): Response {
 	if (status === 507) return fail(cors, 507, "quota_exceeded", "not enough space in the Drive");
 	if (status === 429) return fail(cors, 429, "throttled", "the Drive is throttling requests - wait and retry");
 	return fail(cors, 502, "drive_error", `${step}: the Drive answered ${status}`);
+}
+
+/**
+ * The Drive refused the file's content (415): its virus check found something, or could not reach
+ * the scanner (files_antivirus blocks uploads while the scanner is away). Passed on as 415, a status
+ * NoMail does not retry: the upload session is broken after such a MOVE, so only a new upload helps.
+ * The Drive's messages are in the person's language; the two English ones get their own code.
+ */
+function refused(cors: Cors, step: string, detail: string): Response {
+	const virus = /^Virus ([\w.:/+-]{1,128}) is detected in the file\b/.exec(detail)?.[1];
+	if (virus !== undefined) {
+		return json(cors, 415, {
+			error: {
+				code: "virus_found",
+				message: `the Drive's virus scanner found ${virus} in this file, so it was not saved`,
+				signature: virus,
+			},
+		});
+	}
+	if (detail.startsWith("No connection to anti virus")) {
+		return fail(
+			cors,
+			415,
+			"scanner_unavailable",
+			"the Drive's virus scanner could not be reached, so the file was not saved - try again in a few minutes",
+		);
+	}
+	return fail(cors, 415, "file_refused", detail === "" ? `${step}: the Drive refused this file` : `the Drive refused this file: ${detail}`);
+}
+
+/** The message of a Sabre error answer (<s:message>), plain text, at most 300 characters; "" if none. */
+async function davMessage(res: Response): Promise<string> {
+	const xml = await res.text().catch(() => "");
+	const raw = /<(?:[\w-]+:)?message\b[^>]*>([^<]*)</.exec(xml)?.[1] ?? "";
+	return raw
+		.replaceAll("&lt;", "<")
+		.replaceAll("&gt;", ">")
+		.replaceAll("&amp;", "&")
+		.replace(/[\u0000-\u001f\u007f]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 300);
 }
 
 function encodePath(path: string): string {

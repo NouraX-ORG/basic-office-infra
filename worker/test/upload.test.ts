@@ -316,6 +316,81 @@ describe("the Drive's refusals", () => {
 	});
 });
 
+// A Sabre error answer, as the Drive (Nextcloud 35, sabre/dav Server.php) sends it for a 415.
+function refusal(message: string): Response {
+	return new Response(
+		`<?xml version="1.0" encoding="utf-8"?>\n<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">\n` +
+			`  <s:exception>OCA\\DAV\\Connector\\Sabre\\Exception\\UnsupportedMediaType</s:exception>\n` +
+			`  <s:message>${message}</s:message>\n</d:error>\n`,
+		{ status: 415, headers: { "Content-Type": "application/xml; charset=utf-8" } },
+	);
+}
+
+describe("the Drive's virus check (415)", () => {
+	it("passes an infected file on as 415 virus_found with the signature, and stops", async () => {
+		// Seen live on 2026-10-25: the MOVE of a chunked upload holding the EICAR string.
+		const calls = mockDrive([
+			uploadFolder(ALL_PARTS),
+			refusal("Virus Eicar-Test-Signature is detected in the file. Upload cannot be completed."),
+		]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(415);
+		expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://mail.test");
+		expect(await res.json()).toEqual({
+			error: {
+				code: "virus_found",
+				message: "the Drive's virus scanner found Eicar-Test-Signature in this file, so it was not saved",
+				signature: "Eicar-Test-Signature",
+			},
+		});
+		// No look for the file afterwards: there is none.
+		expect(calls.map((c) => c.method)).toEqual(["PROPFIND", "MOVE"]);
+	});
+
+	it("passes 'no connection to the scanner' on as 415 scanner_unavailable", async () => {
+		mockDrive([uploadFolder(ALL_PARTS), refusal("No connection to anti virus. Upload cannot be completed.")]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(415);
+		const error = await errorOf(res);
+		expect(error.code).toBe("scanner_unavailable");
+		expect(error.message).toContain("could not be reached");
+	});
+
+	it("passes any other refusal on as 415 file_refused with the Drive's message, as plain text", async () => {
+		// The Drive's messages follow the person's language, so they are not always the English ones.
+		mockDrive([uploadFolder(ALL_PARTS), refusal("Virus &lt;X&gt; wurde gefunden &amp; entfernt.\n Hochladen nicht möglich.")]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(415);
+		expect(await errorOf(res)).toEqual({
+			code: "file_refused",
+			message: "the Drive refused this file: Virus <X> wurde gefunden & entfernt. Hochladen nicht möglich.",
+		});
+	});
+
+	it("still answers 415 when the Drive gives no message", async () => {
+		mockDrive([uploadFolder(ALL_PARTS), 415]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(415);
+		expect(await errorOf(res)).toEqual({ code: "file_refused", message: "finish upload: the Drive refused this file" });
+	});
+
+	it("passes a 415 for a chunk on as 415 too, never as a Drive error to retry", async () => {
+		mockDrive([refusal("Virus Win.Test.EICAR_HDB-1 is detected in the file. Upload cannot be completed.")]);
+		const res = await call("/chunks/1", { method: "PUT", body: new Uint8Array(5 * MiB) });
+		expect(res.status).toBe(415);
+		const error = (await res.json()) as { error: { code: string; signature?: string } };
+		expect(error.error.code).toBe("virus_found");
+		expect(error.error.signature).toBe("Win.Test.EICAR_HDB-1");
+	});
+
+	it("does not take an odd signature name for one", async () => {
+		mockDrive([uploadFolder(ALL_PARTS), refusal("Virus &lt;b&gt;bad&lt;/b&gt; is detected in the file. Upload cannot be completed.")]);
+		const res = await call("/finish", { method: "POST" });
+		expect(res.status).toBe(415);
+		expect((await errorOf(res)).code).toBe("file_refused");
+	});
+});
+
 describe("multistatus reader", () => {
 	it("reads Nextcloud property names with any prefix", () => {
 		const xml =
