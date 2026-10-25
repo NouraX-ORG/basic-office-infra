@@ -170,7 +170,11 @@ else
 fi
 check "no new file over 1 MiB in the data folder" 0 "$(dc exec -T app find /var/www/html/data -type f -newermt "@$START" -size +1M ! -name '*.log' </dev/null | wc -l)"
 check "no PHP upload file left in the app container" 0 "$(dc exec -T app find /tmp -maxdepth 1 -type f -name 'php*' -newermt "@$START" -size +1M </dev/null | wc -l)"
-check "no clamd temporary file left" 0 "$(dc exec -T clamav find /tmp -type f -newermt "@$START" -size +1M </dev/null | wc -l)"
+# The clamav image has BusyBox find: no -newermt, so minutes since the start, and any size.
+since_min=$(( ( $(date -u +%s) - START ) / 60 + 1 ))
+clamav_tmp="$(dc exec -T clamav find /tmp -type f -mmin "-$since_min" </dev/null)" \
+	|| die "could not look in the clamav container's /tmp"
+check "no clamd temporary file left" 0 "$(printf '%s' "$clamav_tmp" | grep -c . || true)"
 # File names go to the debug log only (the server logs warnings and up); bytes never do.
 check "no test file name in the server log" 0 "$(dc exec -T app grep -c -F -e 'parallel-1.bin' -e 'limit 95 MiB.bin' /var/www/html/data/nextcloud.log </dev/null || true)"
 check "no EICAR bytes in the server log" 0 "$(dc exec -T app grep -c -F 'ANTIVIRUS-TEST' /var/www/html/data/nextcloud.log </dev/null || true)"
