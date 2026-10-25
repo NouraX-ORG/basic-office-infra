@@ -10,6 +10,7 @@ namespace OCA\NouraxBranding\AppInfo;
 
 use OCA\NouraxBranding\Listener\NavigationListener;
 use OCA\NouraxBranding\Listener\PageScriptListener;
+use OCA\NouraxBranding\Middleware\EmptySettingsPageMiddleware;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -28,6 +29,9 @@ class Application extends App implements IBootstrap {
 		// NoMail in the app menu: the entry itself, and the small script that opens it in a new tab.
 		$context->registerEventListener(LoadAdditionalEntriesEvent::class, NavigationListener::class);
 		$context->registerEventListener(BeforeTemplateRenderedEvent::class, PageScriptListener::class);
+		// Personal settings addresses with nothing on them, such as the switched-off Privacy page, go to
+		// the first Personal settings page. Global, so that it runs for the settings app's controller.
+		$context->registerMiddleware(EmptySettingsPageMiddleware::class, true);
 	}
 
 	public function boot(IBootContext $context): void {

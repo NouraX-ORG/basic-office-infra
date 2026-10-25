@@ -30,7 +30,7 @@ After adding or updating an app, run `scripts/check-branding.sh` and add or chan
 | App | Version | What people saw | Why it is off |
 |---|---|---|---|
 | `office` | 1.1.0 | "Office" in the app menu: an overview page of the upstream office suite. | The owner approved switching it off. Documents are made from the NoDrive "New" menu. |
-| `privacy` | 7.0.0 | Personal settings > Privacy: the upstream mission text ("We at Nextcloud believe…"), the User Data Manifesto, and links to nextcloud.com/yourdata and the upstream blog. | It only shows these pages. Its one table (extra admin names for the "who has access" box) is empty, and no other app needs it. Rewording it would make the upstream's promises sound like Nourax's. |
+| `privacy` | 7.0.0 | Personal settings > Privacy: the upstream mission text ("We at Nextcloud believe…"), the User Data Manifesto, and links to nextcloud.com/yourdata and the upstream blog. | It only shows these pages. Its one table (extra admin names for the "who has access" box) is empty, and no other app needs it. Rewording it would make the upstream's promises sound like Nourax's. Its old address, `/settings/user/privacy`, now sends people to Personal settings > Profile and contact: the nourax_branding app does that for any Personal settings address with nothing on it. |
 
 `scripts/configure.sh` already switches off the upstream intro, news, survey, support and update apps,
 the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_announcements`,
@@ -42,6 +42,7 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 
 | App | Version | Upstream branding found | Fix |
 |---|---|---|---|
+| core (the app menu) | 35.0.2 | An "App store" tile at the end of the app menu of people who are not admins. It opens apps.nextcloud.com in a new tab. It is part of Nextcloud itself, not of the `appstore` app, and shows while the core setting `appstore_link_shown` is unset. | `scripts/configure.d/20-branding.sh` sets `appstore_link_shown` to false, which hides only this tile. Admins still install and update apps from Administration > Apps. |
 | `deck` (NoBoard) | 1.19.1 | A welcome board is made on a person's first visit. Its title, "Welcome to Nextcloud Deck!", is a translation, but its card texts come from a fixed file inside the app and name the upstream 15 times. | The text sweep renames the title. The card texts need more: the nourax_branding app should set the person's Deck setting `firstRun` to `no` when the account is made, so no welcome board is made. Boards that already exist are people's data and stay. |
 | `federatedfilesharing` | 2.0.0 | Personal settings > Sharing: the Federated Cloud ID, "Share with me via Nextcloud" and a link to nextcloud.com/sharing; "Add to your Nextcloud" on public share pages. | Always on. Links and assets: turn federation off. |
 | `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets (theme template overrides and CSS). |
@@ -63,7 +64,7 @@ Admin pages only (people never see them; admin pages are not part of the user ch
 
 | App | Version | Upstream branding found | Fix |
 |---|---|---|---|
-| `appstore` | 2.0.0 | The "More apps" tile links to apps.nextcloud.com; "Nextcloud Appstore". | Always on. Links hidden by CSS, text sweep. |
+| `appstore` | 2.0.0 | Administration > Apps: the "More apps" tile links to apps.nextcloud.com; "Nextcloud Appstore". The "App store" tile in the app menu of people who are not admins is not part of this app: see the core row above. | Always on. Links hidden by CSS, text sweep. |
 | `settings` (Administration overview) | 2.0.0 | A release name written into a template, "Nextcloud Hub 26 Summer". | Links and assets (theme template override). |
 | `notifications` | 8.0.1 | Notices about the upstream's free push service limits, with links to nextcloud.com. | Text sweep; the links show to admins only. |
 | `serverinfo`, `logreader`, `bruteforcesettings` | 7.0.0, 8.0.0, 8.0.0 | Links to docs.nextcloud.com and descriptions. | Links hidden by CSS, text sweep. |
