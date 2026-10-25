@@ -218,8 +218,11 @@ check "$QA1 copies a card into the team book -> 403" 403 \
 	"$(as "$NETRC1" COPY "$QA1_TEAM_BOOK/$QA2.vcf" -H "Destination: $QA1_TEAM_BOOK/qa-t6-copy-test.vcf")"
 check "$QA1 deletes the team book -> 403" 403 "$(as "$NETRC1" DELETE "$QA1_TEAM_BOOK/")"
 check "the team book still holds the cards of $QA1 and $QA2, unchanged" "$QA1.vcf $QA2.vcf" "$(cards_of "$NETRC1" "$QA1_TEAM_BOOK")"
+# A member sees the book's name with its owner after it: "Team: <name> (Nourax Teams)".
 check "  and keeps its name" yes \
-	"$(as "$NETRC1" PROPFIND "$QA1_TEAM_BOOK/" -H 'Depth: 0' >/dev/null; grep -q "Team: $A1_NAME<" "$T_OUT/dav" && echo yes || echo no)"
+	"$(as "$NETRC1" PROPFIND "$QA1_TEAM_BOOK/" -H 'Depth: 0' -H 'Content-Type: application/xml; charset=utf-8' \
+		--data-binary '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/></d:prop></d:propfind>' >/dev/null
+	grep -q "<d:displayname>Team: $A1_NAME (Nourax Teams)</d:displayname>" "$T_OUT/dav" && echo yes || echo no)"
 # Someone who cannot see the book still gets the server's own 404, so no book is revealed.
 check "$QA3 (org B) writes into team A1's book -> 404" 404 \
 	"$(as "$NETRC3" PUT "$DAV_BASE/addressbooks/users/nourax-teams/team-${TEAM_A1}/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")"
