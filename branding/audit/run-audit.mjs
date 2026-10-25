@@ -752,11 +752,12 @@ function publicPages(tokens) {
 			await settle(page, 1500);
 		}] },
 		// The page of a missing, deleted or expired link ("This share does not exist or is no longer
-		// available"). A made-up link would show the same page, but the server counts each one as a
-		// guessed link: then every link page is slowed down for this IP for 12 hours, and refused
-		// (HTTP 429) after more than ten in half an hour. A path that is not in a real link shows that
-		// page and counts nothing.
-		{ id: 'public-share-missing', path: tokens.file ? `/s/${tokens.file}?path=${encodeURIComponent('/missing')}` : null, wait: 1500 },
+		// available"), opened once per language. The server counts each made-up link as a guessed link:
+		// every link page is then slowed down for this IP for 12 hours, and refused (HTTP 429) after more
+		// than ten in half an hour. (A real link with a path that is not in it, /s/<link>?path=/missing,
+		// counts nothing and answers 404, but its page still loads the link's scripts, and in a browser
+		// they show the shared file: not the page a person with a dead link sees.)
+		{ id: 'public-share-missing', path: '/s/nouraxAuditMissing', wait: 1500 },
 		{ id: 'public-not-found', path: '/index.php/apps/nourax-audit-missing-page', wait: 1000 },
 		{ id: 'public-help', path: '/apps/nourax_branding/help', wait: 1000 },
 	];
@@ -830,13 +831,19 @@ async function themePass(browser, acc, lang) {
 	const cx = { pass: 'user-theme', user: acc.login, lang };
 	const ctx = await openContext(browser, cx);
 	const page = await ctx.newPage();
+	const saveThemes = THEMES;
 	const pick = async (value) => {
 		await page.goto(BASE + '/settings/user/theming', { waitUntil: 'domcontentloaded' });
 		await settle(page, 1500);
+		// The radio button is the page's own switch component: a click on it saves the choice and the
+		// component then sets the state itself (Playwright's check() gives up before that).
+		const input = page.locator(`input[type=radio][value="${value}"]`).first();
+		if (await input.isChecked()) return 'already chosen';
 		const saved = page.waitForResponse((r) => /\/apps\/theming\/api\/v1\/theme\//.test(r.url()), { timeout: 15000 }).catch(() => null);
-		await page.locator(`input[type=radio][value="${value}"]`).first().check({ force: true });
+		await input.click({ force: true });
 		const r = await saved;
 		await settle(page, 1500);
+		if (!(await input.isChecked())) throw new Error(`the theme "${value}" is not chosen after clicking it`);
 		return r ? r.status() : null;
 	};
 	try {
@@ -846,7 +853,6 @@ async function themePass(browser, acc, lang) {
 		log(`  Appearance: dark theme chosen (HTTP ${st})`);
 		// With the user's own dark theme, the system scheme is light: the page must still be dark.
 		await page.emulateMedia({ colorScheme: 'light' });
-		const saveThemes = THEMES;
 		THEMES = ['light'];
 		for (const [id, p] of [['usertheme-dark-files', '/apps/files/files'], ['usertheme-dark-calendar', '/apps/calendar/'], ['usertheme-dark-settings', '/settings/user/theming'], ['usertheme-dark-deck', '/apps/deck/']]) {
 			await visit(page, cx, { id, path: p, wait: 2500, fixedTheme: true, check: async (pg, pcx) => {
@@ -854,12 +860,17 @@ async function themePass(browser, acc, lang) {
 				if (!dark) problem(pcx, 'dark theme', 'the page is not in the dark theme after choosing it on the Appearance page');
 			} });
 		}
-		THEMES = saveThemes;
-		const back = await pick('default');
-		log(`  Appearance: back to the system default theme (HTTP ${back})`);
 	} catch (e) {
 		problem({ ...cx, page: 'usertheme' }, 'Appearance dark theme', e);
 	} finally {
+		THEMES = saveThemes;
+		// Always back to "System default", or every later run would see the dark theme only.
+		try {
+			const back = await pick('default');
+			log(`  Appearance: back to the system default theme (HTTP ${back})`);
+		} catch (e) {
+			problem({ ...cx, page: 'usertheme' }, 'Appearance back to the default theme', e);
+		}
 		await ctx.close();
 	}
 }

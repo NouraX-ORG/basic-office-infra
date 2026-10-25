@@ -243,12 +243,14 @@ theme (the browser's setting, with the account's theme on "System default"), wit
   and the first sign-in of a fresh account (its welcome files, its NoCalendar example event and its
   NoBoard boards: no welcome board) and of the account that shares a file with the main QA account.
 
-The page of a link that does not exist is opened as a real link with a path that is not in it
-(`/s/<link>?path=/missing`): the server shows the same "This share does not exist or is no longer
-available" page. A made-up link would count as a guessed link: after that, the server slows down every
-link page for this IP for 12 hours (up to 25 seconds each), and refuses them (HTTP 429) after more than
-ten in half an hour. A page that answers 429 or a 5xx is a problem in `problems.json`; a 502 or 503
-(another task restarting the server) is tried once more after a minute.
+The page of a link that does not exist is a made-up link, opened once per language. The server
+counts each one as a guessed link: after that it slows down every link page for this IP for 12 hours
+(up to 25 seconds each), and refuses them (HTTP 429) after more than ten in half an hour, so don't run
+the public pass many times in a row. (A real link with a path that is not in it, `/s/<link>?path=/missing`,
+counts nothing and answers 404, but that page still loads the link's scripts, and in a browser they show
+the shared file, so it is not the page a person with a dead link sees.) A page that answers 429 or a 5xx
+is a problem in `problems.json`; a 502 or 503 (another task restarting the server) is tried once more
+after a minute.
 
 The audit makes its own test data in the QA accounts, once, and finds it again on later runs: four
 files in `branding-check`, a board with a card, a calendar event (moved to the next day on each run), a
