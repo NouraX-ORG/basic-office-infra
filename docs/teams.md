@@ -137,11 +137,19 @@ The stored state next to what is really there, for example for a team:
   "folder":{"id":2,"exists":true,"mount_point":"Sales","storage_id":26,"root_id":542,"acl":true,"groups":{"team:<team_id>":31}},
   "addressbook":{"id":6,"exists":true,"display_name":"Team: Sales","cards":1,"shared_read_only":true},
   "calendar":{"id":10,"exists":true,"display_name":"Team: Sales","color":"#2563EB","shared_read_write":true},
-  "board":{"id":12,"exists":true,"title":"Team: Sales","archived":false,"shared_edit":true}}}
+  "board":{"id":12,"exists":true,"title":"Team: Sales","archived":false,"shared_edit":true},
+  "drift":[]}}
 ```
 
-The organisation answer has `group`, `directory` and the list of its `teams`. 404 `not_found`
-when the id is unknown (or the team belongs to another organisation).
+The organisation answer has `group`, `directory`, the list of its `teams` and its `drift`. 404
+`not_found` when the id is unknown (or the team belongs to another organisation).
+
+**`drift`** lists the changes to the group that were made outside this API (for example on the
+admin pages, or with `occ group:adduser`) and have not been put back yet, newest first, at most
+100: `{"id":3,"at":"2026-10-25T09:12:40+00:00","kind":"member_added","user_id":"<uid>"}`.
+`kind` is `member_added`, `member_removed` or `group_deleted` (then `user_id` is null). It is
+`[]` when the group has only been changed through this API. Part 2 puts such changes back the way
+NoMail has them and closes the rows; until then they stay listed.
 
 ### `GET /v1/admin/audit?limit=100[&target=team:<team_id>]`
 
@@ -154,13 +162,13 @@ The newest audit rows first (`limit` 1-500, default 100), optionally for one obj
 | Status | Body | Meaning |
 |---|---|---|
 | 200 | `{"ok":true,"applied":true,"version","steps":[...]}` | Every step worked |
-| 200 | `{"ok":true,"applied":false,"reason":"stale_version","version":n,"current_version":n,"steps":[]}` | A newer version is already stored; nothing changed |
+| 200 | `{"ok":true,"applied":false,"reason":"stale_version","version":<sent>,"current_version":<stored>,"steps":[]}` | A newer version is already stored; nothing changed. `version` is the one you sent, `current_version` the one stored. |
 | 502 | `{"ok":false,"applied":true,...}`, the failed step with a `detail` | Send the same call again later; it finishes what is missing |
 | 400 | `{"error":"invalid_request"}` | An id that is not a lowercase UUID or a QA id `qa-...`, a bad body, a query on a PUT |
 | 401 | `{"error":"unauthorized"}` | No signature, a wrong one, an unknown key id. Counted by the brute-force protection. |
-| 401 | `{"error":"stale_request"}` | The timestamp is more than 300 seconds off (check the clock) |
+| 401 | `{"error":"stale_timestamp"}` | The signature is right but the timestamp is more than 300 seconds off, either way (check the clock) |
 | 401 | `{"error":"replayed"}` | This nonce was used before |
-| 404 | `{"error":"not_found"}` | GET of an unknown organisation or team |
+| 404 | `{"error":"not_found"}` | GET of an unknown organisation or team. Also any other path or method under `/v1/` (a trailing slash, dot segments, a typo), without a key check. |
 | 409 | `{"error":"org_missing"}`, `{"error":"team_in_other_org"}` | See the team PUT |
 | 413 | `{"error":"too_large"}` | A body over 2 MB |
 | 423 | `{"error":"busy"}` | Another call is working on the same organisation or team; send it again shortly |
@@ -182,7 +190,8 @@ The API reads them from the signed path, never from the body.
 - **One call per object at a time:** a Redis lock per organisation and per team (120 seconds at
   most); choosing a team folder name is serialised per organisation.
 - **Locked groups:** changes to `org:*` and `team:*` groups made elsewhere (for example on the
-  admin pages) are noted in `oc_nourax_api_drift`; part 2 puts them back.
+  admin pages) are noted in `oc_nourax_api_drift` and listed as `drift` in the status answers;
+  part 2 puts them back.
 - Nothing is ever deleted by part 1, apart from cards of people who are no longer members.
 
 ## The service account `nourax-teams`
@@ -209,7 +218,14 @@ The API reads them from the signed path, never from the body.
 |---|---|
 | Organisations | `qa-t6-org-a` ("QA t6 Org A"), `qa-t6-org-b` ("QA t6 Org B") |
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
-| Member | `qa-t6-1`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` (standing in for the people API; noted as drift) |
+| Member | `qa-t6-1`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` (standing in for the people API) |
+
+Because that `occ group:adduser` is a change made outside the API, it is real drift: the status
+of `qa-t6-org-a` and `qa-t6-team-a1` lists one open `member_added` row for `qa-t6-1` each (made on
+the first run; adding someone who is already a member changes nothing, so later runs add no rows).
+The test checks that they are listed there, and that `qa-t6-org-b`, `qa-t6-team-a2` and
+`qa-t6-team-b1`, changed only through the API, show `"drift":[]`. When part 2 takes over
+`qa-t6-1` through the people API, those two rows are closed.
 
 ## Deploying a change
 

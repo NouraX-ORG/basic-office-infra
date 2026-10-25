@@ -16,7 +16,8 @@ declare(strict_types=1);
  * PATH starts at /v1/ and includes ?query when there is one, exactly as sent. The body is the
  * raw request body (empty for GET). Signatures are compared with hash_equals. Each nonce is kept
  * in nourax_api_nonces for 600 seconds (in the database: Redis keeps nothing on disk here), and a
- * second use is refused as "replayed".
+ * second use is refused as "replayed". A good signature whose timestamp is outside the window is
+ * refused as "stale_timestamp".
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -95,7 +96,7 @@ class HmacAuth {
 		// A good signature from a clock that is too far off: not an attack, so not throttled.
 		$now = $this->time->getTime();
 		if (abs($now - (int)$timestamp) > self::WINDOW) {
-			throw new AuthFailed('stale_request', false);
+			throw new AuthFailed('stale_timestamp', false);
 		}
 
 		if (!$this->remember($keyId . ':' . $nonce, $now + self::NONCE_TTL)) {

@@ -77,9 +77,12 @@ final class Steps {
 		return ['ok' => !$this->failed, 'applied' => true, 'version' => $version] + $extra + ['steps' => $this->steps];
 	}
 
-	/** The answer to a call older than what is stored: nothing is changed. */
-	public static function stale(int $currentVersion, array $extra = []): array {
-		return ['ok' => true, 'applied' => false, 'reason' => 'stale_version', 'version' => $currentVersion,
+	/**
+	 * The answer to a call older than what is stored: nothing is changed. "version" is the
+	 * version the call sent (as in every other answer), "current_version" the stored one.
+	 */
+	public static function stale(int $sentVersion, int $currentVersion, array $extra = []): array {
+		return ['ok' => true, 'applied' => false, 'reason' => 'stale_version', 'version' => $sentVersion,
 			'current_version' => $currentVersion] + $extra + ['steps' => []];
 	}
 

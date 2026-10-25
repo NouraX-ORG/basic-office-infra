@@ -22,5 +22,14 @@ return [
 		['name' => 'admin#putTeam', 'url' => '/v1/admin/orgs/{orgId}/teams/{teamId}', 'verb' => 'PUT'],
 		['name' => 'admin#getTeam', 'url' => '/v1/admin/orgs/{orgId}/teams/{teamId}', 'verb' => 'GET'],
 		['name' => 'admin#audit', 'url' => '/v1/admin/audit', 'verb' => 'GET'],
+
+		// Anything else under /v1/ (a trailing slash, dot segments, an unknown path or method):
+		// a JSON 404 instead of the web server's HTML page. KEEP THESE LAST: the first route
+		// that matches wins, so a route added below them would never be reached.
+		['name' => 'fallback#notFound', 'url' => '/v1/{rest}', 'verb' => 'GET', 'postfix' => '_get', 'requirements' => ['rest' => '.+']],
+		['name' => 'fallback#notFound', 'url' => '/v1/{rest}', 'verb' => 'POST', 'postfix' => '_post', 'requirements' => ['rest' => '.+']],
+		['name' => 'fallback#notFound', 'url' => '/v1/{rest}', 'verb' => 'PUT', 'postfix' => '_put', 'requirements' => ['rest' => '.+']],
+		['name' => 'fallback#notFound', 'url' => '/v1/{rest}', 'verb' => 'PATCH', 'postfix' => '_patch', 'requirements' => ['rest' => '.+']],
+		['name' => 'fallback#notFound', 'url' => '/v1/{rest}', 'verb' => 'DELETE', 'postfix' => '_delete', 'requirements' => ['rest' => '.+']],
 	],
 ];

@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  * Every call goes through signed(): 503 not_configured until the admin key is imported; 413 for a
  * body over 2 MB; 401 unauthorized (a missing or wrong signature, counted by the brute-force
- * protection), stale_request (timestamp more than 5 minutes off) or replayed (nonce used before);
+ * protection), stale_timestamp (timestamp more than 5 minutes off) or replayed (nonce used before);
  * 429 when the admin rate limit is full; then the endpoint. Ids come from the signed path, never
  * from the body. Every call writes one audit row (no body); failures also log one warning line.
  *

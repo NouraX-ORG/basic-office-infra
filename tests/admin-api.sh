@@ -7,7 +7,8 @@
 #   teams qa-t6-team-a1 and qa-t6-team-a2 (both "Sales", in org A) and qa-t6-team-b1 ("Sales", org B)
 #   qa-t6-1 (made by api-provision.sh) is put into org A and team A1 with occ, standing in for the
 #   people API, to check cards and what a member can reach. Its app password is in
-#   /etc/nourax/qa/qa-t6-1.netrc.
+#   /etc/nourax/qa/qa-t6-1.netrc. That occ change is real drift, so org A and team A1 list it in
+#   their "drift"; org B and teams A2 and B1, changed only through the API, show "drift": [].
 # It takes the server-change lock for its whole run (about a minute), because it changes groups.
 # Nothing is deleted. Safe to run again: versions are read first and counted on from there.
 # The admin key is never printed or passed as an argument. Exit 0 when every check passes.
@@ -44,11 +45,11 @@ check "spoiled signature -> 401" 401 "$(SIGN_BAD=1 admin_api GET /v1/admin/audit
 check "signature for another path -> 401" 401 "$(SIGN_PATH=/v1/admin/audit?limit=2 admin_api GET /v1/admin/audit?limit=1)"
 check "unknown key id -> 401" 401 "$(SIGN_KEY_ID=admin-9 admin_api GET /v1/admin/audit?limit=1)"
 check "short nonce -> 401" 401 "$(SIGN_NONCE=short admin_api GET /v1/admin/audit?limit=1)"
-old_ts=$(( $(date +%s) - 400 ))
-check "timestamp 400 s old -> 401" 401 "$(SIGN_TS="$old_ts" admin_api GET /v1/admin/audit?limit=1)"
-check "timestamp 400 s old -> error stale_request" stale_request "$(jq -r .error "$T_OUT/body")"
-new_ts=$(( $(date +%s) + 400 ))
-check "timestamp 400 s ahead -> error stale_request" stale_request \
+old_ts=$(( $(date +%s) - 360 ))
+check "timestamp 6 minutes old -> 401" 401 "$(SIGN_TS="$old_ts" admin_api GET /v1/admin/audit?limit=1)"
+check "timestamp 6 minutes old -> error stale_timestamp" stale_timestamp "$(jq -r .error "$T_OUT/body")"
+new_ts=$(( $(date +%s) + 360 ))
+check "timestamp 6 minutes ahead -> error stale_timestamp" stale_timestamp \
 	"$(SIGN_TS="$new_ts" admin_api GET /v1/admin/audit?limit=1 >/dev/null; jq -r .error "$T_OUT/body")"
 check "signed call -> 200" 200 "$(admin_api GET /v1/admin/audit?limit=1)"
 check "not cached" yes "$(has_header Cache-Control '.*no-store')"
@@ -74,6 +75,17 @@ bad "empty name" "/v1/admin/orgs/$ORG_A" "$(name_version '  ' 1)"
 bad "name over 255 characters" "/v1/admin/orgs/$ORG_A" "$(name_version "$(printf 'n%.0s' $(seq 1 256))" 1)"
 bad "a query on a PUT" "/v1/admin/orgs/$ORG_A?x=1" "$(name_version X 1)"
 check "audit limit 501 -> 400" 400 "$(admin_api GET /v1/admin/audit?limit=501)"
+# Paths the router does not know answer a JSON 404, never the web server's HTML page.
+json_404() { # name http-status
+	check "$1 -> 404" 404 "$2"
+	check "$1 -> JSON error not_found" "not_found yes" \
+		"$(jq -r .error "$T_OUT/body" 2>/dev/null) $(has_header Content-Type 'application/json')"
+}
+json_404 "trailing slash (signed GET)" "$(admin_api GET "/v1/admin/orgs/$ORG_A/")"
+json_404 "trailing slash (signed PUT)" "$(admin_api PUT "/v1/admin/orgs/$ORG_A/" "$(name_version X 1)")"
+json_404 "dot segments" "$(api_nokey GET "/v1/admin/orgs/../orgs/$ORG_A" --path-as-is)"
+json_404 "unknown path" "$(api_nokey GET /v1/admin/nothing-here)"
+json_404 "unknown method" "$(api_nokey DELETE "/v1/admin/orgs/$ORG_A")"
 check "status of an unknown org -> 404" 404 "$(admin_api GET /v1/admin/orgs/qa-t6-org-none)"
 check "team in an unknown org -> 409" 409 "$(admin_api PUT /v1/admin/orgs/qa-t6-org-none/teams/qa-t6-team-none "$(name_version X 1)")"
 check "team in an unknown org -> error org_missing" org_missing "$(jq -r .error "$T_OUT/body")"
@@ -94,8 +106,8 @@ check "rename org A (v$((v + 1))) -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$
 check "rename: group updated" updated "$(step_result group)"
 check "rename: directory updated" updated "$(step_result directory)"
 check "older version v$v -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_A" "$(name_version "QA t6 Org A" "$v")")"
-check "older version: applied false, stale_version" "false stale_version $((v + 1))" \
-	"$(jq -r '"\(.applied) \(.reason) \(.current_version)"' "$T_OUT/body")"
+check "older version: applied false, stale_version, version sent, version stored" "false stale_version $v $((v + 1))" \
+	"$(jq -r '"\(.applied) \(.reason) \(.version) \(.current_version)"' "$T_OUT/body")"
 check "name back (v$((v + 2))) -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_A" "$(name_version "QA t6 Org A" $((v + 2)))")"
 check "GET org A -> 200" 200 "$(admin_api GET "/v1/admin/orgs/$ORG_A")"
 check "org A status" "QA t6 Org A $((v + 2)) true QA t6 Org A true Directory: QA t6 Org A true" \
@@ -103,6 +115,20 @@ check "org A status" "QA t6 Org A $((v + 2)) true QA t6 Org A true Directory: QA
 
 vb="$(version_of "/v1/admin/orgs/$ORG_B")"
 check "PUT org B -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_B" "$(name_version "QA t6 Org B" $((vb + 1)))")"
+
+# The open drift rows in a status answer, compact JSON ("null" when the field is missing).
+drift_of() { # path
+	admin_api GET "$1" >/dev/null
+	jq -c '(.org // .team).drift' "$T_OUT/body"
+}
+# "yes" when the status at this path lists an open member_added row for this uid.
+drift_lists_added() { # path uid
+	admin_api GET "$1" >/dev/null
+	jq -e --arg u "$2" '(.org // .team).drift
+		| any(.kind == "member_added" and .user_id == $u)
+		and all(keys == ["at", "id", "kind", "user_id"])' "$T_OUT/body" >/dev/null && echo yes || echo no
+}
+check "org B (changed only through the API): drift []" "[]" "$(drift_of "/v1/admin/orgs/$ORG_B")"
 
 # --- Teams ---------------------------------------------------------------------------------------
 put_team() { # org team name version
@@ -126,6 +152,8 @@ check "PUT team B1 Sales (org B) -> 200" 200 "$(put_team "$ORG_B" "$TEAM_B1" Sal
 check "team A1 folder is Sales" Sales "$(folder_of "$ORG_A" "$TEAM_A1")"
 check "team A2 folder is Sales 2 (same org, same name)" "Sales 2" "$(folder_of "$ORG_A" "$TEAM_A2")"
 check "team B1 folder is Sales (another org)" Sales "$(folder_of "$ORG_B" "$TEAM_B1")"
+check "team A2 (changed only through the API): drift []" "[]" "$(drift_of "/v1/admin/orgs/$ORG_A/teams/$TEAM_A2")"
+check "team B1 (changed only through the API): drift []" "[]" "$(drift_of "/v1/admin/orgs/$ORG_B/teams/$TEAM_B1")"
 check "team A1 under org B -> 409" 409 "$(put_team "$ORG_B" "$TEAM_A1" Sales 99)"
 check "team A1 under org B -> error team_in_other_org" team_in_other_org "$(jq -r .error "$T_OUT/body")"
 check "team A1 status under org B -> 404" 404 "$(admin_api GET "/v1/admin/orgs/$ORG_B/teams/$TEAM_A1")"
@@ -176,6 +204,11 @@ else
 	check "team cards: 1 card" "1 card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
 	check "PUT org A with a member -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_A" "$(name_version "QA t6 Org A" $((v + 2)))")"
 	check "directory cards: 1 card" "1 card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
+	# The occ group:adduser above is a change made outside the API, so both groups list it as
+	# open drift (noted on the first run; adding an existing member again notes nothing).
+	check "team A1 drift lists the occ member_added of $QA1" yes "$(drift_lists_added "/v1/admin/orgs/$ORG_A/teams/$TEAM_A1" "$QA1")"
+	check "org A drift lists the occ member_added of $QA1" yes "$(drift_lists_added "/v1/admin/orgs/$ORG_A" "$QA1")"
+	check "team A2 still drift [] (the member went to A1 only)" "[]" "$(drift_of "/v1/admin/orgs/$ORG_A/teams/$TEAM_A2")"
 
 	book="$DAV_BASE/addressbooks/users/$QA1/team-${TEAM_A1}_shared_by_nourax-teams"
 	curl -sS --netrc-file "$NETRC1" -X PROPFIND -H 'Depth: 1' -o "$T_OUT/books" "$DAV_BASE/addressbooks/users/$QA1/"

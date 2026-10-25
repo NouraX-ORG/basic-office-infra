@@ -47,7 +47,7 @@ class OrgService {
 		return $this->locks->with('org/' . $orgId, function () use ($orgId, $request): array {
 			$row = $this->store->org($orgId);
 			if ($row !== null && $row['version'] > $request->version) {
-				return Steps::stale($row['version'], ['org_id' => $orgId]);
+				return Steps::stale($request->version, $row['version'], ['org_id' => $orgId]);
 			}
 
 			$steps = new Steps($this->logger, 'org ' . $orgId);
@@ -154,6 +154,8 @@ class OrgService {
 			],
 			'directory' => self::section(fn (): array => $this->books->describe($row['addressbook_id'], $groupId), $row['addressbook_id']),
 			'teams' => $teams,
+			// Changes to the organisation's group made outside this API and not put back yet; [] when none.
+			'drift' => $this->store->openDrift($groupId),
 		]];
 	}
 

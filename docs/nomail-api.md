@@ -97,6 +97,7 @@ Every answer is JSON with `Cache-Control: no-store`. Errors look like `{"error":
 | Status | `error` | When |
 |---|---|---|
 | 401 | `unauthorized` | No key, or the wrong key. Also sends `WWW-Authenticate: Bearer`. |
+| 404 | `not_found` | Any other path or method under `/v1/` (a trailing slash, a typo). No key is checked. |
 | 429 | `rate_limited` | A rate limit is full. `Retry-After: 30`. The brute-force block (below) also answers 429, as HTML. |
 | 500 | `internal_error` | Anything unexpected. The server log has the error class and message, nothing else. |
 | 503 | `not_configured` | No key has been imported into the app yet. |
@@ -165,7 +166,8 @@ ClamAV state and the row counts.
 | Part | Purpose |
 |---|---|
 | `appinfo/info.xml` | Version 1.0.0. Declares every background job and command from the start, so later features need no version bump or `occ upgrade`. |
-| `appinfo/routes.php` | The `/v1/...` routes |
+| `appinfo/routes.php` | The `/v1/...` routes. The catch-all `fallback#notFound` routes (JSON 404) must stay last. |
+| `lib/Controller/FallbackController.php` | The JSON 404 for any other path or method under `/v1/` |
 | `lib/Http/ApiKeyAuth.php`, `lib/Http/RateLimiter.php` | Key check; global rate limits and scan slots |
 | `lib/Controller/NomailController.php` | The NoMail endpoints |
 | `lib/Controller/AdminController.php`, `lib/Http/HmacAuth.php` | The admin API and its request signing ([docs/teams.md](teams.md)) |

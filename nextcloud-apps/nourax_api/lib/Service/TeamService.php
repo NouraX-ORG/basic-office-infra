@@ -66,7 +66,7 @@ class TeamService {
 			}
 			$ids = ['org_id' => $orgId, 'team_id' => $teamId];
 			if ($row !== null && $row['version'] > $request->version) {
-				return Steps::stale($row['version'], $ids);
+				return Steps::stale($request->version, $row['version'], $ids);
 			}
 
 			$steps = new Steps($this->logger, 'team ' . $teamId);
@@ -188,6 +188,8 @@ class TeamService {
 			'addressbook' => OrgService::section(fn (): array => $this->books->describe($row['addressbook_id'], $groupId), $row['addressbook_id']),
 			'calendar' => OrgService::section(fn (): array => $this->calendars->describe($row['calendar_id'], $groupId), $row['calendar_id']),
 			'board' => OrgService::section(fn (): array => $this->deck->describe($row['board_id'], $groupId), $row['board_id']),
+			// Changes to the team's group made outside this API and not put back yet; [] when none.
+			'drift' => $this->store->openDrift($groupId),
 		]];
 	}
 
