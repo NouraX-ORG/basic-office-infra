@@ -8,6 +8,10 @@ publishes a port, and only the containers of this stack can reach them.
 | Virus scanner | `clamav` (clamd on TCP 3310) | ClamAV 1.5.4 (`clamav/clamav:1.5.4_base`), the files_antivirus app 6.5.0 and our helper app `nourax_antivirus` | `compose.yaml`, `config/clamav/`, `nextcloud-apps/nourax_antivirus/`, `scripts/configure.d/50-virus-scanner.sh` |
 | Search inside files | `elasticsearch` (HTTP on 9200), and `jobs` for indexing new files | Elasticsearch 9.5.5 (`elasticsearch:9.5.5`), the apps fulltextsearch 35.0.1, fulltextsearch_elasticsearch 35.0.1 and files_fulltextsearch 35.0.0 | `compose.yaml`, `config/elasticsearch/`, `scripts/configure.d/50-search.sh` |
 
+The memory of the whole server, which service the kernel stops first when memory runs out, and
+the sizes to set after the upgrade to 8 GB are at the end:
+[Memory of the whole server, and the move to 8 GB](#memory-of-the-whole-server-and-the-move-to-8-gb).
+
 In the commands below, `OCC` means, on the server:
 
 ```
@@ -150,9 +154,9 @@ OCC files_antivirus:background-scan --max 20 -v     # scan up to 20 waiting file
 ### Signatures
 
 freshclam runs in the same container. It checks for new signatures twice a day
-(`FRESHCLAM_CHECKS=2` in `compose.yaml`), downloads only the changes, and tells clamd to load
-them. The first start downloads the whole set (about 110 MB) into the `clamav_db` volume; later
-starts reuse it.
+(`FRESHCLAM_CHECKS` in `.env`, 2 when it is not set), downloads only the changes, and tells clamd
+to load them. The first start downloads the whole set (about 110 MB) into the `clamav_db` volume;
+later starts reuse it.
 
 The date of the newest signatures is in clamd's `VERSION` answer:
 
@@ -192,10 +196,11 @@ editors' container also grew after the reboot in between):
 | Before (03:15) | 1247 MB | 2572 MB | 5 MB |
 | After (03:41) | 2067 MB | 1751 MB | 0 MB |
 
-**After the upgrade to 8 GB:** set `CLAMAV_MEM_LIMIT=3000m` in `.env`; in `config/clamav/` change
-`ConcurrentDatabaseReload` (clamd.conf) and `TestDatabases` (freshclam.conf) to `yes`, so scans no
+**After the upgrade to 8 GB:** `CLAMAV_MEM_LIMIT=3g` in `.env`, and in `config/clamav/`
+`ConcurrentDatabaseReload` (clamd.conf) and `TestDatabases` (freshclam.conf) `yes`, so scans no
 longer pause during reloads and new signatures are test-loaded first (each needs a second copy of
-the signatures in memory, about 1 GB); then `sudo docker compose up -d clamav`.
+the signatures in memory, about 1 GB). The steps for all services together:
+[After the upgrade to 8 GB](#after-the-upgrade-to-8-gb-needs-the-owners-yes).
 
 ### Switching on deletion (needs the owner's yes)
 
@@ -269,7 +274,7 @@ NoBoard (Deck) adds its cards to the same index by itself, so card texts are fou
 | | |
 |---|---|
 | File types | Plain text and Markdown (`.txt`, `.md` and every other `text/…` type), PDF, Word, Excel and PowerPoint (`.docx`, `.xlsx`, `.pptx` and the old `.doc`, `.xls`, `.ppt`), OpenDocument (`.odt`, `.ods`, `.odp`). Elasticsearch's built-in `attachment` step (Apache Tika) takes the text out; no plugin is needed. |
-| Size | Files up to 20 MB (`files_size`). Bigger files are still found by name through the normal file search. |
+| Size | Files up to 20 MB (`files_size`, from `SEARCH_MAX_FILE_MB` in `.env`). Bigger files are still found by name through the normal file search. |
 | Not indexed | What is inside zip files (`files_zip` off) and external storage (switched off on this server). Images have no text to index (no OCR). |
 | Where | Everyone's own files and team folders (`files_local`, `files_group_folders`). |
 | Who finds a file | Only people who can open it: the owner, the people and groups it is shared with, and the members of its team folder. The index stores who may see each document, and the file server checks every hit again for the person searching. A share that is removed, or a file that is deleted, stops showing at once (the second check), and the index itself follows at the next run. |
@@ -346,7 +351,7 @@ nothing until the two secrets exist and Elasticsearch says healthy.
 | files_fulltextsearch | `files_local`, `files_group_folders` | on | People's files and team folders |
 | files_fulltextsearch | `files_office`, `files_pdf` | on | Office files and PDF |
 | files_fulltextsearch | `files_zip`, `files_external` | off, 0 | See above |
-| files_fulltextsearch | `files_size` | `20` (MB) | Larger files are found by name only |
+| files_fulltextsearch | `files_size` | `SEARCH_MAX_FILE_MB` from `.env`, `20` (MB) when it is not set | Larger files are found by name only |
 | files_fulltextsearch | `files_open_result_directly` | on | A result opens the file, not its folder |
 
 Elasticsearch itself (`compose.yaml`): one node (`discovery.type: single-node`), security on, plain
@@ -481,10 +486,12 @@ its *swap by service* line.
 **`jobs`:** 1–2 MiB between runs; 89 MiB at the most while it indexed every file again and the
 test uploads below (`memory.peak`), never at its limit.
 
-**After the upgrade to 8 GB:** in `.env` set `ES_JAVA_HEAP=1g` and `ES_MEM_LIMIT=2g`
-(`JOBS_MEM_LIMIT` can stay `384m`), then `sudo docker compose up -d --no-deps elasticsearch jobs`
-(about a minute without full-text results). With more than about 100,000 documents, or files much
-bigger than 20 MB, give Elasticsearch more heap (at most half of its limit).
+**After the upgrade to 8 GB:** in `.env` `ES_JAVA_HEAP=1g`, `ES_MEM_LIMIT=2g`, `JOBS_MEM_LIMIT=512m`
+and `SEARCH_MAX_FILE_MB=25` (about a minute without full-text results while Elasticsearch starts
+again). The steps for all services together:
+[After the upgrade to 8 GB](#after-the-upgrade-to-8-gb-needs-the-owners-yes). With more than about
+100,000 documents, or files much bigger than 25 MB, give Elasticsearch more heap (at most half of
+its limit).
 
 ### Licences and versions
 
@@ -527,3 +534,250 @@ the search box's API, `GET /ocs/v2.php/search/providers/fulltextsearch/search?te
 | Memory before and after (fix of 2026-10-25) | `memory-report.sh --around-start`, see Memory above |
 | No password in the process list (fix round 2) | A watcher (root, on the server) read the whole process list, containers included, every 45–75 ms and counted the samples holding either Elasticsearch password or any of 10 other secrets, never printing one. During `es_api` calls and the memory report (read-only, 10:45 UTC): 198 samples in 8.7 seconds, `es_api`'s curl caught in 37 of them, 0 samples with a password. The same watch during a full `scripts/configure.sh` run waits for the owner's go (it changes the live server) |
 | Freed C memory (fix round 2) | `jcmd … System.native_heap_info`: 80 MiB freed but kept after 5 hours; one `System.trim_native_heap`: program memory 909 → 859 MiB. Search answers were the same afterwards (`qa-t5-1` finds its `.docx`, `.pdf` and team words, `qa-t5-2` only the team word, `qa-t5-3` none) |
+
+## Memory of the whole server, and the move to 8 GB
+
+Today's server has 3.7 GB of memory and 4 GB of swap. The owner moves it to 8 GB in a day or two;
+until then the add-ons run with small limits. This part has the report to watch, what was measured,
+what happens when memory runs out, what to do if it gets too tight, and the sizes for 8 GB.
+
+### The memory report
+
+```
+cd /opt/nourax/basic-office-infra
+sudo config/elasticsearch/memory-report.sh                 # reads only; a LABEL as the first word is printed in the header
+```
+
+It prints `free -m`, `/proc/swaps`, `docker stats`, each container's memory limit and OOM score
+(`docker inspect`), what the kernel counts for each add-on (`elasticsearch`, `clamav`, `jobs`,
+`ai-relay`, `ai-worker`), the swap of every service, the 5 biggest processes
+(`ps -eo rss,comm --sort=-rss`), Elasticsearch's Java heap, and a last line with the memory check
+for the time before the upgrade (see [If memory gets too tight](#if-memory-gets-too-tight)).
+`--around-start` (see [Memory](#memory) under search) stops and starts Elasticsearch, so it needs
+the deploy lock.
+
+### Measured on 2026-10-25
+
+With every service running, on the nearly empty drive (813 entries in the search index), first
+with nobody testing ("idle", 16:08:03 UTC), then straight after one search inside files and one
+EICAR upload as `qa-t5-1` ("test load", 16:08:21 UTC). The search for *invoice* answered in 1.1
+seconds with 5 results; the EICAR upload was refused in 0.9 seconds (HTTP 415, *Virus
+Eicar-Test-Signature is detected in the file. Upload cannot be completed.*, then 404 for that path).
+
+| `free -m` (MB) | Used | Free | Buffers and cache | Available | Swap used (of 4095) |
+|---|---|---|---|---|---|
+| Idle | 2859 | 327 | 1092 | 959 | 712 |
+| Test load | 2816 | 365 | 1097 | 1002 | 711 |
+
+`/proc/swaps`: `/swapfile`, size 4194300 kB, used 729640 kB (idle) and 728616 kB (test load).
+
+| `docker stats` (MiB) | Limit | Idle | Test load | OOM score |
+|---|---|---|---|---|
+| clamav | 1600m | 956.0 | 956.6 | 400 |
+| elasticsearch | 1g | 677.0 | 678.5 | 600 |
+| app | none | 447.3 | 466.9 | 0 |
+| onlyoffice | none | 166.5 | 166.6 | 0 |
+| db | none | 72.7 | 75.6 | 0 |
+| ai-worker | 320m | 53.2 | 53.2 | 500 |
+| cloudflared | none | 31.5 | 32.7 | 0 |
+| redis | none | 10.9 | 10.9 | 0 |
+| ai-relay | 64m | 10.5 | 10.5 | 300 |
+| cron | none | 2.4 | 2.4 | 0 |
+| jobs | 384m | 2.0 | 2.0 | 500 |
+
+The limit and OOM score columns are the report's `docker inspect` lines, the same both times. Each
+add-on may also use as much swap as its limit (*with swap* is twice the limit); the others have no
+limit. The rest of the idle report:
+
+```
+--- memory limit and OOM score of each container (docker inspect), highest score first
+nourax-workspace-elasticsearch-1   limit  1024m  with swap  2048m  OOM score 600
+nourax-workspace-ai-worker-1       limit   320m  with swap   640m  OOM score 500
+nourax-workspace-jobs-1            limit   384m  with swap   768m  OOM score 500
+nourax-workspace-clamav-1          limit  1600m  with swap  3200m  OOM score 400
+nourax-workspace-ai-relay-1        limit    64m  with swap   128m  OOM score 300
+nourax-workspace-app-1             limit   none  with swap   none  OOM score 0
+nourax-workspace-cloudflared-1     limit   none  with swap   none  OOM score 0
+nourax-workspace-cron-1            limit   none  with swap   none  OOM score 0
+nourax-workspace-db-1              limit   none  with swap   none  OOM score 0
+nourax-workspace-onlyoffice-1      limit   none  with swap   none  OOM score 0
+nourax-workspace-redis-1           limit   none  with swap   none  OOM score 0
+--- add-ons, in MiB (program = memory that is not file cache)
+elasticsearch  limit  1024  now   681  highest  1010  program   639  file cache    9  swap  343  at limit 0 times  OOM kills 0
+elasticsearch  WARNING: program memory and swap are over 90% of the limit - see docs/search-and-antivirus.md, Memory
+clamav         limit  1600  now   956  highest  1248  program   939  file cache    8  swap    6  at limit 0 times  OOM kills 0
+jobs           limit   384  now     4  highest    93  program     0  file cache    2  swap    0  at limit 0 times  OOM kills 0
+ai-relay       limit    64  now    12  highest    31  program     6  file cache    3  swap    4  at limit 0 times  OOM kills 0
+ai-worker      limit   320  now    53  highest    67  program    51  file cache    0  swap    0  at limit 0 times  OOM kills 0
+--- swap by service, in MiB: ai-relay 4  ai-worker 0  app 15  clamav 6  cloudflared 2  cron 0  db 13  elasticsearch 343  jobs 0  onlyoffice 274  redis 2
+--- the 5 biggest processes (resident memory, in MiB; processes in containers included)
+   942  clamd
+   651  java
+   149  apache2
+   139  apache2
+   128  apache2
+--- Elasticsearch Java, in MiB
+heap used 338 of 512, outside the heap 296, threads 61
+--- memory check: available 1106 MB (tight under 150), swap used 712 MB (tight over 1536 and growing)
+```
+
+Under the test load the same lines read: the 5 biggest processes `clamd` 943, `java` 653 and
+`apache2` 152, 139 and 137 MiB; heap used 354 of 512; Elasticsearch's program memory 640 and swap
+342 MiB; memory check *available 992 MB, swap used 711 MB*.
+
+What this shows:
+
+- One search and one virus check hardly move memory: the file server took about 20 MB more for
+  the moment, Elasticsearch 1.5 MB, ClamAV less than 1 MB.
+- About 1 GB stays available with everything running. Swap holds about 0.7 GB, nearly all of it
+  Elasticsearch's (343 MiB) and the editors' (274 MiB): memory they rarely read, which the kernel
+  moved out. Both keep working.
+- The report's WARNING for Elasticsearch is expected on this server: its program memory plus its
+  swap are just over 90% of its 1 GiB, because its Java heap is taken in full at the start. It was
+  at its limit 0 times and never stopped; the kernel would stop it only at 2 GiB (its limit plus as
+  much swap). It goes away with the 8 GB sizes.
+- Half an hour earlier (15:41 UTC) the numbers were close: 915 MB available, 476 MB of swap,
+  Elasticsearch 848.5 MiB with 133 MiB in swap. Which memory is in swap moves; the total does not
+  keep growing.
+- The Elasticsearch container running now was made at 05:44 UTC, before the option that gives
+  freed C memory back (`-XX:TrimNativeHeapInterval=60000`, see [Memory](#memory)) was added to
+  `compose.yaml`. It takes effect the next time the container is made, which the 8 GB step below
+  does. It was not made again now because people were searching at the time (Task 1 was testing its
+  content search tool). `sudo docker compose up -d --no-deps elasticsearch`, under the lock, does it
+  any time (2–3 minutes without results from inside files).
+
+### Which service the kernel stops first
+
+When the whole server runs out of memory, the kernel stops the process with the highest OOM score
+first. The add-ons have higher scores and their own limits, so the kernel stops search first and
+never the database or the file server:
+
+| Order | Service | OOM score | Limit today | If the kernel stops it |
+|---|---|---|---|---|
+| 1 | `elasticsearch` | 600 | 1g | Search inside files shows no results until it is back (it starts again by itself, 2–3 minutes); file-name search keeps working; nothing is lost |
+| 2 | `jobs`, `ai-worker` | 500 | 384m, 320m | New files wait for the cron container's 12-minute turn; AI tasks wait up to 5 minutes; both start again by themselves |
+| 3 | `clamav` | 400 | 1600m | Uploads are refused (*No connection to anti virus*) for the minute it needs to load again |
+| 4 | `ai-relay` | 300 | 64m | The Assistant says it is busy for a few seconds |
+| last | `db`, `app`, `cron`, `onlyoffice`, `redis`, `cloudflared` | 0 | none | — |
+
+The plan for this step had `jobs` and `ai-relay` at 200. The live values above were set when those
+services were added; they keep the order that matters: search first, the database last.
+
+### If memory gets too tight
+
+Before the upgrade, memory is too tight when the report's memory check shows **under 150 MB
+available**, or **over 1.5 GB of swap used** and still more in a second report 10 minutes later.
+Then the fallback is to stop the search engine until the upgrade. Stopping is not deleting (the
+index stays in its volume), but tell the owner first.
+
+```
+cd /opt/nourax/basic-office-infra
+sudo flock -w 1800 /run/nourax-deploy.lock docker compose stop elasticsearch
+```
+
+- What changes: search inside files pauses; the normal search by file name keeps working.
+  Elasticsearch's memory (about 680–850 MB, plus its swap) is free. `jobs` and the cron container
+  log a failed indexing run every few minutes (`docker compose logs jobs`); that does no harm.
+  `scripts/configure.sh` still runs: its search step logs *skipped* and the run carries on
+  (tested, see below).
+- Undo (after the upgrade, or when memory allows):
+
+  ```
+  sudo flock -w 1800 /run/nourax-deploy.lock docker compose up -d --no-deps elasticsearch
+  sudo docker compose ps elasticsearch      # wait until it says (healthy), 2-3 minutes
+  sudo flock -w 1800 /run/nourax-deploy.lock docker compose exec -d -u www-data jobs php occ fulltextsearch:index '{"errors":"ignore"}' --no-readline
+  ```
+
+  The last command reads again the files that came or changed while the engine was stopped,
+  including those whose indexing failed then (`"errors":"ignore"` makes the app try them again
+  instead of skipping them).
+- Test: a word inside a new `.docx` is found again within about 3 minutes (the search tests above).
+
+### After the upgrade to 8 GB (needs the owner's yes)
+
+The upgrade itself costs money, so it is the owner's step. Afterwards one commit and a few `.env`
+lines raise the sizes. Only `clamav`, `elasticsearch` and `jobs` are made again; `app`, `cron`,
+`db`, `redis`, `onlyoffice`, `cloudflared`, `ai-relay` and `ai-worker` are not touched.
+
+| Setting | Where | Today (3.7 GB) | 8 GB |
+|---|---|---|---|
+| `CLAMAV_MEM_LIMIT` | `.env` | `1600m` | `3g` |
+| `ConcurrentDatabaseReload` | `config/clamav/clamd.conf` (commit) | `no` | `yes`: scans no longer wait during a reload (a second copy of the signatures, about 1 GB more for that minute) |
+| `TestDatabases` | `config/clamav/freshclam.conf` (commit) | `no` | `yes`: new signatures are test-loaded before clamd takes them |
+| `ES_JAVA_HEAP` | `.env` | `512m` | `1g` |
+| `ES_MEM_LIMIT` | `.env` | `1g` | `2g` |
+| `JOBS_MEM_LIMIT` | `.env` | `384m` | `512m` (room for bigger documents) |
+| `SEARCH_MAX_FILE_MB` | `.env` (new; 20 when it is not set) | `20` | `25` |
+| `FRESHCLAM_CHECKS` | `.env` (new; 2 when it is not set) | `2` | `4`, optional: new signatures every 6 hours |
+| `AI_RELAY_MEM_LIMIT`, `AI_WORKER_MEM_LIMIT` | `.env` | `64m`, `320m` | unchanged |
+
+Expected use on 8 GB: ClamAV about 1 GB (2 GB for the minute of a reload), Elasticsearch about
+1.5 GB (the 1 GB heap is taken at the start), everything else as today (about 0.9 GB), so about
+3.5 GB with room to spare. The add-ons' limits add up to 5.9 GB.
+
+1. The commit (in a checkout of the repo, pushed to `main`):
+
+   ```
+   sed -i 's/^ConcurrentDatabaseReload no$/ConcurrentDatabaseReload yes/' config/clamav/clamd.conf
+   sed -i 's/^TestDatabases no$/TestDatabases yes/' config/clamav/freshclam.conf
+   ```
+
+   Also reword the comment above each line (each says why it is off on the small server), and
+   commit as *ClamAV: reload next to the old signatures and test new ones, for the 8 GB server*.
+2. On the server, the `.env` lines with the new sizes, then the three services and the settings:
+
+   ```
+   cd /opt/nourax/basic-office-infra
+   sudo flock -w 1800 /run/nourax-deploy.lock git pull -q --ff-only
+   sudo cp -p .env .env.before-8gb
+   sudo sed -i -E -e 's/^CLAMAV_MEM_LIMIT=.*/CLAMAV_MEM_LIMIT=3g/' -e 's/^ES_JAVA_HEAP=.*/ES_JAVA_HEAP=1g/' \
+   	-e 's/^ES_MEM_LIMIT=.*/ES_MEM_LIMIT=2g/' -e 's/^JOBS_MEM_LIMIT=.*/JOBS_MEM_LIMIT=512m/' .env
+   sudo grep -q '^SEARCH_MAX_FILE_MB=' .env || echo 'SEARCH_MAX_FILE_MB=20' | sudo tee -a .env >/dev/null
+   sudo sed -i 's/^SEARCH_MAX_FILE_MB=.*/SEARCH_MAX_FILE_MB=25/' .env
+   # optional: sudo grep -q '^FRESHCLAM_CHECKS=' .env || echo 'FRESHCLAM_CHECKS=4' | sudo tee -a .env >/dev/null
+   sudo grep -E '^(CLAMAV_MEM_LIMIT|ES_JAVA_HEAP|ES_MEM_LIMIT|JOBS_MEM_LIMIT|SEARCH_MAX_FILE_MB|FRESHCLAM_CHECKS)=' .env
+   sudo flock -w 1800 /run/nourax-deploy.lock docker compose up -d --no-deps clamav elasticsearch jobs
+   sudo docker compose ps clamav elasticsearch jobs     # wait until all three say (healthy), 1-3 minutes
+   sudo flock -w 1800 /run/nourax-deploy.lock scripts/configure.sh
+   ```
+
+   While `clamav` loads again (about a minute) uploads are refused with *No connection to anti
+   virus*; search inside files has no results for 2–3 minutes. Files of 20–25 MB stored before the
+   change are read again only when they change; to read them now:
+   `sudo docker compose exec -d -u www-data jobs php occ fulltextsearch:index '{"force":true}' --no-readline`
+   (every file again; about a minute on today's drive).
+3. Undo: `sudo cp -p .env.before-8gb .env`, revert the commit (`git revert`, push, pull on the
+   server), then the same `docker compose up -d --no-deps clamav elasticsearch jobs` and
+   `scripts/configure.sh`, under the lock.
+4. Test:
+   - `sudo config/elasticsearch/memory-report.sh "after the move to 8 GB"`: limits `3072m`,
+     `2048m` and `512m`, heap `of 1024`, no WARNING line;
+   - `OCC config:app:get files_fulltextsearch files_size` prints `25`;
+   - the clamd `VERSION` line, and `echo RELOAD | nc localhost 3310` in the `clamav` container
+     followed by a normal upload, which is now stored at once instead of after a wait;
+   - the tests of the virus scanner (an EICAR upload refused, a normal file stored) and of search
+     inside files (a word inside a `.docx` and a `.pdf` found, not found by another person).
+
+### Tests (memory, Talk guard, configure.sh)
+
+All on 2026-10-25 on the live server.
+
+| Test | Result |
+|---|---|
+| `bash -n` on every `scripts/configure.d/50-*.sh` and `config/elasticsearch/memory-report.sh` | no errors |
+| `docker compose config -q` after the pull | no errors; `docker compose config --hash clamav` equals the running container's `com.docker.compose.config-hash` label, so `FRESHCLAM_CHECKS` from `.env` (still 2) changes nothing and ClamAV was not made again |
+| `scripts/configure.sh`, twice in a row (15:41 and 15:48 UTC) | exit 0 in 206 and 209 seconds; no `WARNING` or `ERROR` line; both runs printed the same steps and messages (only the counts of index entries differ); both contain *Talk (spreed) is off (not installed)* |
+| A third run, straight after (15:53 UTC) | exit 0 in 282 seconds, the same messages |
+| `scripts/configure.sh` with ClamAV shown as stopped (15:58 UTC) | exit 0 in 287 seconds; the scanner step logged *WARNING: ClamAV is not answering, so uploads are refused until it does* and *skipped: the scanner settings and test stay as they are*; every later step ran (`55-gantt.sh`, `60-nomail-api.sh`, `60-org-privacy.sh`, *configure done*) |
+| `scripts/configure.sh` with ClamAV and Elasticsearch both shown as stopped (16:05 UTC) | exit 0 in 170 seconds; the search step logged *skipped: Elasticsearch is not running or still starting*, the scanner step as above, and every later step ran |
+| Memory report, idle and under the test load | see [Measured on 2026-10-25](#measured-on-2026-10-25) |
+| `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server`, from `main` (`c0248d4`), at the end of Task 5 (16:15 UTC) | l10n 8713 checked, theming 73, share 18, dav 4, errors 18, config 1, mail 4: 0 FAIL each. pages: 44 checked, 37 SKIP (the pages Cloudflare opens only from the owner's address), 4 FAIL, all one hit: `qa-t5-1`'s own NoBoard welcome board, *Welcome to Nextcloud Deck!*, made on its first visit before the branding app switched welcome boards off. That is people's data, so it stays (docs/branding.md lists it); nothing from this step shows on a page |
+| The QA accounts at the end of Task 5 (16:17 UTC) | `OCC user:disable` for `qa-t5-1`, `qa-t5-2` and `qa-t5-3`; `OCC user:info` shows `"enabled":false` for each, and `OCC user:list --disabled` lists all three. WebDAV with `qa-t5-1`'s app password then answers 503 *OC\User\DisabledUserException: Account disabled* (how the server refuses a disabled account); `status.php` 200. Their files, the group `qa-t5-team` and its team folder stay; deleting them needs the owner's yes |
+| The containers at the end | `app` and `cron` made at 02:00 UTC, `db`, `redis`, `onlyoffice` and `cloudflared` on 23 October; all six started at 03:31:49 UTC, when the server restarted itself after a kernel update. Task 5 did not make any of them again or restart them. New in Task 5: `clamav`, `elasticsearch`, `jobs`, `ai-relay` and `ai-worker` |
+
+*Shown as stopped:* for those two runs a stand-in `docker` program, first in `PATH`, answered
+`docker compose ps … clamav|elasticsearch` with nothing and `docker compose exec … clamav|elasticsearch`
+with an error, as Docker does for a stopped service; every other call went to the real Docker.
+The services themselves were not stopped: a stopped ClamAV refuses every upload, a stopped
+Elasticsearch takes search inside files away from everyone, and other people were uploading and
+searching at the time. `docker compose ps` showed both *Up (healthy)* throughout.

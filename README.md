@@ -24,6 +24,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **Retention and automatic tagging** | Rules that tag files as they arrive (for example NoMail attachments) and delete files with a given tag after a set time; installed with no rules, each rule needs the owner's yes ([docs/apps.md](docs/apps.md#retention)) |
 | **Nourax AI** | The Assistant (top bar, NoDrive, text editor): chat, summaries, headlines, rewording, translation; Nourax AI models only, no keys or AI settings for anyone, each request charged to the person's Nourax AI budget in NIG; "not available yet" until NIG's key is in ([docs/assistant.md](docs/assistant.md)) |
 | **Demo accounts** | Two demo organisations (Demo Alpha, Demo Beta), four teams of seven and 24 people with demo files, kept for the owner to see how teams, team folders and privacy work ([docs/teams.md](docs/teams.md#demo-accounts)) |
+| **No chat or video calls** | Talk is not part of Nourax Workspace; if anyone switches it on, `configure.sh` switches it off again ([docs/apps.md](docs/apps.md#no-talk)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

@@ -609,3 +609,29 @@ sudo docker compose exec -T app grep -h 'Login failed' data/audit.log | jq -c '{
 | `nextcloud.log` after the change | no new kinds of warnings or errors (one "Tried to create an object store folder that already exists", a warning that was there before the change too) |
 | `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server --only l10n` | `8131 checked, 0 FAIL`, both apps' texts included |
 | The app and cron containers | not recreated (started 03:31:49 UTC, before and after) |
+
+## No Talk
+
+Chat and video calls (the app Talk, id `spreed`) are not part of Nourax Workspace: the owner said
+so. Talk is not installed. `scripts/configure.d/50-no-talk.sh` checks on every
+`sudo scripts/configure.sh`:
+
+- Talk switched on (for everyone or for some groups): it logs *Talk (spreed) found - switching it
+  off*, runs `occ app:disable spreed`, checks again and logs *Talk (spreed) is off now*, or a
+  `WARNING` if it is still on.
+- Talk installed but off, or not installed: it logs *Talk (spreed) is off* and does nothing.
+
+It never installs or removes an app, so if Talk was ever used, its data stays. An admin who
+switches Talk on from the Apps page has it switched off again at the next `configure.sh`.
+
+```
+OCC app:list --output=json | jq '.enabled.spreed'     # null: Talk is off
+```
+
+### Tested on 2026-10-25
+
+| Check | Result |
+|---|---|
+| `OCC app:list --output=json \| jq -c '{enabled: .enabled.spreed, disabled: .disabled.spreed}'` | `{"enabled":null,"disabled":null}`: not installed, so off |
+| `scripts/configure.sh` on the live server, twice in a row | both runs log *Talk (spreed) is off (not installed)*, exit 0 |
+| The step with a stand-in for `occ`, for each state of Talk (on, installed and off, not installed, still on after `app:disable`, app list unreadable) | on: *found - switching it off*, `app:disable spreed` called, *is off now*; installed and off: *is off (installed, switched off)*; not installed: *is off (not installed)*; still on: *WARNING: Talk (spreed) is still on*; unreadable: *WARNING: the app list could not be read*. The step never stopped the run |
