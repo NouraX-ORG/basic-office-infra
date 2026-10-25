@@ -19,6 +19,14 @@ APP_LABELS=(
 	"deck=NoBoard"
 	"onlyoffice=ONLYOFFICE"
 )
+# More labels in config/nextcloud/app-labels.d/*.conf: one "app=Name" per line, # starts a comment.
+for f in "$REPO_DIR"/config/nextcloud/app-labels.d/*.conf; do
+	[ -f "$f" ] || continue
+	while IFS= read -r line || [ -n "$line" ]; do
+		line="$(printf '%s' "${line%%#*}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+		[[ "$line" == ?*=?* ]] && APP_LABELS+=("$line")
+	done < "$f"
+done
 
 log "background jobs and database housekeeping"
 occ background:cron
@@ -133,6 +141,15 @@ fi
 log "sharing: link shares allowed, uploads into public folders allowed for file drops"
 occ config:app:set core shareapi_allow_links --value=yes
 occ config:app:set core shareapi_allow_public_upload --value=yes
+
+# Settings that belong to one feature live in scripts/configure.d/NN-name.sh, run in name order with
+# the same helpers (occ, dc, log, secret_path). Each one must be safe to run again.
+for f in "$REPO_DIR"/scripts/configure.d/*.sh; do
+	[ -f "$f" ] || continue
+	log "configure.d/$(basename "$f")"
+	# shellcheck disable=SC1090
+	. "$f"
+done
 
 occ status
 log "configure done"

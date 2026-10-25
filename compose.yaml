@@ -58,6 +58,8 @@ x-nextcloud-volumes: &nextcloud-volumes
   - ./config/hooks/10-nourax-config.sh:/docker-entrypoint-hooks.d/pre-upgrade/10-nourax-config.sh:ro
   - ./config/hooks/10-nourax-config.sh:/docker-entrypoint-hooks.d/before-starting/10-nourax-config.sh:ro
   - ./branding:/opt/nourax/branding:ro
+  # Nourax's own apps; zz-nourax.config.php adds this folder to apps_paths.
+  - ./nextcloud-apps:/var/www/html/nourax_apps:ro
 
 services:
   db:
@@ -140,6 +142,9 @@ services:
       - ${ONLYOFFICE_PLUGINS_DIR:-/opt/nourax/onlyoffice-plugins}/ai:/var/www/onlyoffice/documentserver/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}:ro
     logging: *logging
 
+  # Add-on services (search engine, virus scanner) go below this line.
+
+
   cloudflared:
     image: ${CLOUDFLARED_IMAGE}
     restart: unless-stopped
@@ -153,6 +158,8 @@ services:
       default:
         ipv4_address: 172.30.10.10
     logging: *logging
+
+  # NoMail API services, if any, go below this line.
 
 networks:
   default:

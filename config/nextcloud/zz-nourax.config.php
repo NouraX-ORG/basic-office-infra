@@ -70,6 +70,16 @@ $CONFIG = [
 	// Heavy daily background jobs run between 01:00 and 05:00 UTC.
 	'maintenance_window_start' => 1,
 
+	// Nourax's own apps (nextcloud-apps/ in this repo), mounted read-only by compose.yaml. Entries 0 and
+	// 1 (apps, custom_apps) come from the image's apps.config.php; the configs merge by index.
+	'apps_paths' => [
+		2 => [
+			'path' => '/var/www/html/nourax_apps',
+			'url' => '/nourax_apps',
+			'writable' => false,
+		],
+	],
+
 	// The ONLYOFFICE connector talks to the editor over the Docker network (http://onlyoffice/);
 	// since connector 10.2.0 the admin page refuses such a local address without this.
 	'onlyoffice' => [

@@ -9,6 +9,8 @@
 #   sudo scripts/secrets.sh tunnel      Cloudflare Tunnel token
 #   sudo scripts/secrets.sh age         public key (age1...) that backups are encrypted to
 #   sudo scripts/secrets.sh oidc        "Log in with Nourax" OAuth client (from NoMail's Supabase)
+#   sudo scripts/secrets.sh gen NAME [--rotate]   make a random secret NAME (kept if it exists)
+#   sudo scripts/secrets.sh put NAME    set NAME at a hidden prompt, or from stdin when piped in
 #   sudo scripts/secrets.sh status      show which secrets exist (never their values)
 #
 # The directory is root-only (0700). Files inside are 0644 because the containers read them
@@ -96,13 +98,36 @@ case "${1:-status}" in
 		[[ "$key" =~ ^age1[0-9a-z]{58}$ ]] || die "not an age public key"
 		write_secret backup_age_recipient "$key"
 		;;
+	gen | put)
+		name="${2:-}"
+		[[ "$name" =~ ^[a-z0-9][a-z0-9_.-]{1,63}$ ]] || die "usage: secrets.sh $1 NAME (lowercase letters, digits, . _ -)"
+		if [ "$1" = gen ]; then
+			if have_secret "$name" && [ "${3:-}" != --rotate ]; then log "$name already exists - kept"
+			else write_secret "$name" "$(random_secret)"; fi
+		elif [ -t 0 ]; then
+			write_secret "$name" "$(ask_hidden "Value for $name (hidden)")"
+		else
+			# Piped in (e.g. from another secret file); never passed as an argument.
+			IFS= read -r value || true
+			value="${value//$'\r'/}"
+			[ -n "$value" ] || die "empty value - nothing saved"
+			write_secret "$name" "$value"
+		fi
+		;;
 	status)
 		printf '%-30s %s\n' SECRET STATE
-		for name in postgres_password redis_password onlyoffice_jwt_secret onlyoffice.env \
-			nextcloud_admin_user nextcloud_admin_password r2_access_key_id r2_secret_access_key \
-			backup_r2_access_key_id backup_r2_secret_access_key tunnel_token backup_age_recipient \
-			oidc_client_id oidc_client_secret; do
+		known="postgres_password redis_password onlyoffice_jwt_secret onlyoffice.env
+			nextcloud_admin_user nextcloud_admin_password r2_access_key_id r2_secret_access_key
+			backup_r2_access_key_id backup_r2_secret_access_key tunnel_token backup_age_recipient
+			oidc_client_id oidc_client_secret"
+		for name in $known; do
 			if have_secret "$name"; then printf '%-30s set\n' "$name"; else printf '%-30s MISSING\n' "$name"; fi
+		done
+		# Secrets added later with "gen" or "put".
+		for file in "$SECRETS_DIR"/*; do
+			name="$(basename "$file")"
+			[ -f "$file" ] && [[ "$name" != *.tmp ]] && ! printf '%s\n' $known | grep -qx "$name" \
+				&& printf '%-30s set\n' "$name"
 		done
 		;;
 	*)
