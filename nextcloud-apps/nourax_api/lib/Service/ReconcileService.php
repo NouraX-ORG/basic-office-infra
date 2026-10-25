@@ -483,7 +483,8 @@ class ReconcileService {
 		$teamRequests = [];
 		foreach ($teams as $team) {
 			$teamId = is_array($team) ? ($team['team_id'] ?? null) : null;
-			if (!is_string($teamId) || !AdminRequest::validId($teamId) || isset($teamRequests[$teamId])) {
+			if (!is_string($teamId) || !AdminRequest::validId($teamId) || !AdminRequest::sameKind($orgId, $teamId)
+				|| isset($teamRequests[$teamId])) {
 				throw new ApiException('invalid_request', 400);
 			}
 			$stored = $this->store->team($teamId);

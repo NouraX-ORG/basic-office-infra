@@ -107,8 +107,7 @@ class AdminController extends JsonController {
 	#[BruteForceProtection(action: self::BRUTE_FORCE_ACTION)]
 	public function putTeam(): JSONResponse {
 		return $this->signed('PUT /v1/admin/orgs/{org_id}/teams/{team_id}', self::TEAM_PATH, function (array $path, string $body): JSONResponse {
-			$orgId = AdminRequest::id($path['org']);
-			$teamId = AdminRequest::id($path['team']);
+			[$orgId, $teamId] = AdminRequest::teamIds($path['org'], $path['team']);
 			$this->auditTarget = AdminStore::teamGroup($teamId);
 			return $this->outcome($this->teams->put($orgId, $teamId, AdminRequest::nameAndVersion($body)));
 		});
@@ -120,8 +119,7 @@ class AdminController extends JsonController {
 	#[BruteForceProtection(action: self::BRUTE_FORCE_ACTION)]
 	public function getTeam(): JSONResponse {
 		return $this->signed('GET /v1/admin/orgs/{org_id}/teams/{team_id}', self::TEAM_PATH, function (array $path): JSONResponse {
-			$orgId = AdminRequest::id($path['org']);
-			$teamId = AdminRequest::id($path['team']);
+			[$orgId, $teamId] = AdminRequest::teamIds($path['org'], $path['team']);
 			$this->auditTarget = AdminStore::teamGroup($teamId);
 			return $this->json($this->teams->status($orgId, $teamId));
 		});
@@ -181,9 +179,9 @@ class AdminController extends JsonController {
 		});
 	}
 
-	/** A person's uid from the path: a Supabase user id or a QA id (400 otherwise). */
+	/** A person's uid from the path: a Supabase user id, a QA id or a demo id (400 otherwise). */
 	private static function userId(string $userId): string {
-		if (!ProvisionRequest::validUserId($userId)) {
+		if (!ProvisionRequest::validPersonId($userId)) {
 			throw new ApiException('invalid_request', 400);
 		}
 		return $userId;

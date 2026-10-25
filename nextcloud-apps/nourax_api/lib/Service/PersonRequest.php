@@ -9,7 +9,11 @@ declare(strict_types=1);
  *
  * - email: a string, trimmed, at most 320 characters ("" leaves the account's email as it is).
  * - display_name: a string, at most 255 characters ("" leaves the name as it is).
- * - org_id: the organisation's id (a lowercase UUID or a QA id qa-...).
+ * - The uid in the path: a Supabase user id, a QA id qa-t<task>-<n>, or a demo id demo-...
+ *   (ProvisionRequest::validPersonId).
+ * - org_id: the organisation's id (a lowercase UUID, a QA id qa-... or a demo id demo-...). A
+ *   demo- person belongs only to a demo- organisation and the other way round
+ *   (AdminRequest::sameKind), so demo data never mixes with real organisations.
  * - teams: at most 100 teams of that organisation, each once; role is "member" or "lead".
  *   [] means: in no team.
  * - active: true, or false when the person has left the organisation.
@@ -53,7 +57,7 @@ final class PersonRequest {
 
 	/** @throws ApiException 400 invalid_request */
 	public static function fromArray(string $userId, mixed $data): self {
-		if (!ProvisionRequest::validUserId($userId) || !is_array($data) || $data === [] || array_is_list($data)) {
+		if (!ProvisionRequest::validPersonId($userId) || !is_array($data) || $data === [] || array_is_list($data)) {
 			throw self::invalid();
 		}
 		$email = $data['email'] ?? null;
@@ -64,7 +68,7 @@ final class PersonRequest {
 		$version = $data['version'] ?? null;
 		if (!is_string($email) || !is_string($displayName) || !is_string($orgId) || !AdminRequest::validId($orgId)
 			|| !is_array($teams) || !array_is_list($teams) || count($teams) > self::MAX_TEAMS
-			|| !is_bool($active) || !is_int($version) || $version < 1) {
+			|| !is_bool($active) || !is_int($version) || $version < 1 || !AdminRequest::sameKind($userId, $orgId)) {
 			throw self::invalid();
 		}
 

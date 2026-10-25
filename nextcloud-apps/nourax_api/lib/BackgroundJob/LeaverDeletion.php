@@ -15,6 +15,8 @@ declare(strict_types=1);
  * (active 0), delete_after has passed, it is not on hold (an admin may ask for a transfer
  * first), the account is still disabled and is a "Log in with Nourax" account. Files in team
  * folders stay (the Team Folders app owns them); the person's own files go with the account.
+ * The uid must pass ProvisionRequest::validUserId (a Supabase id or a QA id), never the wider
+ * validPersonId: a demo- account (the owner's kept demo data) is never deleted by this job.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */

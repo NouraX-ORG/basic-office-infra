@@ -8,6 +8,9 @@ declare(strict_types=1);
  * - user_id is the person's Supabase user id: a lowercase UUID. QA ids like qa-t6-1 are allowed
  *   for the contract tests. Anything else (nodrive, admin, an uppercase UUID) is refused, so this
  *   API can never touch the emergency admin or another local account by name.
+ * - Demo ids (demo-a01, the owner's kept demo data) are refused here on purpose (validUserId):
+ *   NoMail's key can never make a demo account or get an app password for one. Only the admin
+ *   API's people calls take them (validPersonId).
  * - email is trimmed, at most 320 characters, and may be empty (then it is left as it is).
  * - display_name is at most 255 characters; control characters become spaces.
  *
@@ -62,9 +65,21 @@ final class ProvisionRequest {
 		return new self($userId, $email, self::cleanDisplayName($displayName));
 	}
 
-	/** A Supabase user id (lowercase UUID) or a QA id (qa-t<task>-<n>). */
+	/**
+	 * A Supabase user id (lowercase UUID) or a QA id (qa-t<task>-<n>). Never a demo- id: this is the
+	 * rule of /v1/provision and of the scheduled delete (LeaverDeletion), so neither ever touches the
+	 * owner's demo accounts.
+	 */
 	public static function validUserId(string $userId): bool {
 		return preg_match(self::UUID, $userId) === 1 || preg_match(self::QA_ID, $userId) === 1;
+	}
+
+	/**
+	 * The uids the admin API's people calls take: validUserId() or a demo id ^demo-[a-z0-9-]{1,40}$
+	 * (the owner's kept demo accounts, AdminRequest::isDemoId).
+	 */
+	public static function validPersonId(string $userId): bool {
+		return self::validUserId($userId) || AdminRequest::isDemoId($userId);
 	}
 
 	public static function cleanDisplayName(string $name): string {
