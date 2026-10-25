@@ -407,7 +407,9 @@ sudo docker compose up -d --force-recreate elasticsearch   # the image reads the
 kernel counts for each container (limit, use now, highest use, *program* memory that is not file
 cache, swap, how often it was at its limit, OOM kills), plus Elasticsearch's Java heap. It prints
 a WARNING when a container's program memory and swap pass 90% of its limit, or when the kernel
-stopped one.
+stopped one. Since 2026-10-25 it also shows crashes that the kernel's numbers miss: how often each
+container was started again by itself, Java heap crashes in Elasticsearch's log, heap dump files
+and the free disk (see [Restarts and crashes](#restarts-and-crashes)).
 
 ```
 sudo config/elasticsearch/memory-report.sh                  # a report now; reads only
@@ -549,10 +551,12 @@ sudo config/elasticsearch/memory-report.sh                 # reads only; a LABEL
 ```
 
 It prints `free -m`, `/proc/swaps`, `docker stats`, each container's memory limit and OOM score
-(`docker inspect`), what the kernel counts for each add-on (`elasticsearch`, `clamav`, `jobs`,
-`ai-relay`, `ai-worker`), the swap of every service, the 5 biggest processes
-(`ps -eo rss,comm --sort=-rss`), Elasticsearch's Java heap, and a last line with the memory check
-for the time before the upgrade (see [If memory gets too tight](#if-memory-gets-too-tight)).
+(`docker inspect`), each container's restarts and last stop, the out-of-memory crashes in the
+add-ons' logs of the last 24 hours (see [Restarts and crashes](#restarts-and-crashes)), what the
+kernel counts for each add-on (`elasticsearch`, `clamav`, `jobs`, `ai-relay`, `ai-worker`), the
+swap of every service, the 5 biggest processes (`ps -eo rss,comm --sort=-rss`), Elasticsearch's
+Java heap and heap dump files, and the last lines with the memory and disk checks for the time
+before the upgrade (see [If memory gets too tight](#if-memory-gets-too-tight)).
 `--around-start` (see [Memory](#memory) under search) stops and starts Elasticsearch, so it needs
 the deploy lock.
 
@@ -633,9 +637,12 @@ What this shows:
   Elasticsearch's (343 MiB) and the editors' (274 MiB): memory they rarely read, which the kernel
   moved out. Both keep working.
 - The report's WARNING for Elasticsearch is expected on this server: its program memory plus its
-  swap are just over 90% of its 1 GiB, because its Java heap is taken in full at the start. It was
-  at its limit 0 times and never stopped; the kernel would stop it only at 2 GiB (its limit plus as
-  much swap). It goes away with the 8 GB sizes.
+  swap are just over 90% of its 1 GiB, because its Java heap is taken in full at the start. When
+  this was measured it had been at its limit 0 times and had not stopped; the kernel would stop
+  it only at 2 GiB (its limit plus as much swap). It goes away with the 8 GB sizes. **Later that
+  day this was no longer true:** from 16:19 to 22:09 UTC Elasticsearch's Java heap filled up and it
+  stopped 152 times. That was not the kernel at the container's limit, so these numbers stayed at
+  0; see [Restarts and crashes](#restarts-and-crashes).
 - Half an hour earlier (15:41 UTC) the numbers were close: 915 MB available, 476 MB of swap,
   Elasticsearch 848.5 MiB with 133 MiB in swap. Which memory is in swap moves; the total does not
   keep growing.
@@ -662,6 +669,102 @@ never the database or the file server:
 
 The plan for this step had `jobs` and `ai-relay` at 200. The live values above were set when those
 services were added; they keep the order that matters: search first, the database last.
+
+### Restarts and crashes
+
+The kernel's numbers in the report (*at limit*, *OOM kills*) only count the kernel stopping a
+container at its limit, and they start from 0 again each time the container restarts. Two other
+kinds of stop do not show there: Java stopping itself when Elasticsearch's heap is full (exit code
+3, *Terminating due to java.lang.OutOfMemoryError*), and a PHP run that needs more than its
+`PHP_MEMORY_LIMIT`. So the report also prints:
+
+- for every container: `restarts` (how often Docker started it again by itself since the
+  container was made), its state, the exit code of its last stop, `kernel OOM kill`, and when it
+  last started and was made. **WARNING** when it restarted and the last start is under 24 hours ago;
+  a plain *note* when the last one is older. For a container that is not running: WARNING for exit
+  code 3 (Java heap full) and 137 (stopped by force, most often the kernel at the limit);
+- the Java heap crashes in Elasticsearch's log, and the PHP memory-limit errors in the logs of
+  `jobs` and `ai-worker`, of the last 24 hours, with the time of the last one (WARNING if any);
+- the heap dump files in the Elasticsearch container (WARNING if any), and the free disk (WARNING
+  under 5 GB).
+
+`docker events` is not used: Docker keeps only its last few hundred events, nearly all of them
+healthchecks, so a crash of a few hours ago is no longer there.
+
+**What happened on 2026-10-25.** From 16:19:38 to 22:09:36 UTC Elasticsearch stopped 152 times,
+each time with *Terminating due to java.lang.OutOfMemoryError: Java heap space*, and Docker started
+it again each time. For about 6 hours search inside files was down for everyone (results by file
+name kept working). Nothing else was hit: no kernel OOM kill, and no other container restarted.
+The report of that time still said *at limit 0 times, OOM kills 0* and gave no warning; that is
+what the lines above fix.
+
+**Why.** The full-text app sends each office and PDF file whole to Elasticsearch, which reads the
+text out of it inside its own Java heap, with no limit on the amount of text (the app's own
+`attachment` pipeline, `indexed_chars: -1`). Two test files of another task, made to test exactly
+that, needed more than the 512 MB heap. And when the engine stops in the middle of a document, the
+app treats it as a short outage, not as a failed document, so the same document was sent again at
+the next run, every 2 minutes.
+
+**What was done.**
+
+1. 22:11 UTC: the two documents were set to IGNORE with the app's own command (*document will never
+   be indexed*); no file was deleted. Elasticsearch has not stopped since. Their owner removed the
+   test files later; their entries now read status 34 (IGNORE plus *remove from the index*).
+2. 23:16 UTC: no more heap dumps (below).
+3. The report lines above.
+
+**Still open: the cause is not fixed.** Anyone who can upload can store a file whose text does not
+fit in the heap, and the crash loop starts again until that document is set to IGNORE. The fix
+(read the text outside Elasticsearch, in a process with its own small memory and time limit, and
+mark a document as failed after one crash) is not built yet; it is a separate piece of work for
+the owner to plan. Until then, watch the report, and stop a loop by hand:
+
+```
+cd /opt/nourax/basic-office-infra
+sudo docker compose logs --timestamps elasticsearch | grep 'Terminating due to' | tail -n 3   # still crashing?
+# the files that wait for the index (status not 1), oldest first; the one it stops on is among the first
+sudo docker compose exec -T db psql -U nextcloud -d nextcloud -c \
+	"SELECT document_id, status, err, to_timestamp(indexed) FROM oc_fulltextsearch_index WHERE provider_id = 'files' AND status <> 1 ORDER BY indexed"
+sudo docker compose exec -T -u www-data app php occ info:file DOCUMENT_ID           # its name and owner
+# Keep it out of the index. The file stays and opens as before; only its text is not searched.
+sudo flock -w 1800 /run/nourax-deploy.lock docker compose exec -T -u www-data app \
+	php occ fulltextsearch:document:status files DOCUMENT_ID --value=IGNORE
+```
+
+IGNORE and not FAILED: a FAILED document is sent again at the next run (the app picks every
+document that is not done and has no error count), and the app's cron tries failed documents
+again every 240 hours. IGNORE stays, also when the file changes later. To index it again one day:
+the same command with `--value=INDEX` (the command takes `DONE`, `IGNORE`, `INDEX`, `REMOVE` or
+`FAILED`, and the new value replaces the old status).
+
+**Heap dumps.** At every heap crash Java wrote a heap dump, the size of the heap: 12 files
+`java_pid*.hprof`, 3,897 MiB in all, in the Elasticsearch container's own layer
+(`/usr/share/elasticsearch/logs`; since Elasticsearch 9.1 the default place). The disk went from 24
+to 17 GB free. No more are written:
+
+- in the running Java, at once: `jcmd … VM.set_flag HeapDumpOnOutOfMemoryError false` (the flag can
+  be changed while it runs);
+- for Docker's own restarts of this same container: the file
+  `/usr/share/elasticsearch/config/jvm.options.d/50-nourax-no-heap-dump.options` inside it, with
+  `-XX:-HeapDumpOnOutOfMemoryError` (Elastic's documented place for extra Java options);
+- for every container made from now on: the same option in `ES_JAVA_OPTS` in `compose.yaml`.
+
+Java still stops at once when the heap is full, and Docker starts it again. Removing the 12 old
+files is a delete, so it is the owner's step. Either of these removes them:
+
+```
+cd /opt/nourax/basic-office-infra
+# a) only the dump files, at once, without a restart
+sudo flock -w 1800 /run/nourax-deploy.lock docker compose exec -T -u 1000:0 elasticsearch \
+	sh -c 'rm -f /usr/share/elasticsearch/logs/java_pid*.hprof'
+# b) or make the container again (2-3 minutes without results from inside files): its own layer,
+#    with the dumps and the options file, is replaced; the index stays in its volume
+sudo flock -w 1800 /run/nourax-deploy.lock docker compose up -d --no-deps elasticsearch
+```
+
+Afterwards the report says *heap dump files (\*.hprof): 0, 0 MiB* and about 4 GB more free disk.
+They cannot be brought back; nothing reads them here. The 8 GB step below makes the container
+again too, so it also removes them.
 
 ### If memory gets too tight
 
@@ -729,7 +832,7 @@ Expected use on 8 GB: ClamAV about 1 GB (2 GB for the minute of a reload), Elast
    ```
    cd /opt/nourax/basic-office-infra
    sudo flock -w 1800 /run/nourax-deploy.lock git pull -q --ff-only
-   sudo cp -p .env .env.before-8gb
+   sudo cp -p .env /etc/nourax/env.before-8gb     # outside the git checkout, so git status stays clean
    sudo sed -i -E -e 's/^CLAMAV_MEM_LIMIT=.*/CLAMAV_MEM_LIMIT=3g/' -e 's/^ES_JAVA_HEAP=.*/ES_JAVA_HEAP=1g/' \
    	-e 's/^ES_MEM_LIMIT=.*/ES_MEM_LIMIT=2g/' -e 's/^JOBS_MEM_LIMIT=.*/JOBS_MEM_LIMIT=512m/' .env
    sudo grep -q '^SEARCH_MAX_FILE_MB=' .env || echo 'SEARCH_MAX_FILE_MB=20' | sudo tee -a .env >/dev/null
@@ -746,12 +849,17 @@ Expected use on 8 GB: ClamAV about 1 GB (2 GB for the minute of a reload), Elast
    change are read again only when they change; to read them now:
    `sudo docker compose exec -d -u www-data jobs php occ fulltextsearch:index '{"force":true}' --no-readline`
    (every file again; about a minute on today's drive).
-3. Undo: `sudo cp -p .env.before-8gb .env`, revert the commit (`git revert`, push, pull on the
+   Making `elasticsearch` again also replaces its own container layer: the heap dump files of
+   2026-10-25, if they are still there, go with it (see [Restarts and crashes](#restarts-and-crashes);
+   the owner's yes for this step covers that), and `-XX:-HeapDumpOnOutOfMemoryError` from
+   `compose.yaml` applies from then on.
+3. Undo: `sudo cp -p /etc/nourax/env.before-8gb .env`, revert the commit (`git revert`, push, pull on the
    server), then the same `docker compose up -d --no-deps clamav elasticsearch jobs` and
    `scripts/configure.sh`, under the lock.
 4. Test:
    - `sudo config/elasticsearch/memory-report.sh "after the move to 8 GB"`: limits `3072m`,
-     `2048m` and `512m`, heap `of 1024`, no WARNING line;
+     `2048m` and `512m`, heap `of 1024`, `restarts 0` for the three new containers,
+     *heap dump files (\*.hprof): 0*, no WARNING line;
    - `OCC config:app:get files_fulltextsearch files_size` prints `25`;
    - the clamd `VERSION` line, and `echo RELOAD | nc localhost 3310` in the `clamav` container
      followed by a normal upload, which is now stored at once instead of after a wait;
@@ -774,6 +882,11 @@ All on 2026-10-25 on the live server.
 | `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t5-1.netrc --server`, from `main` (`c0248d4`), at the end of Task 5 (16:15 UTC) | l10n 8713 checked, theming 73, share 18, dav 4, errors 18, config 1, mail 4: 0 FAIL each. pages: 44 checked, 37 SKIP (the pages Cloudflare opens only from the owner's address), 4 FAIL, all one hit: `qa-t5-1`'s own NoBoard welcome board, *Welcome to Nextcloud Deck!*, made on its first visit before the branding app switched welcome boards off. That is people's data, so it stays (docs/branding.md lists it); nothing from this step shows on a page |
 | The QA accounts at the end of Task 5 (16:17 UTC) | `OCC user:disable` for `qa-t5-1`, `qa-t5-2` and `qa-t5-3`; `OCC user:info` shows `"enabled":false` for each, and `OCC user:list --disabled` lists all three. WebDAV with `qa-t5-1`'s app password then answers 503 *OC\User\DisabledUserException: Account disabled* (how the server refuses a disabled account); `status.php` 200. Their files, the group `qa-t5-team` and its team folder stay; deleting them needs the owner's yes |
 | The containers at the end | `app` and `cron` made at 02:00 UTC, `db`, `redis`, `onlyoffice` and `cloudflared` on 23 October; all six started at 03:31:49 UTC, when the server restarted itself after a kernel update. Task 5 did not make any of them again or restart them. New in Task 5: `clamav`, `elasticsearch`, `jobs`, `ai-relay` and `ai-worker` |
+| The same, again at 23:16 UTC (fix round 2) | All six core containers: `restarts 0`, started 03:31:49 UTC. That start was the server's automatic restart after a kernel update (unattended-upgrades, *Automatic-Reboot* at 03:30), during Task 5 but not caused by it. The new containers are five, not the four the first plan listed: `ai-worker` (320m, OOM score 500) came with Nourax AI for the Assistant |
+| Report, fix round 2 (23:16 UTC, before any fix of the dumps) | `elasticsearch-1 restarts 152 … started 2026-10-25T22:09:37Z` and its WARNING; *Java heap full, Elasticsearch stopped: 152, the last at 2026-10-25T22:09:36Z* and its WARNING; `jobs` and `ai-worker` *PHP memory limit reached: 0*; *heap dump files (\*.hprof): 12, 3897 MiB* and its WARNING; *disk check: 17 GB free*. Every other container `restarts 0`, `kernel OOM kill false`. 12 seconds; reads only. Also seen: ClamAV had 893 MiB in swap and 54 MiB in memory, so its first scans after a quiet time are slower while it reads them back |
+| No more heap dumps (23:16 UTC, under the lock) | `jcmd 125 VM.set_flag HeapDumpOnOutOfMemoryError false`: *Command executed successfully*; `VM.flags -all` then shows `HeapDumpOnOutOfMemoryError = false {manageable} {management}`; the options file is in `config/jvm.options.d/`. Elasticsearch was not restarted (still `restarts 152`, same start time). `docker compose config --hash elasticsearch` now differs from the running container's label: the change in `compose.yaml` waits for the container to be made again (the owner's step) |
+| `scripts/configure.sh` after the pull (23:17 UTC, `6823421`) | exit 0 in 204 seconds; no WARNING or ERROR line; *index nourax_drive exists: 1163 documents*; *Talk (spreed) is off (not installed)*; Elasticsearch not restarted |
+| The search step's index check, with stand-in answers (on the server, for its `jq`) | an answer with a count: *index nourax_drive exists: 42 documents*; Elasticsearch's 404 `index_not_found_exception`: the first index starts; a 503 or no answer at all: *skipped*, no full index |
 
 *Shown as stopped:* for those two runs a stand-in `docker` program, first in `PATH`, answered
 `docker compose ps … clamav|elasticsearch` with nothing and `docker compose exec … clamav|elasticsearch`
