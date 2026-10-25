@@ -7,8 +7,9 @@
 #            /etc/nourax/qa/qa-t6-1.netrc for the other contract tests (U1-U5)
 #   qa-t6-2  made by the API, then disabled: the API must refuse it and leave it disabled
 #   qa-t6-9  a local (password) account: the API must refuse it; disabled, as it never signs in
-# It takes the server-change lock (/run/nourax-deploy.lock) for its whole run, about a minute,
-# because it adds and disables QA accounts and writes under /etc/nourax/qa.
+# It takes the server-change lock (/run/nourax-deploy.lock) for its whole run, two to three
+# minutes, because it adds and disables QA accounts and writes under /etc/nourax/qa. The last
+# check fills the provision limit for a minute, so it then waits for the next minute.
 # Keys and app passwords are never printed: only lengths, hashes compared in place, and statuses.
 # Safe to run again (qa-t6-1 then answers created:false). Exit 0 when every check passes.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,6 +36,11 @@ fi
 # --- Key and headers -------------------------------------------------------------------------
 check "no key -> 401" 401 "$(api_nokey POST /v1/provision -H 'Content-Type: application/json' --data-binary '{}')"
 check "no key -> error unauthorized" unauthorized "$(jq -r .error "$T_OUT/body")"
+# A run just before this one may have used up this minute's provisions (the last check below).
+if [ "$(api POST /v1/provision -H 'Content-Type: application/json' --data-binary '{}')" = 429 ]; then
+	log "the provision limit is used up this minute; waiting for the next one"
+	wait_next_minute
+fi
 
 # --- A new account ---------------------------------------------------------------------------
 existed="$(user_exists "$QA1")"
@@ -128,5 +134,7 @@ done
 log "70 calls in one minute: $limited answered 429"
 check "70 calls in a minute -> some 429" yes "$([ "$limited" -gt 0 ] && echo yes || echo no)"
 check "429 carries Retry-After" yes "$retry_after"
+log "waiting for the next minute, so real provisions are not refused"
+wait_next_minute
 
 finish provision

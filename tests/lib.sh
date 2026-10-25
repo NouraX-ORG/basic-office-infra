@@ -102,13 +102,26 @@ has_header() { # name value-regex
 qa_netrc() { printf '%s/%s.netrc' "$QA_DIR" "$1"; }
 
 # Saves the login and app password of the last /v1/provision answer as a netrc file, 0600.
+# An answer without them (an error) leaves the file as it was.
 save_netrc() { # file
+	if ! jq -e '(.login | type == "string") and (.app_password | type == "string")' "$T_OUT/body" >/dev/null 2>&1; then
+		log "not saving $1: the last answer had no login and app password"
+		return 0
+	fi
 	install -d -m 0700 "$QA_DIR"
 	(
 		umask 077
 		jq -r --arg host "$DRIVE_HOST" '"machine \($host) login \(.login) password \(.app_password)"' \
-			"$T_OUT/body" > "$1"
+			"$T_OUT/body" > "$1.new"
+		mv -f "$1.new" "$1"
 	)
+}
+
+# Waits until the next minute starts, so the API's per-minute counts begin again.
+wait_next_minute() {
+	local minute
+	minute="$(date +%M)"
+	while [ "$(date +%M)" = "$minute" ]; do sleep 1; done
 }
 
 # A WebDAV PROPFIND with a netrc file. Prints the HTTP status; the body is left in $T_OUT/dav.
