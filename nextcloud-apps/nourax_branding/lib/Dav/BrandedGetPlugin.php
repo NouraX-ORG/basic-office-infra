@@ -46,16 +46,27 @@ final class BrandedGetPlugin extends ServerPlugin {
 		return 'nourax-branded-get';
 	}
 
-	/** @return false, so that no later handler answers too */
+	/**
+	 * A small HTML page in the person's language, with its language and direction set, so Arabic
+	 * reads right to left (as plain text it ran left to right; found by the browser audit).
+	 *
+	 * @return false, so that no later handler answers too
+	 */
 	public function httpGet(RequestInterface $request, ResponseInterface $response): bool {
 		$l = $this->l10nFactory->get(Application::APP_ID);
-		$text = $l->t('This is the WebDAV address of NoDrive. Open it in a WebDAV client, such as a file manager or a sync app, not in a web browser.')
-			. "\n\n"
-			. $l->t('To see your files in a web browser, go to %s', [$this->urlGenerator->getAbsoluteURL('/')])
-			. "\n";
+		$code = $l->getLanguageCode();
+		$url = $this->urlGenerator->getAbsoluteURL('/');
+		$h = static fn (string $s): string => htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+		$intro = $l->t('This is the WebDAV address of NoDrive. Open it in a WebDAV client, such as a file manager or a sync app, not in a web browser.');
+		$go = $h($l->t('To see your files in a web browser, go to %s', [$url]));
+		$go = str_replace($h($url), '<a href="' . $h($url) . '">' . $h($url) . '</a>', $go);
+		$html = "<!DOCTYPE html>\n"
+			. '<html lang="' . $h(str_replace('_', '-', $code)) . '" dir="' . $h($this->l10nFactory->getLanguageDirection($code)) . "\">\n"
+			. "<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>NoDrive</title></head>\n"
+			. '<body><p>' . $h($intro) . '</p><p>' . $go . "</p></body>\n</html>\n";
 		$response->setStatus(200);
-		$response->setHeader('Content-Type', 'text/plain; charset=utf-8');
-		$response->setBody($text);
+		$response->setHeader('Content-Type', 'text/html; charset=utf-8');
+		$response->setBody($html);
 		return false;
 	}
 }

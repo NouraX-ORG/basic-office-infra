@@ -499,7 +499,9 @@ async function capture(page, cx, def, status) {
 			const main = frame === page.mainFrame();
 			let res;
 			try {
-				res = await scanFrame(frame, main && RTL.test(cx.lang) ? true : null);
+				// A plain-text answer (the WebDAV page) has no page direction to set.
+				const html = /html/i.test(await frame.evaluate('document.contentType').catch(() => 'text/html'));
+				res = await scanFrame(frame, main && html && RTL.test(cx.lang) ? true : null);
 			} catch (e) {
 				if (main) problem(tcx, 'scan', e);
 				continue;
@@ -648,9 +650,11 @@ function signedInPages(fx, acc) {
 		{ id: 'calendar-event', path: fx.eventDay ? `/apps/calendar/dayGridMonth/${fx.eventDay}` : '/apps/calendar/', wait: 3000,
 			steps: [click(`.fc-event:has-text("${EVENT_TITLE}")`, { wait: 2500 })] },
 		{ id: 'calendar-settings', path: '/apps/calendar/', wait: 3000, steps: [click('.app-navigation li.app-navigation-entry--pinned a', { last: true, wait: 2000 })] },
-		// The calendar's own "Edit and share calendar" button shows on hover.
+		// The calendar's own "Edit and share calendar" button shows on hover. The personal calendar
+		// comes after "Contact birthdays"; its dialog has the sharing part and the CalDAV link.
 		{ id: 'calendar-edit-share', path: '/apps/calendar/', wait: 3000, steps: [async (page) => {
-			const item = page.locator('.draggable-calendar-list-item').first();
+			const items = page.locator('.draggable-calendar-list-item');
+			const item = (await items.count()) > 1 ? items.nth(1) : items.first();
 			await item.hover();
 			await item.locator('button').first().click({ timeout: 10000, force: true });
 			await settle(page, 2500);
@@ -727,7 +731,10 @@ async function userPass(browser, acc, lang, fx, viaMenu) {
 			await setLanguage(page, acc, lang);
 		}
 		const got = await getLanguage(acc);
-		if (got !== lang) problem({ ...cx, page: 'language' }, 'language', `language is ${got}, not ${lang}`);
+		if (got !== lang) {
+			problem({ ...cx, page: 'language' }, 'language', `language is ${got}, not ${lang}`);
+			await setLanguage(page, acc, lang);
+		}
 		for (const def of signedInPages(fx, acc)) await visit(page, cx, def);
 		// Last: sign out through the user menu, and the page that follows.
 		await visit(page, cx, { id: 'logout', path: '/apps/files/files', steps: [click(USER_MENU), async (p) => {

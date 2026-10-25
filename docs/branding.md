@@ -133,8 +133,9 @@ docs/teams.md); the branding holds with it on or off.
   which upstream fills with links to its manual and forum, now leads there.
 - *WebDAV page* (`Dav/BrandedGetPlugin.php`): opening `/remote.php/dav`, `/remote.php/webdav` or a
   folder below them in a web browser shows "This is the WebDAV address of NoDrive. Open it in a WebDAV
-  client, such as a file manager or a sync app, not in a web browser." and the address of the site,
-  instead of the upstream text that names its desktop client. It answers just before the upstream's
+  client, such as a file manager or a sync app, not in a web browser." and a link to the site, as a
+  small page in the person's language (right to left in Arabic), instead of the upstream text that
+  names its desktop client. It answers just before the upstream's
   own answer (Sabre priority 199 against 200), after everything that serves files, zip downloads,
   calendar exports and contact photos, so those still work.
 - *Fixes in other apps' answers* (`Middleware/UpstreamPagesMiddleware.php`, rules in
@@ -148,6 +149,11 @@ docs/teams.md); the branding holds with it on or off.
   - Sharing (when federation is on): the "share it" buttons point at our help page;
   - `/settings/download/reasons`, the upstream's "Reasons to use Nextcloud" PDF, answers 404.
 - *No NoBoard welcome board* (`Listener/NewAccountListener.php`): see the deck row below.
+- *Right to left when signed out* (`Middleware/PageDirectionMiddleware.php`): Nextcloud 35 sets
+  `dir="rtl"` only on signed-in pages, so in Arabic (and Persian, Hebrew, Pashto, Uyghur, Urdu) the
+  login page, the public share pages and the other guest pages ran left to right. The app gives their
+  `<body>` the same `dir="rtl"`; `branding/custom.css` sets `direction: rtl` for the few error pages
+  core draws without the app framework. Found by the browser audit.
 
 **Theme files** (`branding/theme`, copied as they are into `themes/nourax` by
 `scripts/branding-sweep.sh`; Nextcloud 35 looks there first for pictures and app templates):
