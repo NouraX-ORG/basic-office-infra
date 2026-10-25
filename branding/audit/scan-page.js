@@ -209,11 +209,21 @@ function nouraxScanPage(rules, options) {
 	const IMAGE_PROPS = ['background-image', 'border-image-source', 'mask-image', '-webkit-mask-image', 'list-style-image'];
 
 	const head = document.head;
+	// SVG paint servers and the like (a gradient's <stop>, a pattern, a mask) never have a box of their
+	// own: they are drawn wherever their <svg> is drawn.
+	const PAINT = 'defs, linearGradient, radialGradient, pattern, mask, clipPath, marker, symbol, filter';
+	const drawn = (el) => {
+		if (el instanceof SVGElement && el.closest(PAINT)) {
+			const svg = el.ownerSVGElement || el.closest('svg');
+			return Boolean(svg) && svg.getClientRects().length > 0;
+		}
+		return el.getClientRects().length > 0;
+	};
 	for (const el of all) {
 		const tag = describe(el);
 		// Inside <body>: an element with no box at all is not drawn (see the top of this file).
 		notDrawn = !(head && head.contains(el)) && el !== document.documentElement && el !== document.body
-			&& el.getClientRects().length === 0;
+			&& !drawn(el);
 		for (const a of TEXT_ATTRS) {
 			const v = el.getAttribute(a);
 			if (v) names(tag + '[' + a + ']', v);
@@ -242,7 +252,20 @@ function nouraxScanPage(rules, options) {
 		if (el.tagName === 'LINK' && el.getAttribute('color')) blues(tag + '[color]', el.getAttribute('color'));
 		for (const a of COLOUR_ATTRS) {
 			const v = el.getAttribute(a);
-			if (v) blues(tag + '[' + a + ']', v);
+			if (!v) continue;
+			// On SVG, fill, stroke and stop-color are presentation attributes: any CSS rule wins over
+			// them, so what is drawn is the computed value (for example after branding/custom.css).
+			if (el instanceof SVGElement && (a === 'fill' || a === 'stroke' || a === 'stop-color')) {
+				let c = '';
+				try {
+					c = getComputedStyle(el).getPropertyValue(a);
+				} catch (e) {
+					c = '';
+				}
+				blues(tag + '[' + a + ']', c || v);
+			} else {
+				blues(tag + '[' + a + ']', v);
+			}
 		}
 		notDrawn = false;
 		let cs;

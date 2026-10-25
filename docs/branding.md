@@ -288,6 +288,7 @@ What the audit found so far, and the fix:
 | Arabic: the login page, the public link pages and the other signed-out pages ran left to right (core sets `dir` only on signed-in pages) | nourax_branding `PageDirectionMiddleware` sets `dir="rtl"`; `custom.css` for the few error pages drawn outside the app framework |
 | Arabic: the WebDAV page (`/remote.php/dav` in a browser) was plain text, left to right | nourax_branding `Dav/BrandedGetPlugin.php` answers a small HTML page with its language and direction |
 | NoNotes showed the upstream phone-app badges (a link with the upstream name) while `scripts/configure.sh` ran: it writes `custom.css` first, and the app steps in `configure.d` add their hiding rules minutes later | `custom.css` holds a copy of those rules (NoNotes badges and marker, the upstream-blue colour swatch in every colour picker, NoGantt's default project colour) |
+| The sparkle icon of Nourax AI (its dialog and page, the Text and NoBoard editors' menus) has a gradient stop in the upstream dark blue, in the light theme; the scanner had counted the `<stop>` as not drawn | `custom.css` draws gradient stops in the upstream blues in Nourax cobalt; `scan-page.js` treats an SVG's gradients and patterns as drawn when the SVG is, and checks SVG colours as computed |
 
 ## Apps and their upstream branding
 

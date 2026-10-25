@@ -133,6 +133,16 @@ body:has(#content.app-nc_gantt) :is([style*="background: rgb(0, 130, 201)"], [st
 }
 
 /*
+ * SVG gradients of the shared upstream components with a stop in the upstream blue, such as the
+ * sparkle icon of Nourax AI (in its dialog and page, and in the Text and NoBoard editors' menus): the
+ * stop is drawn in Nourax cobalt. A CSS rule wins over the stop-color attribute. Found by the browser
+ * audit.
+ */
+stop:is([stop-color="#0082c9" i], [stop-color="#00679e" i]) {
+	stop-color: #2563EB !important;
+}
+
+/*
  * Right-to-left languages: signed-out pages get dir="rtl" from the nourax_branding app
  * (Middleware/PageDirectionMiddleware); this covers the few error pages core draws without it.
  */
