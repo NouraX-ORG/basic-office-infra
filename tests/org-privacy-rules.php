@@ -23,6 +23,7 @@ use OCA\DAV\DAV\Sharing\IShareable;
 use OCA\DAV\DAV\Sharing\Xml\ShareRequest;
 use OCA\NouraxApi\Dav\OrgSharePlugin;
 use OCA\NouraxApi\Middleware\OrgShareMiddleware;
+use OCA\NouraxApi\Service\MentionNames;
 use OCA\NouraxApi\Service\OrgPrivacy;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
@@ -227,7 +228,7 @@ $deckController = Server::get(IAppManager::class)->isEnabledForAnyone('deck')
 function deckAcl(?Controller $controller, string $method, int $type, string $participant, OrgPrivacy $privacy): string {
 	$request = new Request(['post' => ['type' => $type, 'participant' => $participant], 'method' => 'POST'],
 		Server::get(IRequestId::class), Server::get(IConfig::class));
-	$middleware = new OrgShareMiddleware($request, Server::get(IUserSession::class), $privacy, Server::get(IConfig::class));
+	$middleware = new OrgShareMiddleware($request, Server::get(IUserSession::class), $privacy, Server::get(IConfig::class), Server::get(IUserManager::class));
 	try {
 		$middleware->beforeController($controller, $method);
 	} catch (\Exception $e) {
@@ -252,7 +253,7 @@ if ($deckController === null) {
 	$session->setUser($a1);
 }
 // Every app's controllers get the middleware from their own container: it must build there.
-foreach (['deck', 'files', 'files_sharing', 'calendar', 'nourax_api'] as $app) {
+foreach (['deck', 'files', 'files_sharing', 'calendar', 'dav', 'user_status', 'core', 'nourax_api'] as $app) {
 	try {
 		$built = (new DIContainer($app))->get(OrgShareMiddleware::class) instanceof OrgShareMiddleware;
 	} catch (\Throwable $e) {
@@ -262,6 +263,39 @@ foreach (['deck', 'files', 'files_sharing', 'calendar', 'nourax_api'] as $app) {
 	expect('the middleware builds in the ' . $app . ' container', $built);
 }
 $session->setUser(null);
+
+// NoBoard card comments (MentionNames): a hidden person's name becomes the id, in Deck's JSON
+// and XML answers, and nothing else changes.
+$visible = fn (string $uid): bool => $uid !== 'qa-t6-3';
+$mention = fn (string $id, string $name, string $type = 'user'): array => ['mentionId' => $id, 'mentionType' => $type, 'mentionDisplayName' => $name];
+$comments = ['ocs' => ['meta' => ['status' => 'ok', 'statuscode' => 200, 'message' => 'OK'], 'data' => [
+	['id' => 1, 'message' => '@qa-t6-3 @qa-t6-2 <b>', 'actorDisplayName' => 'QA t6 1', 'extra' => new \stdClass(),
+		'mentions' => [$mention('qa-t6-3', 'QA t6 3'), $mention('qa-t6-2', 'QA t6 2')],
+		'replyTo' => ['id' => 0, 'mentions' => [$mention('qa-t6-3', 'QA t6 3')]]],
+	['id' => 2, 'message' => 'none', 'mentions' => [$mention('qa-t6-3', 'QA t6 3', 'guest')]],
+]]];
+$hidden = MentionNames::hide((string)json_encode($comments, JSON_HEX_TAG), $visible);
+$back = json_decode((string)$hidden, true);
+expect('card comments (JSON): the hidden name becomes the id, in replies too',
+	($back['ocs']['data'][0]['mentions'][0]['mentionDisplayName'] ?? '') === 'qa-t6-3'
+	&& ($back['ocs']['data'][0]['replyTo']['mentions'][0]['mentionDisplayName'] ?? '') === 'qa-t6-3');
+expect('card comments (JSON): a visible name and a guest mention stay',
+	($back['ocs']['data'][0]['mentions'][1]['mentionDisplayName'] ?? '') === 'QA t6 2'
+	&& ($back['ocs']['data'][1]['mentions'][0]['mentionDisplayName'] ?? '') === 'QA t6 3');
+expect('card comments (JSON): the rest is as it was (objects stay objects, tags escaped)',
+	str_contains((string)$hidden, '"extra":{}') && str_contains((string)$hidden, '<b>')
+	&& ($back['ocs']['data'][0]['message'] ?? '') === '@qa-t6-3 @qa-t6-2 <b>');
+expect('card comments (JSON): nothing to hide gives null (the answer is left as it is)',
+	MentionNames::hide((string)json_encode($comments), fn (string $uid): bool => true) === null);
+$xml = '<?xml version="1.0"?>' . "\n" . '<ocs><meta><statuscode>200</statuscode></meta><data><element><id>1</id><mentions>'
+	. '<element><mentionId>qa-t6-3</mentionId><mentionType>user</mentionType><mentionDisplayName>QA t6 3</mentionDisplayName></element>'
+	. '<element><mentionId>qa-t6-2</mentionId><mentionType>user</mentionType><mentionDisplayName>QA t6 2</mentionDisplayName></element>'
+	. '</mentions></element></data></ocs>' . "\n";
+$hiddenXml = (string)MentionNames::hide($xml, $visible);
+expect('card comments (XML): the hidden name becomes the id, the visible one stays',
+	str_contains($hiddenXml, '<mentionDisplayName>qa-t6-3</mentionDisplayName>') && !str_contains($hiddenXml, 'QA t6 3')
+	&& str_contains($hiddenXml, '<mentionDisplayName>QA t6 2</mentionDisplayName>'));
+expect('card comments: an answer that is neither JSON nor XML is left as it is', MentionNames::hide('', $visible) === null);
 
 // The real rule follows the server's setting: while it is off, nothing is refused.
 $real = new OrgPrivacy(...$args);

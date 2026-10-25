@@ -726,7 +726,10 @@ check "card comments: @$QA2 shows the name (same organisation)" "QA t6b 2" "$(me
 call "$QA1" GET "$CARD_COMMENTS?limit=100&format=xml" >/dev/null
 check "card comments (XML): @$QA3 shows the id, not the name" "yes yes" \
 	"$(names "<mentionDisplayName>$QA3</mentionDisplayName>") $(names_none "QA t6b 3")"
-check "$QA3 got no NoBoard notification" 0 "$(notifications_from "$QA3" deck)"
+# Only mentions count: the runs before the first fixes left two "card assigned to you" ones.
+call "$QA3" GET "$OCS/apps/notifications/api/v2/notifications" >/dev/null
+check "$QA3 got no NoBoard mention notification" 0 \
+	"$(jq -r '[.ocs.data[]? | select(.app == "deck" and (.subject | test("mention"; "i")))] | length' "$T_OUT/r")"
 
 # --- Text documents: the @-mention list and a mention ---
 # The list is the server's people search plus the people in the document; a mention notifies

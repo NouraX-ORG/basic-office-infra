@@ -23,6 +23,9 @@ declare(strict_types=1);
  *   advanced permissions) takes a rule for any account or group, and the folder then shows that
  *   person's name. A rule for someone outside the organisation, or for a group the lead is not
  *   in, gets 403.
+ * - **Avatars.** avatars/<uid>/<size>.png answers any account's picture, drawn from its name
+ *   when none was uploaded. For an account outside the organisation it answers 404, as for an
+ *   account that does not exist (the server's /avatar/<uid>/<size> is OrgShareMiddleware's).
  *
  * Only while sharing is limited to group members (the org privacy step is on), and only for a
  * signed-in person: the server's own work (no session) and the service account are not limited.
@@ -34,15 +37,18 @@ namespace OCA\NouraxApi\Dav;
 
 use OCA\NouraxApi\Service\OrgPrivacy;
 use OCP\IUser;
+use OCP\IUserManager;
 use OCP\IUserSession;
 use OCP\Server as ServerContainer;
 use Sabre\DAV\Exception\Forbidden;
+use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\INode;
 use Sabre\DAV\PropFind;
 use Sabre\DAV\PropPatch;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\DAV\Xml\Property\Complex;
+use Sabre\HTTP\RequestInterface;
 
 class OrgPeoplePlugin extends ServerPlugin {
 	public const PLUGIN_NAME = 'nourax-org-people';
@@ -51,6 +57,10 @@ class OrgPeoplePlugin extends ServerPlugin {
 	private const PROPFIND_PRIORITY = 1000;
 	/** Before Photos' and the team folders' own PROPPATCH handlers (default priority 100). */
 	private const PROPPATCH_PRIORITY = 50;
+	/** Before the server looks up the node (default priority 100). */
+	private const BEFORE_METHOD_PRIORITY = 50;
+	/** The avatars collection (OCA\DAV\Avatars\RootCollection). */
+	private const AVATARS = 'avatars';
 	private const RESOURCETYPE = '{DAV:}resourcetype';
 	private const ALBUM_COLLABORATORS = '{http://nextcloud.org/ns}collaborators';
 	private const TEAM_FOLDER_RULES = '{http://nextcloud.org/ns}acl-list';
@@ -71,11 +81,31 @@ class OrgPeoplePlugin extends ServerPlugin {
 		$this->server = $server;
 		$server->on('propFind', [$this, 'propFind'], self::PROPFIND_PRIORITY);
 		$server->on('propPatch', [$this, 'propPatch'], self::PROPPATCH_PRIORITY);
+		$server->on('beforeMethod:*', [$this, 'beforeMethod'], self::BEFORE_METHOD_PRIORITY);
 	}
 
 	#[\Override]
 	public function getPluginName(): string {
 		return self::PLUGIN_NAME;
+	}
+
+	/**
+	 * An avatar of an account the person may not see: the server's own answer for an account
+	 * that does not exist (AbstractPrincipalCollection::getChild).
+	 *
+	 * @throws NotFound
+	 */
+	public function beforeMethod(RequestInterface $request): void {
+		// The path is url-decoded already (Sabre\HTTP\Request::getPath).
+		$parts = explode('/', trim($request->getPath(), '/'));
+		if ($parts[0] !== self::AVATARS || ($parts[1] ?? '') === '') {
+			return;
+		}
+		[$privacy, $user] = $this->context();
+		if ($user !== null && !$privacy->canSeeUser($user, $parts[1])
+			&& ServerContainer::get(IUserManager::class)->get($parts[1]) !== null) {
+			throw new NotFound('Principal with name ' . $parts[1] . ' not found');
+		}
 	}
 
 	/** Hides the properties of a principal the person may not see, and their name in comments. */
