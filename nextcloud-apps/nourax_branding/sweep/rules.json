@@ -1,0 +1,70 @@
+{
+	"about": [
+		"What a person using Nourax Workspace must never see: the upstream name, links, logo or blue.",
+		"One source of truth for scripts/check-branding.sh (the guard), branding/audit/scan-page.js (the browser",
+		"audit) and the l10n sweep. See docs/branding.md.",
+		"Regex syntax must work in Python re, PHP PCRE (used with the u modifier) and JavaScript (with the u flag):",
+		"a pattern is case-sensitive, or starts with (?i) and has no other inline flag; no \\x{...}, no possessive",
+		"quantifiers, no named groups, no ~ character. JSON escapes such as \\u200c become the literal character.",
+		"Name patterns end without a word boundary, so endings like Nextcloudi or Nextcloudjához match too."
+	],
+	"version": 1,
+	"name_patterns": [
+		{"id": "latin", "re": "(?i)next[ -]?cloud", "note": "Nextcloud, Next cloud, Next-cloud, nextcloud.com, #Nextcloud"},
+		{"id": "latin-misspelt", "re": "(?i)nex(?:ct|to)?cloud|nextcould", "note": "Nexcloud (es, hu), Nexctcloud (et), Nextocloud (sc), Nextcould (tr)"},
+		{"id": "latin-phonetic", "re": "(?i)nekst ?klaud", "note": "Serbian and Bosnian Latin"},
+		{"id": "arabic", "re": "ن(?:ي)?كست ?كلاود", "note": "Arabic نكست كلاود, نيكست كلاود"},
+		{"id": "persian", "re": "نکست[‌ ]?کل(?:ا)?ود", "note": "Persian نکست‌کلود with or without the zero-width non-joiner"},
+		{"id": "cyrillic", "re": "(?i)н[еэ]кст ?клауд", "note": "Serbian Некстклауд, Mongolian Нэкстклауд"},
+		{"id": "hindi", "re": "नेक्स्ट ?क्लाउड", "note": "Hindi"},
+		{"id": "sinhala", "re": "නෙක්ස්ට් ?ක්ලවුඩ්", "note": "Sinhala"},
+		{"id": "lao", "re": "ເນັກຄຮາວ", "note": "Lao"},
+		{"id": "cjk", "re": "ネクストクラウド|넥스트 ?클라우드", "note": "Japanese and Korean, not seen yet, kept as a precaution"},
+		{"id": "uzbek", "re": "(?i)(?:next|keyingi) bulut", "note": "Uzbek: Next bulutli, Keyingi bulut (a word-for-word 'next cloud')"},
+		{"id": "uyghur", "re": "كېيىنكى بۇلۇت", "note": "Uyghur word-for-word 'next cloud'"},
+		{"id": "vietnamese", "re": "(?i)vWorkspace", "note": "the Vietnamese translators' stand-in name"},
+		{"id": "company", "re": "\\bGmbH\\b", "note": "the upstream company (Nextcloud GmbH, NC GmbH, or GmbH alone in vi)"}
+	],
+	"link_patterns": [
+		{"id": "upstream-host", "re": "(?i)^[a-z][a-z0-9+.-]*:(?://)?(?:[^/?#@]*@)?[^/?#]*next ?cloud", "note": "nextcloud.com and every subdomain (apps., docs., help., newsletter., push-notifications.), nextcloud.bsky.social, mailto: addresses there, any host with the name"},
+		{"id": "upstream-github", "re": "(?i)^https?://(?:www\\.)?github\\.com/nextcloud", "note": "github.com/nextcloud and github.com/nextcloud-libraries, -gmbh, ..."},
+		{"id": "upstream-social", "re": "(?i)^https?://(?:[a-z0-9-]+\\.)*(?:mastodon\\.xyz/@nextcloud|facebook\\.com/nextclouders|(?:twitter|x)\\.com/nextclouders|linkedin\\.com/company/nextcloud|youtube\\.com/(?:@|c/|user/)?nextcloud|instagram\\.com/nextclouders)", "note": "social accounts"}
+	],
+	"external_url_name_check": "Any URL whose host is not the checked site also fails when it contains a name pattern anywhere.",
+	"asset_patterns": [
+		{"id": "upstream-logo", "re": "^/core/img/logo/", "note": "matched against the path of links to our own site"},
+		{"id": "upstream-favicon", "re": "^/core/img/favicon", "note": "themes/nourax/core/img/favicon-mask.svg does not match: the path must start here"}
+	],
+	"upstream_files": [
+		"/core/img/favicon.ico",
+		"/core/img/favicon.png",
+		"/core/img/favicon.svg",
+		"/core/img/favicon-touch.png",
+		"/core/img/favicon-touch.svg",
+		"/core/img/favicon-mask.svg",
+		"/core/img/favicon-fb.png",
+		"/core/img/logo/logo.svg",
+		"/core/img/logo/logo.png",
+		"/core/img/logo/logo-mail.png"
+	],
+	"upstream_files_note": "Served icons (favicon, touch and mask icons, manifest icons) must not have the same SHA-256 as these upstream files.",
+	"blue_patterns": [
+		{"id": "hex-0082c9", "re": "(?i)#0082c9(?:[0-9a-f]{2})?(?![0-9a-f])"},
+		{"id": "hex-00679e", "re": "(?i)#00679e(?:[0-9a-f]{2})?(?![0-9a-f])"},
+		{"id": "rgb-0082c9", "re": "(?i)rgba?\\(\\s*0\\s*,?\\s*130\\s*,?\\s*201(?![0-9])"},
+		{"id": "rgb-00679e", "re": "(?i)rgba?\\(\\s*0\\s*,?\\s*103\\s*,?\\s*158(?![0-9])"}
+	],
+	"upstream_ios_appid": "1125420102",
+	"customclient_keys": ["customclient_desktop", "customclient_android", "customclient_ios", "customclient_fdroid", "customclient_ios_appid"],
+	"apps_off": {
+		"office": "upstream Office overview page; the owner approved removing it",
+		"privacy": "only upstream mission text and links"
+	},
+	"sweep_state": {
+		"path": "themes/<theme>/sweep-state.json, relative to /var/www/html",
+		"format": {"server": "full server version, e.g. 35.0.2.2 (OCP\\ServerVersion::getVersion() joined with dots)", "apps": {"<app id>": "<installed version of every enabled app>"}},
+		"note": "Written by the sweep after each run; the guard's --server check fails when it is missing or differs from the installed server and apps."
+	},
+	"allow": [],
+	"allow_note": "Exceptions, each {\"area\": \"pages\", \"url\": regex, \"where\": regex, \"snippet\": regex, \"why\": \"...\"}; a finding matching every given regex is not reported. Licence text only where a licence requires it."
+}
