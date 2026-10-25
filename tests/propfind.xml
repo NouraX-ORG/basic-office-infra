@@ -1,0 +1,1 @@
+<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><d:resourcetype/><d:getcontentlength/><d:getcontenttype/><d:getlastmodified/><oc:fileid/><oc:size/></d:prop></d:propfind>
