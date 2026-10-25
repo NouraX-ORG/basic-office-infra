@@ -41,9 +41,9 @@ hidden.
   phone and desktop calendar apps can subscribe. Each link holds a 64-character random key and shows
   only titles, dates and a link back to NoGantt (which needs signing in); no descriptions, people or
   files. A project link is made only when a project admin opens the project's calendar dialog, a
-  personal link only when its owner asks for one, and either can be renewed (the old link stops). The app has no setting to
-  turn them off, so a Cloudflare rule that closes them for everyone is ready for the owner (see the
-  result of Task 5b; it is not applied yet).
+  personal link only when its owner asks for one, and either can be renewed (the old link stops).
+  The app has no setting to turn them off, so a Cloudflare rule that closes them for everyone is
+  ready for the owner (see "Closing the calendar links" below). It is not applied yet.
 - **Notifications** for due dates, assignments and date changes are on, with one day's notice; each
   person can mute them in their personal settings. Activity entries are on; activity emails are off.
 - **Working time** stays at the app defaults: 09:00 to 17:00, 8 hours per person-day.
@@ -69,6 +69,20 @@ Known leftovers (they cannot be changed without editing the app's code):
   text, not translatable). It names the app, not the server; people can edit it.
 - Exports (PNG, SVG, PDF) of a project that kept the default colour may show the upstream blue.
 - The Apps page for admins shows the app's store name and description.
+
+## Closing the calendar links (owner's choice, not applied)
+
+A WAF custom rule (Block) on zone `nourax.org`. It would be the fourth of the five rules the Free
+plan allows, and it blocks the owner too, so no calendar app can subscribe to NoGantt dates:
+
+```
+(http.host eq "drive.nourax.org" and http.request.uri.path wildcard r"*/apps/nc_gantt/*.ics*")
+```
+
+Description: `Nourax Workspace: NoGantt calendar links closed`. Check afterwards:
+`curl -s -o /dev/null -w "%{http_code}\n" https://drive.nourax.org/apps/nc_gantt/my/calendar.ics`
+answers 403 (404 before the rule), and NoGantt itself still opens for a signed-in person. To undo,
+switch the rule off or remove it in the dashboard (nourax.org → Security → Security rules).
 
 ## Install and update
 
