@@ -11,8 +11,9 @@ log "virus scanner (files_antivirus with ClamAV)"
 if ! dc exec -T clamav clamdcheck.sh >/dev/null 2>&1; then
 	if occ app:list --output=json | jq -e '.enabled.files_antivirus != null' >/dev/null; then
 		log "  WARNING: ClamAV is not answering, so uploads are refused until it does - see: docker compose ps clamav"
+		log "  skipped: the scanner settings and test stay as they are; run configure.sh again once ClamAV answers"
 	else
-		log "  ClamAV is not running or still loading, so files_antivirus stays off. Start it with"
+		log "  skipped: ClamAV is not running or still loading, so files_antivirus stays off. Start it with"
 		log "  'docker compose up -d clamav', wait until 'docker compose ps clamav' says healthy, then run configure.sh again"
 	fi
 else

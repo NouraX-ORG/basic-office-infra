@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Memory of the server and of the add-on services (search engine, virus scanner, jobs).
+# Memory of the server and of the add-on services (search engine, virus scanner, jobs, Nourax AI).
 #   sudo config/elasticsearch/memory-report.sh [LABEL]
-#       One report: free -m, /proc/swaps, docker stats, the add-ons' memory as the kernel counts
-#       it (limit, use, highest use, times at the limit, OOM kills, swap), the swap of every
-#       service, and Elasticsearch's heap.
+#       One report: free -m, /proc/swaps, docker stats, every container's memory limit and OOM
+#       score, the add-ons' memory as the kernel counts it (limit, use, highest use, times at the
+#       limit, OOM kills, swap), the swap of every service, the 5 biggest processes, and
+#       Elasticsearch's heap. A WARNING line says when memory is too tight for the time before the
+#       upgrade (docs/search-and-antivirus.md, "If memory gets too tight").
 #   sudo config/elasticsearch/memory-report.sh --around-start [USER WORD...]
 #       Before and after Elasticsearch: stops the services "elasticsearch" and "jobs", waits a
 #       minute, reports "before"; starts both again, indexes all files again (in "jobs"), searches
@@ -69,8 +71,17 @@ report() {
 	cat /proc/swaps
 	echo '--- docker stats --no-stream'
 	docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}'
+	# Highest OOM score first: when the whole server runs out of memory, the kernel stops the
+	# process with the highest score first. 0 is the normal score (db, app, cron, onlyoffice, ...).
+	echo '--- memory limit and OOM score of each container (docker inspect), highest score first'
+	for id in $(dc ps -q 2>/dev/null); do
+		docker inspect -f '{{.Name}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.OomScoreAdj}}' "$id"
+	done | sort -k4,4nr -k1,1 | awk '
+		function mib(b) { return (b <= 0) ? "none" : sprintf("%dm", b / 1048576) }
+		{ name = $1; sub("^/", "", name)
+		  printf "%-34s limit %6s  with swap %6s  OOM score %s\n", name, mib($2), mib($3), $4 }'
 	echo '--- add-ons, in MiB (program = memory that is not file cache)'
-	for svc in elasticsearch clamav jobs; do
+	for svc in elasticsearch clamav jobs ai-relay ai-worker; do
 		cgroup_line "$svc"
 	done
 	# Whose memory is in swap: the swap used above, per running service (swap stays used after the
@@ -82,11 +93,26 @@ report() {
 		line+="$svc $(( $(<"$dir/memory.swap.current") / 1048576 ))  "
 	done
 	echo "--- swap by service, in MiB: ${line:-no cgroup v2 numbers}"
+	echo '--- the 5 biggest processes (resident memory, in MiB; processes in containers included)'
+	ps -eo rss,comm --sort=-rss | awk 'NR > 1 && NR <= 6 { printf "%6d  %s\n", $1 / 1024, $2 }'
 	if [ "$(dc ps --format '{{.Health}}' elasticsearch 2>/dev/null)" = healthy ]; then
 		echo '--- Elasticsearch Java, in MiB'
 		es_api GET '/_nodes/_local/stats/jvm?filter_path=nodes.*.jvm.mem,nodes.*.jvm.threads' </dev/null \
 			| jq -r '.nodes[].jvm | "heap used \(.mem.heap_used_in_bytes / 1048576 | floor) of \(.mem.heap_max_in_bytes / 1048576 | floor), outside the heap \(.mem.non_heap_committed_in_bytes / 1048576 | floor), threads \(.threads.count)"' \
 			|| echo 'Elasticsearch did not answer'
+	fi
+	# Too tight for the time before the upgrade: under 150 MB available, or over 1.5 GB of swap that
+	# keeps growing (one report can't tell growing, so it asks for a second one).
+	local avail swap_used
+	avail="$(free -m | awk '$1 == "Mem:" { print $7 }')"
+	swap_used="$(free -m | awk '$1 == "Swap:" { print $3 }')"
+	echo "--- memory check: available ${avail} MB (tight under 150), swap used ${swap_used} MB (tight over 1536 and growing)"
+	if [ "$avail" -lt 150 ]; then
+		echo 'WARNING: under 150 MB available - see docs/search-and-antivirus.md, "If memory gets too tight"'
+	fi
+	if [ "$swap_used" -gt 1536 ]; then
+		echo 'WARNING: over 1.5 GB of swap used - run this report again in 10 minutes; if it is still growing,'
+		echo '         see docs/search-and-antivirus.md, "If memory gets too tight"'
 	fi
 }
 

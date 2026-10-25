@@ -153,7 +153,7 @@ services:
     image: ${CLAMAV_IMAGE:-clamav/clamav:1.5.4_base}
     restart: unless-stopped
     environment:
-      FRESHCLAM_CHECKS: "2"          # look for new signatures twice a day
+      FRESHCLAM_CHECKS: "${FRESHCLAM_CHECKS:-2}"   # look for new signatures twice a day (.env)
       CLAMD_STARTUP_TIMEOUT: "1800"  # seconds the start script waits for clamd to load
     volumes:
       - clamav_db:/var/lib/clamav

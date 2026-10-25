@@ -37,7 +37,7 @@ nourax_search() {
 	# so 0640 root:root is still readable for it.
 	chmod 0640 "$(secret_path elasticsearch_password)"
 	if [ "$(dc ps --format '{{.Health}}' elasticsearch 2>/dev/null)" != healthy ]; then
-		log "  Elasticsearch is not running or still starting, so search inside files is not set up yet."
+		log "  skipped: Elasticsearch is not running or still starting, so search inside files is not set up (again)."
 		log "  Start it with 'docker compose up -d elasticsearch', wait until 'docker compose ps elasticsearch'"
 		log "  says healthy (2-3 minutes), then run configure.sh again"
 		return 0
@@ -93,13 +93,19 @@ nourax_search() {
 	fi
 	# What is indexed: everyone's own files and team folders (not external storage, which is off);
 	# plain text and Markdown, PDF and office files (docx, xlsx, pptx, odt and the others); not the
-	# inside of zip files. Files over 20 MB are found by name only. A result opens the file itself.
+	# inside of zip files. Files over SEARCH_MAX_FILE_MB (.env, 20 MB if not set) are found by name
+	# only. A result opens the file itself.
+	local max_mb="${SEARCH_MAX_FILE_MB:-20}"
+	if ! [[ "$max_mb" =~ ^[1-9][0-9]{0,2}$ ]]; then
+		log "  WARNING: SEARCH_MAX_FILE_MB=$max_mb is not a number of MB from 1 to 999; using 20"
+		max_mb=20
+	fi
 	if ! occ files_fulltextsearch:configure \
-		'{"files_local":true,"files_group_folders":true,"files_external":0,"files_office":true,"files_pdf":true,"files_zip":false,"files_size":20,"files_open_result_directly":true}' >/dev/null; then
+		'{"files_local":true,"files_group_folders":true,"files_external":0,"files_office":true,"files_pdf":true,"files_zip":false,"files_size":'"$max_mb"',"files_open_result_directly":true}' >/dev/null; then
 		log "  WARNING: what to index could not be set - see: docker compose logs app"
 		return 0
 	fi
-	log "  search platform Elasticsearch, index nourax_drive; files and team folders, office, PDF and text, up to 20 MB"
+	log "  search platform Elasticsearch, index nourax_drive; files and team folders, office, PDF and text, up to $max_mb MB"
 
 	# The first index: every file that is already stored. Later files are added by the waiting list
 	# (below). It runs in the background, in the service "jobs" when it runs (its own memory limit),
