@@ -136,6 +136,18 @@ user_exists() {
 	occ user:info "$1" --output=json </dev/null >/dev/null 2>&1 && echo yes || echo no
 }
 
+# Runs the drift job (nourax_api DriftReconcile, every 15 minutes) now, so its next run is 15
+# minutes away. Call it right before a test changes an org:* or team:* group with occ on purpose:
+# otherwise the cron container may run the job in the middle of the test and put the group back
+# before the test has looked (it did, at 06:20:01 on 2026-10-25). Prints the job's new last run.
+drift_job_now() {
+	local id
+	id="$(occ background-job:list --class 'OCA\NouraxApi\BackgroundJob\DriftReconcile' --output=json </dev/null | jq -r '.[0].id // empty')"
+	[ -n "$id" ] || die "the DriftReconcile job is not registered (is nourax_api enabled?)"
+	occ background-job:execute "$id" --force-execute </dev/null >/dev/null
+	occ background-job:list --class 'OCA\NouraxApi\BackgroundJob\DriftReconcile' --output=json </dev/null | jq -r '.[0].last_run'
+}
+
 # Makes a local (password) QA account if it is missing. The password is random, kept in
 # $QA_DIR/<uid>.pass and handed to occ through the environment (OC_PASS), never as an argument.
 qa_local_user() { # uid display-name

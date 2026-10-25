@@ -210,6 +210,9 @@ save_netrc "$NETRC1"
 if [ ! -s "$NETRC1" ]; then
 	check "$NETRC1 exists" yes no
 else
+	# The drift job takes this member out again; run it first, so its next run is 15 minutes
+	# away and it cannot do that in the middle of the checks below.
+	log "drift job run now (next run in 15 minutes); last run $(drift_job_now)"
 	occ group:adduser "org:$ORG_A" "$QA1" </dev/null >/dev/null
 	occ group:adduser "team:$TEAM_A1" "$QA1" </dev/null >/dev/null
 	check "PUT team A1 with a member -> 200" 200 "$(put_team "$ORG_A" "$TEAM_A1" Sales $((v1 + 2)))"

@@ -16,7 +16,8 @@ declare(strict_types=1);
  * Steps while active (true):
  *   record       the desired state: nourax_api_people and the team rows in nourax_api_members
  *   account      the "Log in with Nourax" account and its /NoMail folders, as /v1/provision makes
- *                them (no app password); an account this API disabled is enabled again
+ *                them (no app password); an account this API disabled is enabled again (its
+ *                app passwords were revoked: NoMail and sync clients sign in again)
  *   profile      display name and email (the email may change, the uid never does)
  *   leave        one per team left, also when moving to another organisation (LeaveService)
  *   org          member of org:{org_id}, and of no other organisation group
@@ -27,8 +28,10 @@ declare(strict_types=1);
  * Steps when the person left the organisation (active false):
  *   record, account, profile, leave (every team), org (out of every organisation group),
  *   disable      the account is disabled at once: no sign-in (form or "Log in with Nourax"),
- *                no sync client, no app password, and NoMail's next /v1/provision gets 409
- *                account_disabled; open browser sessions end; it is kept for 30 days
+ *                no sync client, and NoMail's next /v1/provision gets 409 account_disabled;
+ *                open browser sessions end and every app password is revoked, so WebDAV and
+ *                OCS answer 401 (with only the account disabled, WebDAV would answer 503,
+ *                which clients read as a server fault and retry); it is kept for 30 days
  *                (delete_after). Deleting is switched off (LeaverDeletion).
  *   directories
  *
@@ -257,9 +260,12 @@ class PeopleService {
 				$user->setEnabled(false);
 				$changes[] = 'disabled';
 			}
-			$ended = $this->endSessions($uid);
+			[$ended, $revoked] = $this->endLogins($uid);
 			if ($ended > 0) {
 				$changes[] = $ended . ' session(s) ended';
+			}
+			if ($revoked > 0) {
+				$changes[] = $revoked . ' app password(s) revoked';
 			}
 			$disabledAt = $row['disabled_at'] ?? null;
 			if ($disabledAt === null) {
@@ -271,6 +277,7 @@ class PeopleService {
 				'disabled_at' => gmdate('c', $disabledAt),
 				'delete_after' => gmdate('c', $disabledAt + AdminStore::KEEP_LEAVERS),
 				'sessions_ended' => $ended,
+				'app_passwords_revoked' => $revoked,
 			];
 			return [$changes === [] ? Steps::UNCHANGED : Steps::UPDATED, $changes === [] ? 'already disabled' : implode('; ', $changes), $fields];
 		});
@@ -408,18 +415,32 @@ class PeopleService {
 	}
 
 	/**
-	 * Ends the person's browser sessions (temporary tokens, also "remember me"). App passwords
-	 * stay, but no longer work while the account is disabled.
+	 * Ends every login of a person who left the organisation: browser sessions (temporary
+	 * tokens, also "remember me") and app passwords (NoMail's, sync clients', one-time login
+	 * tokens). With the account disabled but an app password still there, the server's WebDAV
+	 * answers 503 (DisabledUserException) instead of 401; once the password is gone it answers
+	 * 401, which NoMail reads as "ask /v1/provision for a new one" (409 while disabled). A
+	 * remote-wipe token is kept, so a device marked for wiping is still wiped. Run on every
+	 * leaver PUT, so it also catches a token made while the account was disabled.
+	 *
+	 * @return array{0: int, 1: int} sessions ended, app passwords revoked
 	 */
-	private function endSessions(string $uid): int {
+	private function endLogins(string $uid): array {
 		$ended = 0;
+		$revoked = 0;
 		foreach ($this->tokens->getTokenByUser($uid) as $token) {
-			if ($token->getType() === IToken::TEMPORARY_TOKEN) {
-				$this->tokens->invalidateTokenById($uid, $token->getId());
+			$type = $token->getType();
+			if ($type === IToken::WIPE_TOKEN) {
+				continue;
+			}
+			$this->tokens->invalidateTokenById($uid, $token->getId());
+			if ($type === IToken::TEMPORARY_TOKEN) {
 				$ended++;
+			} else {
+				$revoked++;
 			}
 		}
-		return $ended;
+		return [$ended, $revoked];
 	}
 
 	/**

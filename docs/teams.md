@@ -39,6 +39,13 @@ The address books, calendars and boards belong to the hidden service account `no
 `ORG` (the organisation's name), `UID:nourax-<uid>`, file `<uid>.vcf`. They are rebuilt on every
 call and written only when they differ. Deleting only ever touches cards this API made.
 
+**Read-only means nothing is written.** When a member tries to add or change a card in the
+directory or a team address book, the server answers **404**, not 403: its DAV permission check
+(`DavAclPlugin` in the dav app) gives 403 only to the book's owner and 404 to everyone else, so it
+does not show which books exist that one may not change. The card is not written: a new card is
+not there afterwards (GET 404) and an existing card is unchanged (tested in
+`tests/admin-people.sh`).
+
 **Team folder names:** the characters `/ \ : * ? " < > |` become spaces, at most 100 characters.
 Two teams of the **same** organisation with the same name get "Sales" and "Sales 2"; teams of
 different organisations never see each other's folders, so both may be "Sales". A folder that
@@ -185,7 +192,7 @@ Steps while `active` is true:
 | Step | What it does |
 |---|---|
 | `record` | Stores the desired state (`nourax_api_people`, and the team rows in `nourax_api_members`) |
-| `account` | The "Log in with Nourax" account and its `/NoMail` folders, made as `/v1/provision` makes them, without an app password. An account this API disabled is enabled again. |
+| `account` | The "Log in with Nourax" account and its `/NoMail` folders, made as `/v1/provision` makes them, without an app password. An account this API disabled is enabled again; its app passwords were revoked when it was disabled, so NoMail gets a new one from `/v1/provision` and sync clients sign in again. |
 | `profile` | Display name and email |
 | `leave` | One step per team the person leaves (below), also when they move to another organisation. It carries `team_id` and `counts`. |
 | `org` | Member of `org:{org_id}` and of no other organisation group |
@@ -240,16 +247,22 @@ Steps: `record`, `account`, `profile`, `leave` (every team), `org` (out of every
 group), `disable`, `directories`. `disable`:
 
 - disables the account **at once**: no sign-in with the login form or "Log in with Nourax", no
-  sync client, no app password (WebDAV answers 503, the server's answer for a disabled account,
-  and OCS 401), and NoMail's next `/v1/provision` gets 409 `account_disabled`;
-- ends the person's open browser sessions;
+  sync client, and NoMail's next `/v1/provision` gets 409 `account_disabled`;
+- ends the person's open browser sessions (`sessions_ended`) and **revokes every app password**
+  (`app_passwords_revoked`): NoMail's, the sync clients' and one-time login tokens. Only a
+  remote-wipe token stays, so a device an admin marked for wiping is still wiped. So the old app
+  passwords get **401** on WebDAV and OCS. (With the account only disabled and its app passwords
+  kept, the server's WebDAV answers 503, from its `DisabledUserException`; NoMail and sync
+  clients read 503 as a server fault and retry, but read 401 as "this login is gone": NoMail then
+  asks `/v1/provision` for a new one and gets 409 `account_disabled`.) This runs on every
+  `"active": false` call, so a second call also revokes a token made in between;
 - public links the person made stop working (404);
 - keeps the account and its files for **30 days**: `disabled_at` and `delete_after` are stored
   and shown in the step and in the status.
 
 `"active": true` later (a higher version) enables the account again and clears `delete_after`.
-NoMail's old app password may have been dropped by the server meanwhile; NoMail's next
-`/v1/provision` gives a new one.
+The old app passwords stay revoked: NoMail's next `/v1/provision` gives a new one, and the
+person signs in again in their sync and mobile apps.
 
 **Deleting is switched off.** The daily job `LeaverDeletion` deletes nothing until the owner says
 yes and `occ config:app:set nourax_api scheduled_delete --value=on` is run. While it is `off` it
@@ -316,6 +329,12 @@ person failed (their `failed_steps` or `error` say what); send it again.
   account is missing or disabled are left alone.
 - `occ nourax_api:reconcile [org_id] [--dry-run]` does the same now and prints what it found,
   fixed and left, as JSON.
+- **Testing drift:** the job runs from the `cron` container at the first cron run after its 15
+  minutes are up, so it may undo an `occ group:adduser` a second after it was made (it did at
+  06:20:01 on 2026-10-25, before the test could look). A test that changes these groups with occ
+  on purpose first runs the job itself (`drift_job_now` in `tests/lib.sh`: `occ
+  background-job:execute <id> --force-execute`), so the next run is 15 minutes away, then makes
+  the change and checks it is there before it calls the reconcile.
 
 ### `GET /v1/admin/audit?limit=100[&target=team:<team_id>]`
 

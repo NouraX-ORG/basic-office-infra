@@ -188,9 +188,19 @@ BOOKS="$DAV_BASE/addressbooks/users/$QA1"
 as "$NETRC1" PROPFIND "$BOOKS/" -H 'Depth: 1' >/dev/null
 check "$QA1's NoContacts lists the directory and the team book" "yes yes" \
 	"$(grep -q "org-${ORG_A}_shared_by_nourax-teams/<" "$T_OUT/dav" && echo yes || echo no) $(grep -q "team-${TEAM_A1}_shared_by_nourax-teams/<" "$T_OUT/dav" && echo yes || echo no)"
+# The team book is read-only for members. The server's DAV permission check (DavAclPlugin) answers
+# a write by someone who does not own the book with 404, not 403, so it does not reveal books one
+# may not change; only the owner (the service account) would get 403. What counts is that nothing
+# is written: a new card is not there afterwards and an existing card is not changed.
 printf 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:qa-t6-write-test\r\nFN:Write test\r\nEND:VCARD\r\n' > "$T_OUT/new.vcf"
-check "$QA1 cannot write to the team book (403 or 404)" yes \
-	"$(case "$(as "$NETRC1" PUT "$BOOKS/team-${TEAM_A1}_shared_by_nourax-teams/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")" in 403 | 404) echo yes ;; *) echo no ;; esac)"
+QA1_TEAM_BOOK="$BOOKS/team-${TEAM_A1}_shared_by_nourax-teams"
+check "$QA1 cannot add a card to the team book (403 or 404)" yes \
+	"$(case "$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")" in 403 | 404) echo yes ;; *) echo no ;; esac)"
+check "  and the card was not written (GET -> 404)" 404 "$(as "$NETRC1" GET "$QA1_TEAM_BOOK/qa-t6-write-test.vcf")"
+check "$QA1 cannot overwrite a card of the team book (403 or 404)" yes \
+	"$(case "$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/$QA1.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")" in 403 | 404) echo yes ;; *) echo no ;; esac)"
+check "  and the card is unchanged" "200 0" \
+	"$(as "$NETRC1" GET "$QA1_TEAM_BOOK/$QA1.vcf") $(grep -c 'Write test' "$T_OUT/dav")"
 admin_api GET "/v1/admin/orgs/$ORG_A/teams/$TEAM_A1" >/dev/null
 BOARD_A1="$(jq -r .team.board.id "$T_OUT/body")"
 check "the team's leads: folder and board" "$QA2 $QA2" "$(jq -r '.team | "\(.folder.leads | join(",")) \(.board.leads | join(","))"' "$T_OUT/body")"
@@ -278,11 +288,15 @@ check "team B1 status: archived, folder and group still there" "true true true" 
 check "PUT $QA3 active false -> 200" 200 "$(put_person "$QA3" "$QA3@example.invalid" "QA t6 3" "$ORG_B" '[]' false)"
 check "$QA3: the disable step ok" ok "$(steps_ok account org disable directories)"
 check "$QA3 is disabled" false "$(occ user:info "$QA3" --output=json </dev/null | jq -r .enabled)"
-# The server refuses a disabled account's app password: WebDAV answers 503 (its DisabledUserException),
-# never any data; OCS answers 401.
-check "$QA3's app password on WebDAV -> refused (401 or 503)" yes \
-	"$(case "$(propfind "$NETRC3" "$QA3/" 0)" in 401 | 503) echo yes ;; *) echo no ;; esac)"
-check "$QA3's app password on OCS -> refused (401)" 401 "$(ocs "$NETRC3" GET /cloud/user)"
+# The disable step revokes every app password (only a remote-wipe token would stay), so the old
+# NoMail app password gets 401 everywhere. With the account only disabled, WebDAV would answer 503
+# (the server's DisabledUserException), which NoMail and sync clients read as a server fault.
+check "the disable step revoked $QA3's app password(s)" yes \
+	"$([ "$(jq -r '[.steps[] | select(.step == "disable")][0].app_passwords_revoked // 0' "$T_OUT/body")" -ge 1 ] && echo yes || echo no)"
+check "$QA3 has no session or app password left" 0 \
+	"$(occ user:auth-tokens:list "$QA3" --output=json </dev/null | jq '[.[] | select(.type != 2)] | length')"
+check "$QA3's old app password on WebDAV -> 401" 401 "$(propfind "$NETRC3" "$QA3/" 0)"
+check "$QA3's old app password on OCS -> 401" 401 "$(ocs "$NETRC3" GET /cloud/user)"
 check "/v1/provision for $QA3 -> 409 account_disabled" "409 account_disabled" \
 	"$(provision "$QA3" "$QA3@example.invalid" "QA t6 3") $(jq -r .error "$T_OUT/body")"
 check "$QA3's public link -> 404" 404 "$(curl -sS -o /dev/null -w '%{http_code}' "https://${DRIVE_HOST}/s/$T3")"
@@ -307,7 +321,11 @@ qa_login "$QA3" "QA t6 3"
 
 # --- Drift: a person added outside the API is taken out again ------------------------------------
 check "provision $QA4 -> 200" 200 "$(provision "$QA4" "$QA4@example.invalid" "QA t6 4")"
+# The drift job would take qa-t6-4 out again on its own; run it first, so its next run is 15
+# minutes away and the reconcile call below is the one that finds and fixes the drift.
+log "drift job run now (next run in 15 minutes); last run $(drift_job_now)"
 occ group:adduser "team:$TEAM_A1" "$QA4" </dev/null >/dev/null
+check "right after occ group:adduser: $QA4 is in team:$TEAM_A1" yes "$(in_group "team:$TEAM_A1" "$QA4")"
 check "status of team A1 lists the occ change as drift" yes \
 	"$(admin_api GET "/v1/admin/orgs/$ORG_A/teams/$TEAM_A1" >/dev/null; jq -e --arg u "$QA4" '.team.drift | any(.kind == "member_added" and .user_id == $u)' "$T_OUT/body" >/dev/null && echo yes || echo no)"
 reconcile_body() { # dry-run
