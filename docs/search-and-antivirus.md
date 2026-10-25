@@ -445,9 +445,9 @@ loaded classes and compiled code (about 260–300 MiB) and about 100–150 MiB o
 garbage collector). Together that is the *program* memory, about 880–950 MiB; the rest of the
 limit is file cache for the index files, which the kernel gives back first.
 
-| Elasticsearch container | Before this fix (05:30, 37 minutes after its start) | After (05:51, 6 minutes after its start) |
+| Elasticsearch container | Before this fix (05:30, 37 minutes after its start) | After (06:01, 16 minutes after its start, two rounds of test uploads) |
 |---|---|---|
-| Program memory | 946 MiB | 879 MiB |
+| Program memory | 946 MiB | 888 MiB |
 | Times at the limit (the kernel took back file cache) | 279 | 0 |
 | Java threads | 75 | 61 |
 | OOM kills, swap | 0, 0 | 0, 0 |
