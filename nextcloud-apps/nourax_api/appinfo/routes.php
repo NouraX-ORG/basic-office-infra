@@ -14,6 +14,7 @@ return [
 	'routes' => [
 		['name' => 'nomail#health', 'url' => '/v1/health', 'verb' => 'GET'],
 		['name' => 'nomail#provision', 'url' => '/v1/provision', 'verb' => 'POST'],
+		['name' => 'nomail#scan', 'url' => '/v1/scan', 'verb' => 'POST'],
 
 		// The admin-only organisations and teams API (docs/teams.md). Signed with the admin key;
 		// the controller reads the ids from the signed path, not from these parameters.
