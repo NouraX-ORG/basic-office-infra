@@ -11,6 +11,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **NoBoard** | Kanban boards with a Gantt view |
 | **ONLYOFFICE** | Documents, spreadsheets, presentations (docx, xlsx, pptx), with Nourax AI in the AI tab |
 | **NoGantt** | Project plans on a Gantt timeline, with dependencies, resources and NoBoard cards ([docs/gantt.md](docs/gantt.md)) |
+| **Team folders** | Folders that belong to a group: every member reads and writes the same files ([docs/apps.md](docs/apps.md#team-folders)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

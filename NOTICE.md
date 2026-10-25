@@ -22,6 +22,7 @@ this repository.
 | Redis 8 | Cache and file locking | AGPL-3.0 / RSALv2 / SSPLv1 (tri-licence) | https://github.com/redis/redis |
 | cloudflared | Cloudflare Tunnel connector | Apache-2.0 | https://github.com/cloudflare/cloudflared |
 | nc_Gantt 2.4.1 (`nc_gantt`, by fds2610) | NoGantt, the project planner; its texts reworded by theme translation overrides (`scripts/configure.d/55-gantt.sh`) | AGPL-3.0-or-later | https://codeberg.org/fds2610/NC-Gantt |
+| Team Folders (`groupfolders`) 23 | Team folders shared by a group (`scripts/configure.d/50-apps.sh`) | AGPL-3.0-or-later | https://github.com/nextcloud/groupfolders |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 
