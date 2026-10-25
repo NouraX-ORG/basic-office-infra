@@ -429,10 +429,15 @@ People find, autocomplete and share only with people of their **own organisation
 in its group `org:{org_id}` (and so in its teams). Nobody of another organisation is suggested,
 found by an exact name, email address or account id, or can be shared with.
 
-**State:** built and tested on 2026-10-25; **not switched on yet**. These are server-wide
-switches (see "Who else this changes"), so the step `scripts/configure.d/60-org-privacy.sh` does
-nothing until it is switched on once, on purpose. Until then the nourax_api checks below do
-nothing either.
+**State:** built on 2026-10-25; **not switched on yet**. These are server-wide switches (see
+"Who else this changes"), so the step `scripts/configure.d/60-org-privacy.sh` does nothing until
+it is switched on once, on purpose. Until then the nourax_api checks below do nothing either.
+Tested so far: the rule, the DAV plugin and the board check in place on the server, as if privacy
+were on (`tests/org-privacy-rules.php`, 52 checks pass), and a picture of today with
+`PRIVACY_BASELINE=1 tests/privacy.sh`: 33 checks fail, each a leak the step closes (for example
+`qa-t6-1` of organisation A is offered `qa-t6-3`, `qa-t6-5` and organisation B's groups, the
+"Accounts" address book lists every account, and profile pages answer). The search checks already
+pass: nobody finds another organisation's files or contacts.
 
 ### What is limited, and how
 

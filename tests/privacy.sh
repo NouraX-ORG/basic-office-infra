@@ -250,7 +250,8 @@ check "org A directory: one card per enabled member of org A, nobody else" \
 code="$(as "$N1" PROPFIND "$DAV_BASE/addressbooks/system/system/system/" -H 'Depth: 1')"
 if [ "$code" = 207 ]; then
 	system_cards="$(card_uids)"
-	log "system book at its own address lists: [$system_cards]"
+	# Counts only: the book may list accounts that are not QA accounts.
+	log "system book at its own address: $(wc -w <<<"$system_cards") card(s), $(for u in $system_cards; do [ "$(subset "$u" "$SELF_AND_PEERS")" = yes ] || echo "$u"; done | wc -l) outside org A"
 	check "the system book at its own address: only org A people" yes "$(subset "$system_cards" "$SELF_AND_PEERS")"
 else
 	check "the system book at its own address is refused ($code)" yes "$([[ "$code" =~ ^40[34]$ ]] && echo yes || echo no)"
