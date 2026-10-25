@@ -740,8 +740,11 @@ def setup_share(http, uid):
 			have[kind] = got['token']
 			created += 1
 		else:
-			rep.fail('share', '/ocs/v2.php/apps/files_sharing/api/v1/shares', 'create %s link' % kind,
-				'HTTP %d %s' % (r.status, (json.loads(r.text).get('ocs', {}).get('meta', {}).get('message', '') if r.text.startswith('{') else '')))
+			try:
+				why = json.loads(r.text)['ocs']['meta']['message']
+			except (ValueError, KeyError, TypeError):
+				why = ''
+			rep.fail('share', '/ocs/v2.php/apps/files_sharing/api/v1/shares', 'create %s link' % kind, 'HTTP %d %s' % (r.status, why))
 	rep.info('test links of %s in /branding-check: %d found, %d created (%s)' % (uid, len(have) - created, created, ', '.join(sorted(have))))
 	return have
 
