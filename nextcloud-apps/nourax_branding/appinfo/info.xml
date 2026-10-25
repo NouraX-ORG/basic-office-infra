@@ -12,7 +12,7 @@
 	<id>nourax_branding</id>
 	<name>Nourax Branding</name>
 	<summary>The Nourax Workspace look and wording, and NoMail in the app menu</summary>
-	<description>Adds NoMail to the app menu of every signed-in person; it opens Nourax mail in a new tab. Its text sweep rewrites the upstream name in the translations of every enabled app, in every language, and runs again by itself when apps change. It also gives Nourax Workspace its own help page, WebDAV page and settings notice, and keeps the upstream's links, pictures and colours off the pages people see.</description>
+	<description>Adds NoMail to the app menu of every signed-in person; it opens Nourax mail in a new tab. Its text sweep rewrites the upstream name in the translations of every enabled app, in every language, and runs again by itself when apps change. It also gives Nourax Workspace its own help page, WebDAV page, settings notice and example contact, and keeps the upstream's links, pictures, colours and NoBoard welcome board off the pages people see.</description>
 	<version>1.0.0</version>
 	<licence>agpl</licence>
 	<author>Nourax</author>
@@ -27,5 +27,7 @@
 	</background-jobs>
 	<commands>
 		<command>OCA\NouraxBranding\Command\Sweep</command>
+		<command>OCA\NouraxBranding\Command\ExampleContactCommand</command>
+		<command>OCA\NouraxBranding\Command\CalendarColoursCommand</command>
 	</commands>
 </info>

@@ -149,6 +149,22 @@ docs/teams.md); the branding holds with it on or off.
   - Sharing (when federation is on): the "share it" buttons point at our help page;
   - `/settings/download/reasons`, the upstream's "Reasons to use Nextcloud" PDF, answers 404.
 - *No NoBoard welcome board* (`Listener/NewAccountListener.php`): see the deck row below.
+- *Example contact* (`Service/ExampleContact.php`, `occ nourax_branding:example-contact`, run by
+  `scripts/configure.d/20-branding.sh`): every new address book gets one example card, and NoContacts
+  opens it on a person's first visit. The dav app's own card, "Leon Green", has the upstream website.
+  The command puts the Nourax copy in place as the dav app's default contact
+  (`defaultContact/defaultContact.vcf` in its app data, and `hasCustomDefaultContact`): the same card
+  and photo, with its website on `https://example.com`, the reserved example address its e-mail
+  (`leon@example.com`) already uses; any other line that named the upstream would be left out. A
+  card an admin chose under Administration > Groupware > Example content is kept if it does not name
+  the upstream. `--check` only reports. Undo: "reset" on that admin page.
+- *Calendar colours* (`Listener/CalendarColourListener.php`, `Service/CalendarColours.php`): NoTasks
+  (Tasks 0.18.1) makes a person's first task list in `OCA.Theming.color`, which Nextcloud 35 no longer
+  has (it is `primaryColor` now), so the list fell back to the upstream blue `#0082C9`, in NoTasks and
+  in NoCalendar's task lists. Every calendar the dav app makes in an upstream blue (`#0082c9` or
+  `#00679e`, with or without alpha) now gets the site's main colour (cobalt `#2563EB`, alpha kept) right
+  after it is stored, before the answer; NoTasks reads the list back from the server, so it never
+  shows the blue. Any other colour is left alone.
 - *Right to left when signed out* (`Middleware/PageDirectionMiddleware.php`): Nextcloud 35 sets
   `dir="rtl"` only on signed-in pages, so in Arabic (and Persian, Hebrew, Pashto, Uyghur, Urdu) the
   login page, the public share pages and the other guest pages ran left to right. The app gives their
@@ -197,6 +213,11 @@ page that hold the source of its placeholder pictures, upstream copyright line i
   client)"), shown only when an upload breaks off half way.
 - Boards that Deck made before the welcome board was switched off, including the owner's, if any:
   people's data. They can be renamed or deleted by their owners.
+- Example cards that accounts got before the Nourax example contact was in place, and calendars or
+  task lists made in the upstream blue before the app recoloured new ones: people's data, so nothing
+  changes them by itself. `occ nourax_branding:example-contact --existing --all` and
+  `occ nourax_branding:calendar-colours --all` list them; with `--apply` (or `--user UID --apply` for
+  one account) they change them. `scripts/check-branding.sh --server` counts the calendars (INFO).
 - The Administration overview's release name (admin page only; see the admin table below).
 
 **Check:** `scripts/check-branding.sh CREDENTIALS_FILE` (pages, theming, share, dav, errors) and, on the
@@ -240,8 +261,10 @@ theme (the browser's setting, with the account's theme on "System default"), wit
   deleted or expired link shows the same page), a missing page and the help page;
 - once: the language changed through the Personal settings language menu (German), the Appearance
   page's own "Dark theme" (pages must stay dark with a light browser; then back to "System default"),
-  and the first sign-in of a fresh account (its welcome files, its NoCalendar example event and its
-  NoBoard boards: no welcome board) and of the account that shares a file with the main QA account.
+  and the first sign-in of a fresh account (its welcome files, its NoCalendar example event, its
+  NoBoard boards: no welcome board, NoContacts with the example contact it opens and the text of every
+  card, NoTasks with the first task list it makes, then NoCalendar again with that list, and the
+  colour of every calendar) and of the account that shares a file with the main QA account.
 
 The page of a link that does not exist is a made-up link, opened once per language. The server
 counts each one as a guessed link: after that it slows down every link page for this IP for 12 hours
@@ -289,6 +312,9 @@ What the audit found so far, and the fix:
 | Arabic: the WebDAV page (`/remote.php/dav` in a browser) was plain text, left to right | nourax_branding `Dav/BrandedGetPlugin.php` answers a small HTML page with its language and direction |
 | NoNotes showed the upstream phone-app badges (a link with the upstream name) while `scripts/configure.sh` ran: it writes `custom.css` first, and the app steps in `configure.d` add their hiding rules minutes later | `custom.css` holds a copy of those rules (NoNotes badges and marker, the upstream-blue colour swatch in every colour picker, NoGantt's default project colour) |
 | The sparkle icon of Nourax AI (its dialog and page, the Text and NoBoard editors' menus) has a gradient stop in the upstream dark blue, in the light theme; the scanner had counted the `<stop>` as not drawn | `custom.css` draws gradient stops in the upstream blues in Nourax cobalt; `scan-page.js` treats an SVG's gradients and patterns as drawn when the SVG is, and checks SVG colours as computed |
+| A new account's NoContacts opened the example contact "Leon Green" with the website `www.nextcloud.com` (the audit's main account opened its own test contact first, and the fresh pass did not open NoContacts) | the Nourax example contact (`occ nourax_branding:example-contact`); the fresh pass opens NoContacts and reads every card |
+| A new account's first NoTasks list ("Tasks", "المهام") was in the upstream blue `#0082C9`, in NoTasks and in NoCalendar's task lists (the main account already had a list) | new calendars in an upstream blue get the site colour (`CalendarColourListener`); the fresh pass opens NoTasks, then NoCalendar, and reads every calendar's colour |
+| Accounts made through the nourax_api app (admin API, `/v1/provision`, the demo accounts) still got the NoBoard welcome board: user_oidc makes them without `UserCreatedEvent`, and their first sign-in is an app password, which sends no `UserFirstTimeLoggedInEvent` | `NewAccountListener` also sets Deck's `firstRun` to `no` on every sign-in (`PostLoginEvent`) when it is unset |
 
 ## Apps and their upstream branding
 
@@ -328,11 +354,12 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 | App | Version | Upstream branding found | Fix |
 |---|---|---|---|
 | core (the app menu) | 35.0.2 | An "App store" tile at the end of the app menu of people who are not admins. It opens apps.nextcloud.com in a new tab. It is part of Nextcloud itself, not of the `appstore` app, and shows while the core setting `appstore_link_shown` is unset. | `scripts/configure.d/20-branding.sh` sets `appstore_link_shown` to false, which hides only this tile. Admins still install and update apps from Administration > Apps. |
-| `deck` (NoBoard) | 1.19.1 | A welcome board is made on a person's first visit. Its title, "Welcome to Nextcloud Deck!", is a translation, but its card texts come from a fixed file inside the app and name the upstream 15 times. | The text sweep renames the title. The nourax_branding app sets the person's Deck setting `firstRun` to `no` as soon as an account is made (or signs in for the first time), so no welcome board is made. Boards that already exist are people's data and stay. |
+| `deck` (NoBoard) | 1.19.1 | A welcome board is made on a person's first visit. Its title, "Welcome to Nextcloud Deck!", is a translation, but its card texts come from a fixed file inside the app and name the upstream 15 times. | The text sweep renames the title. The nourax_branding app sets the person's Deck setting `firstRun` to `no` when it is unset: as soon as an account is made, and on every sign-in (login form, "Log in with Nourax", app password), which also covers accounts the nourax_api app makes. So no welcome board is made. Boards that already exist are people's data and stay. |
+| `tasks` (NoTasks) | 0.18.1 | A person's first task list is made in the upstream blue `#0082C9` (it reads a theming field Nextcloud 35 no longer has), shown in NoTasks and in NoCalendar. | The nourax_branding app gives every new calendar in an upstream blue the site colour (links and assets). |
 | `federatedfilesharing` | 2.0.0 | Personal settings > Sharing: the Federated Cloud ID, "Share with me via Nextcloud" and "share it" buttons pointing at nextcloud.com/sharing; "Add to your Nextcloud" on public share pages. | Always on. Sharing with other servers is off while privacy between organisations is on (`60-org-privacy.sh`), which hides all of it. When it is on: the texts are swept, "Add to your …" uses the product name, and the "share it" buttons point at our help page (links and assets). |
 | `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice with social links, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets: our notice in place of the developer notice, `/settings/help` goes to our help page, the PDF answers 404, help links open our help page. |
 | `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; "Adjust the Nextcloud theme"; the upstream blue in the Assistant gradient; app summaries such as "A Calendar app for Nextcloud" in the app manifests. | Always on. Links and assets (CSS, the two backgrounds left out, blue and manifests fixed where they are made), text sweep. |
-| `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; some error texts. | Always on. Links and assets (our own WebDAV page text), text sweep. |
+| `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; the example contact's website (`www.nextcloud.com`); some error texts. | Always on. Links and assets (our own WebDAV page text, the Nourax example contact), text sweep. |
 | `circles` (Teams) | 35.0.0 | 8 texts, for example "Nextcloud Account". | Text sweep. |
 | `calendar` (NoCalendar) | 6.6.3 | 4 texts, mostly the app description. | Text sweep. |
 | `contacts` (NoContacts) | 8.9.2 | 4 texts, mostly the app description. | Text sweep. |

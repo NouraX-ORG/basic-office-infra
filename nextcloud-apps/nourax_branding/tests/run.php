@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /**
- * Tests of the text sweep's rules, of the language list fix and of the upstream colour, background
- * and address rules, with the real sweep/rules.json and sweep/en-overrides.json. Plain PHP, no test framework and no Nextcloud needed:
+ * Tests of the text sweep's rules, of the language list fix, of the upstream colour, background
+ * and address rules and of the calendar colour and example contact rules, with the real
+ * sweep/rules.json and sweep/en-overrides.json. Plain PHP, no test framework and no Nextcloud needed:
  *   docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php
  * Prints one line per check and exits 1 when any check fails.
  *
@@ -331,6 +332,29 @@ $user = '<html lang="ar"><body dir="rtl" id="body-user">x</body></html>';
 same(UpstreamAssets::pageDirection($user, $dirOf), $user, 'page direction: a body with its own dir is left alone');
 same(UpstreamAssets::pageDirection('{"lang":"ar"}', $dirOf), '{"lang":"ar"}', 'page direction: not a page, left alone');
 same(UpstreamAssets::pageDirection('<html lang="ur_PK"><body>a<body>b</body></html>', $dirOf), '<html lang="ur_PK"><body dir="rtl">a<body>b</body></html>', 'page direction: only the first body tag');
+
+// Calendar colours (Service\CalendarColours): only a whole upstream blue changes.
+same(UpstreamAssets::recolourValue('#0082C9'), '#2563EB', 'calendar colour: NoTasks\' first list #0082C9 becomes cobalt');
+same(UpstreamAssets::recolourValue('#0082c9ff', '#1D4ED8'), '#1D4ED8ff', 'calendar colour: alpha kept, the given colour used');
+same(UpstreamAssets::recolourValue('#00679E'), '#2563EB', 'calendar colour: the darker upstream blue too');
+same(UpstreamAssets::recolourValue(' 0082c9 '), '#2563EB', 'calendar colour: without the # and with spaces');
+same(UpstreamAssets::recolourValue('#0082c91'), null, 'calendar colour: a longer value is not the blue');
+same(UpstreamAssets::recolourValue('#E9D859'), null, 'calendar colour: another colour stays');
+same(UpstreamAssets::recolourValue(''), null, 'calendar colour: no colour stays');
+
+// The example contact (Service\ExampleContact), on the upstream card's shape: folded photo, two empty
+// photos, the website without a scheme.
+$card = "BEGIN:VCARD\nVERSION:3.0\nUID:cffff367\nFN:Leon Green\nEMAIL;TYPE=HOME:leon@example.com\nPHOTO;ENCODING=b;TYPE=PNG:iVBORw0K\n nextcloudAAA\n BBB\nPHOTO;VALUE=URI:\nPHOTO;VALUE=URI:\nTITLE:Manager\nORG:Company\nURL;VALUE=URI:www.nextcloud.com\nREV;VALUE=DATE-AND-OR-TIME:20250108T160752Z\nEND:VCARD\n";
+$made = UpstreamAssets::exampleCard($card, 'https://example.com');
+same($made['card'], str_replace('URL;VALUE=URI:www.nextcloud.com', 'URL;VALUE=URI:https://example.com', $card), 'example contact: only the website changes; the photo and the rest stay byte for byte');
+same($made['changed'], ['URL'], 'example contact: the change is reported');
+same(UpstreamAssets::exampleCard($made['card'], 'https://example.com')['changed'], [], 'example contact: a second run changes nothing');
+$crlf = "BEGIN:VCARD\r\nFN:Ann\r\nitem1.URL;TYPE=work:https://nextcloud.com/\r\nNOTE:Made with Next\r\n cloud\r\nORG:Nextcloud GmbH\r\nEND:VCARD\r\n";
+same(UpstreamAssets::exampleCard($crlf, 'https://example.com'),
+	['card' => "BEGIN:VCARD\r\nFN:Ann\r\nitem1.URL;TYPE=work:https://example.com\r\nEND:VCARD\r\n", 'changed' => ['URL', 'NOTE left out', 'ORG left out']],
+	'example contact: a grouped website, a folded note and an organisation that name the upstream; line ends kept');
+$own = "BEGIN:VCARD\nFN:Ann\nURL:https://ann.example.org\nEND:VCARD\n";
+same(UpstreamAssets::exampleCard($own, 'https://example.com'), ['card' => $own, 'changed' => []], 'example contact: a card without the upstream stays as it is');
 
 echo "\n$passed passed, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

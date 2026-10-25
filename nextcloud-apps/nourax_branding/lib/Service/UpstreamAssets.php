@@ -9,8 +9,9 @@ declare(strict_types=1);
 namespace OCA\NouraxBranding\Service;
 
 /**
- * Small rules for upstream colours, pictures and links, shared by Middleware\UpstreamPagesMiddleware.
- * It uses no Nextcloud class, so tests/run.php loads it on its own.
+ * Small rules for upstream colours, pictures and links, shared by Middleware\UpstreamPagesMiddleware,
+ * Service\CalendarColours and Service\ExampleContact. It uses no Nextcloud class, so tests/run.php
+ * loads it on its own.
  */
 final class UpstreamAssets {
 	/** The upstream blues (docs/branding.md) and the Nourax cobalt that takes their place. */
@@ -80,5 +81,70 @@ final class UpstreamAssets {
 		}
 		$path = strtolower($parts['path'] ?? '');
 		return $host === 'github.com' && ($path === '/nextcloud' || str_starts_with($path, '/nextcloud/'));
+	}
+
+	/**
+	 * A colour value that is, as a whole, one of the upstream blues (#0082C9, #00679e, any case, with
+	 * or without the #, with or without an alpha), the way calendar programs store a calendar's colour:
+	 * the same value in $with (a #rrggbb colour, the Nourax cobalt by default), alpha kept. Anything
+	 * else, a longer colour too, gives null.
+	 */
+	public static function recolourValue(string $colour, string $with = self::COBALT): ?string {
+		$pattern = '~^\s*#?(' . implode('|', self::UPSTREAM_BLUES) . ')([0-9a-f]{2})?\s*$~i';
+		if (preg_match($pattern, $colour, $m) !== 1) {
+			return null;
+		}
+		return $with . ($m[2] ?? '');
+	}
+
+	/**
+	 * The upstream example contact (the dav app's exampleContact.vcf, "Leon Green") made Nourax's: a
+	 * website on an upstream address becomes $url, any other property that names the upstream is left
+	 * out, and everything else, the photo too, stays as it is, byte for byte. It works on the text, so
+	 * it needs no vCard library. Pictures, sounds and keys are never looked into.
+	 *
+	 * @return array{card: string, changed: list<string>} the card, and what changed ("URL", "ORG left out")
+	 */
+	public static function exampleCard(string $vcf, string $url): array {
+		$eol = str_contains($vcf, "\r\n") ? "\r\n" : "\n";
+		$groups = [];
+		foreach (preg_split('/\r\n|\n|\r/', $vcf) ?: [] as $line) {
+			// A line that starts with a space or a tab goes on with the line before it (RFC 6350 3.2).
+			if ($groups !== [] && $line !== '' && ($line[0] === ' ' || $line[0] === "\t")) {
+				$groups[count($groups) - 1][] = $line;
+			} else {
+				$groups[] = [$line];
+			}
+		}
+		$out = [];
+		$changed = [];
+		foreach ($groups as $lines) {
+			$logical = $lines[0];
+			foreach (array_slice($lines, 1) as $more) {
+				$logical .= substr($more, 1);
+			}
+			$colon = strpos($logical, ':');
+			$head = $colon === false ? $logical : substr($logical, 0, $colon);
+			$value = $colon === false ? '' : substr($logical, $colon + 1);
+			// "item1.URL;TYPE=work" is the property URL.
+			$name = strtoupper((string)preg_replace('/^[^.;]*\./', '', (string)strtok($head, ';')));
+			$binary = in_array($name, ['PHOTO', 'LOGO', 'SOUND', 'KEY'], true) || stripos($head, 'ENCODING=B') !== false;
+			if (!$binary && $name === 'URL' && self::namesUpstream($value)) {
+				$out[] = $head . ':' . $url;
+				$changed[] = 'URL';
+				continue;
+			}
+			if (!$binary && self::namesUpstream($logical)) {
+				$changed[] = $name . ' left out';
+				continue;
+			}
+			array_push($out, ...$lines);
+		}
+		return ['card' => implode($eol, $out), 'changed' => $changed];
+	}
+
+	/** The upstream's name or one of its addresses in a line of text. */
+	private static function namesUpstream(string $s): bool {
+		return preg_match('~next\s*-?\s*cloud~i', $s) === 1;
 	}
 }

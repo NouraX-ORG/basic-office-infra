@@ -2,7 +2,8 @@
 # app menu of every signed-in person, right after NoBoard, and opens it in a new tab.
 # Then it switches off the leftover upstream apps that show the upstream name, hides the App store
 # tile of the app menu, hides the upstream's app download links, sends help links to our own help
-# page, and runs the text sweep of every translation (see docs/branding.md).
+# page, puts our example contact in place for new accounts, counts the calendars still in the upstream
+# blue, and runs the text sweep of every translation (see docs/branding.md).
 # Sourced by scripts/configure.sh with its helpers (occ, dc, log, secret_path, have_secret).
 # To run only this step on the server:
 #   sudo bash -c '. scripts/lib.sh; load_env; . scripts/configure.d/20-branding.sh'
@@ -68,6 +69,26 @@ unset branding_key
 # Undo: occ config:app:delete theming docBaseUrl
 log "branding: help links open https://${DRIVE_HOST}/apps/nourax_branding/help"
 occ config:app:set theming docBaseUrl --value="https://${DRIVE_HOST}/apps/nourax_branding/help" >/dev/null
+
+# The example contact every new account finds (and NoContacts opens) on its first visit: the dav
+# app's own card, "Leon Green", has the upstream's website. This puts the Nourax copy in place as the
+# dav app's default contact: the same card with its website on example.com, the reserved example
+# address its e-mail already uses. A card an admin chose (Administration > Groupware > Example
+# content) is kept if it does not name the upstream. Cards that accounts got before are people's data
+# and stay; to list them: occ nourax_branding:example-contact --existing --all (--apply changes them).
+# Undo: Administration > Groupware > Example content > reset to the default contact.
+log "branding: the Nourax example contact for new accounts (NoContacts)"
+if ! occ nourax_branding:example-contact; then
+	log "WARNING: the example contact was not put in place - run: occ nourax_branding:example-contact"
+fi
+
+# New calendars and task lists in the upstream blue get the site's colour from the nourax_branding app
+# (NoTasks makes a person's first list in that blue). Older ones are people's data; this only counts
+# them. To change them: occ nourax_branding:calendar-colours --all --apply (or --user UID --apply).
+log "branding: calendars and task lists in the upstream blue"
+if ! occ nourax_branding:calendar-colours --all | tail -n 1; then
+	log "WARNING: could not list the calendars in the upstream blue"
+fi
 
 # Text sweep: the upstream name in the translations of core and every enabled app, in every language
 # (scripts/branding-sweep.sh). Apps that later steps switch on are swept by the nourax_branding app as

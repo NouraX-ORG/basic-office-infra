@@ -16,7 +16,8 @@
 #   share    a test folder, file and four public links of the QA user, opened signed out
 #   dav      the text shown when /remote.php/dav is opened in a browser
 #   errors   404, 403, a missing path in a link, unsupported browser, status.php
-#   config   (--server) theme, customclient_* and the apps that must be off
+#   config   (--server) theme, customclient_*, the apps that must be off, the example contact new
+#            accounts get; it also counts people's calendars still in the upstream blue (INFO)
 #   mail     (--server) a sample e-mail rendered on the server, never sent
 #   css      every other stylesheet the pages link, for hard-coded blues
 # --server (sudo, on the server, read only) adds config and mail, renders the page of a deleted or
@@ -1219,7 +1220,50 @@ if ($in['config']) {
 			}
 		}
 	}
-	out(['kind' => 'config', 'customclient' => $cc, 'defaults' => $eff, 'enabled' => $enabled]);
+	// The example contact a new account gets: the dav app copies its app data file
+	// defaultContact/defaultContact.vcf, or its own card while that file is missing. Sent without
+	// pictures (base64 that could look like anything).
+	$contact = ['enabled' => true, 'source' => '', 'text' => '', 'error' => null];
+	try {
+		$contact['enabled'] = \OCP\Server::get(\OCP\IAppConfig::class)->getValueBool('dav', 'enableDefaultContact', true);
+		$raw = null;
+		try {
+			$folder = \OCP\Server::get(\OCP\Files\AppData\IAppDataFactory::class)->get('dav')->getFolder('defaultContact');
+			if ($folder->fileExists('defaultContact.vcf')) {
+				$raw = $folder->getFile('defaultContact.vcf')->getContent();
+				$contact['source'] = 'dav app data defaultContact/defaultContact.vcf';
+			}
+		} catch (\OCP\Files\NotFoundException $e) {
+		}
+		if ($raw === null) {
+			$raw = (string)file_get_contents($apps->getAppPath('dav') . '/lib/ExampleContentFiles/exampleContact.vcf');
+			$contact['source'] = "the dav app's own exampleContact.vcf";
+		}
+		$lines = [];
+		foreach (preg_split('/\r?\n(?![ \t])/', $raw) ?: [] as $l) {
+			$l = (string)preg_replace('/\r?\n[ \t]/', '', $l);
+			if (preg_match('/^(?:[^.;:]*\.)?(?:PHOTO|LOGO|SOUND|KEY)[;:]/i', $l) !== 1 && stripos($l, 'ENCODING=b') === false) {
+				$lines[] = $l;
+			}
+		}
+		$contact['text'] = implode("\n", $lines);
+	} catch (\Throwable $e) {
+		$contact['error'] = get_class($e) . ': ' . $e->getMessage();
+	}
+	// People's calendars and task lists whose colour is an upstream blue (made before the
+	// nourax_branding app recoloured new ones; people's data, so only counted).
+	$blueCalendars = [];
+	$qb = \OCP\Server::get(\OCP\IDBConnection::class)->getQueryBuilder();
+	$res = $qb->select('principaluri', 'uri', 'calendarcolor')->from('calendars')
+		->where($qb->expr()->like('principaluri', $qb->createNamedParameter('principals/users/%')))->executeQuery();
+	while ($row = $res->fetch()) {
+		if (preg_match('/^\s*#?(?:0082c9|00679e)(?:[0-9a-f]{2})?\s*$/i', (string)$row['calendarcolor']) === 1) {
+			$blueCalendars[] = substr((string)$row['principaluri'], strlen('principals/users/')) . '/' . $row['uri'] . ' ' . $row['calendarcolor'];
+		}
+	}
+	$res->closeCursor();
+	out(['kind' => 'config', 'customclient' => $cc, 'defaults' => $eff, 'enabled' => $enabled,
+		'contact' => $contact, 'blue_calendars' => $blueCalendars]);
 }
 
 if ($in['l10n']) {
@@ -1472,6 +1516,19 @@ def check_config(o, info):
 	for app, why in RULES.get('apps_off', {}).items():
 		if app in o['enabled']:
 			rep.fail(area, 'apps', app, 'is enabled; it must be off (%s)' % why)
+	# The card NoContacts opens on a new account's first visit.
+	c = o.get('contact') or {}
+	where = 'example contact (%s)' % (c.get('source') or 'unknown')
+	if c.get('error'):
+		rep.fail(area, 'dav', where, 'could not be read: %s' % c['error'])
+	elif c.get('enabled', True):
+		if not scan_names(area, 'dav', where, c.get('text', '')):
+			for m in URL_IN_TEXT.finditer(c.get('text', '')):
+				scan_url(area, 'dav', where, m.group(0), BASE + '/')
+	blue = o.get('blue_calendars') or []
+	if blue:
+		rep.info('%d calendar(s) of people still in the upstream blue (their data, so not changed): %s; '
+			'occ nourax_branding:calendar-colours --all --apply changes them' % (len(blue), ', '.join(blue[:10])))
 
 
 def check_sweep_state(o, info):

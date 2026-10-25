@@ -411,6 +411,7 @@ const toRegExp = (re, extra) => {
 	return new RegExp(source, flags);
 };
 const NAME_RX = (RULES.name_patterns || []).map((p) => [p.id, toRegExp(p.re, 'g')]);
+const BLUE_RX = (RULES.blue_patterns || []).map((p) => toRegExp(p.re));
 function nameHits(s) {
 	const out = [];
 	for (const [id, rx] of NAME_RX) {
@@ -875,7 +876,8 @@ async function themePass(browser, acc, lang) {
 	}
 }
 
-// A person's first sign-in (calendar example event, no NoBoard welcome board), and the share receiver.
+// A person's first sign-in (calendar example event, no NoBoard welcome board, the example contact,
+// the first task list and its colour in NoTasks and NoCalendar), and the share receiver.
 async function freshPass(browser, acc, lang, label) {
 	const cx = { pass: label, user: acc.login, lang };
 	const ctx = await openContext(browser, cx);
@@ -931,6 +933,50 @@ async function freshPass(browser, acc, lang, label) {
 		NOTES.push({ ...at(cx), note: 'NoBoard boards', boards });
 		log(`  ${acc.login}: NoBoard boards: ${boards.join(' | ') || '(none)'}`);
 		for (const b of boards) for (const h of nameHits(b)) finding({ ...cx, page: label + '-deck-data' }, { kind: 'name', where: 'board title', snippet: h });
+		// NoContacts opens a new account's example contact by itself; its fields are read too.
+		await visit(page, cx, { id: label + '-contacts', path: '/apps/contacts/', wait: 4000 });
+		const cards = await page.evaluate(async (uid) => {
+			const token = (window.OC && window.OC.requestToken) || document.head.getAttribute('data-requesttoken');
+			const home = `/remote.php/dav/addressbooks/users/${encodeURIComponent(uid)}/`;
+			const list = await fetch(home, { method: 'PROPFIND', headers: { Depth: '1', requesttoken: token } }).then((r) => r.text());
+			const books = [...list.matchAll(/<d:href>([^<]+)<\/d:href>/g)].map((m) => m[1]).filter((h) => h !== home);
+			const out = [];
+			for (const book of books) {
+				const body = '<?xml version="1.0"?><c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><c:address-data/></d:prop></c:addressbook-query>';
+				const t = await fetch(book, { method: 'REPORT', headers: { Depth: '1', 'Content-Type': 'application/xml', requesttoken: token }, body }).then((r) => r.text());
+				for (const m of t.matchAll(/<card:address-data[^>]*>([\s\S]*?)<\/card:address-data>/g)) out.push({ book, vcf: m[1] });
+			}
+			return out;
+		}, acc.login);
+		const names = [];
+		for (const card of cards) {
+			const vcf = card.vcf.replace(/&#13;|\r/g, '').replace(/\n[ \t]/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+			// Pictures are base64 and never shown as text.
+			const shown = vcf.split('\n').filter((l) => !/^(?:[^.;:]*\.)?(?:PHOTO|LOGO|SOUND|KEY)[;:]/i.test(l)).join('\n');
+			names.push((shown.match(/^FN[^:]*:(.*)$/m) || [])[1] || '?');
+			for (const h of nameHits(shown)) finding({ ...cx, page: label + '-contacts-data', theme: '' }, { kind: 'name', where: 'contact in ' + card.book, snippet: h });
+		}
+		NOTES.push({ ...at(cx), note: 'NoContacts cards', cards: names });
+		log(`  ${acc.login}: NoContacts cards: ${names.join(' | ') || '(none)'}`);
+		// NoTasks makes a new account's first task list; NoCalendar then shows it in its task lists.
+		await visit(page, cx, { id: label + '-tasks', path: '/apps/tasks/', wait: 4000 });
+		await visit(page, cx, { id: label + '-calendar-tasks', path: '/apps/calendar/', wait: 4000 });
+		const colours = await page.evaluate(async (uid) => {
+			const token = (window.OC && window.OC.requestToken) || document.head.getAttribute('data-requesttoken');
+			const home = `/remote.php/dav/calendars/${encodeURIComponent(uid)}/`;
+			const body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:displayname/><a:calendar-color/></d:prop></d:propfind>';
+			const t = await fetch(home, { method: 'PROPFIND', headers: { Depth: '1', 'Content-Type': 'application/xml', requesttoken: token }, body }).then((r) => r.text());
+			return [...t.matchAll(/<d:response>([\s\S]*?)<\/d:response>/g)].map((m) => ({
+				href: ((m[1].match(/<d:href>([^<]*)<\/d:href>/) || [])[1] || ''),
+				name: ((m[1].match(/<d:displayname>([^<]*)<\/d:displayname>/) || [])[1] || ''),
+				colour: ((m[1].match(/<x\d*:calendar-color[^>]*>([^<]*)</) || m[1].match(/calendar-color[^>]*>([^<]*)</) || [])[1] || ''),
+			})).filter((c) => c.colour);
+		}, acc.login);
+		NOTES.push({ ...at(cx), note: 'calendar colours', calendars: colours });
+		log(`  ${acc.login}: calendar colours: ${colours.map((c) => `${c.name || c.href} ${c.colour}`).join(' | ') || '(none)'}`);
+		for (const c of colours) {
+			if (BLUE_RX.some((rx) => rx.test(c.colour))) finding({ ...cx, page: label + '-calendar-colours', theme: '' }, { kind: 'colour', where: `colour of calendar ${c.name || c.href}`, snippet: c.colour });
+		}
 	} catch (e) {
 		problem({ ...cx, page: label }, label, e);
 	} finally {

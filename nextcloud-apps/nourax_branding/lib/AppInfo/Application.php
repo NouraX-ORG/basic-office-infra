@@ -8,8 +8,10 @@ declare(strict_types=1);
 
 namespace OCA\NouraxBranding\AppInfo;
 
+use OCA\DAV\Events\CalendarCreatedEvent;
 use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\NouraxBranding\Listener\AppChangeListener;
+use OCA\NouraxBranding\Listener\CalendarColourListener;
 use OCA\NouraxBranding\Listener\LanguageListListener;
 use OCA\NouraxBranding\Listener\NavigationListener;
 use OCA\NouraxBranding\Listener\NewAccountListener;
@@ -26,6 +28,7 @@ use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\Http\Events\BeforeTemplateRenderedEvent;
 use OCP\Navigation\Events\LoadAdditionalEntriesEvent;
+use OCP\User\Events\PostLoginEvent;
 use OCP\User\Events\UserCreatedEvent;
 use OCP\User\Events\UserFirstTimeLoggedInEvent;
 
@@ -51,9 +54,12 @@ class Application extends App implements IBootstrap {
 		$context->registerMiddleware(PageDirectionMiddleware::class, true);
 		// The text people see when they open the WebDAV address in a web browser.
 		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginListener::class);
-		// No upstream welcome board in NoBoard for new accounts.
+		// No upstream welcome board in NoBoard for new accounts, however they were made.
 		$context->registerEventListener(UserCreatedEvent::class, NewAccountListener::class);
 		$context->registerEventListener(UserFirstTimeLoggedInEvent::class, NewAccountListener::class);
+		$context->registerEventListener(PostLoginEvent::class, NewAccountListener::class);
+		// New calendars and task lists in the upstream blue (NoTasks' first list) get the site colour.
+		$context->registerEventListener(CalendarCreatedEvent::class, CalendarColourListener::class);
 		// Text sweep: an app that is switched on or updated gets its translations swept at once
 		// (Service\SweepRunner; the RefreshSweep background job catches anything this misses).
 		$context->registerEventListener(AppEnableEvent::class, AppChangeListener::class);
