@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  - SPDX-License-Identifier: AGPL-3.0-or-later
+  -
+  - Nourax Workspace branding. The app id and namespace leave out the upstream name on purpose
+  - (docs/branding.md). Event listeners need no version bump; a new background job or database
+  - table does, followed by `occ upgrade`.
+-->
+<info>
+	<id>nourax_branding</id>
+	<name>Nourax Branding</name>
+	<summary>The Nourax Workspace look and wording, and NoMail in the app menu</summary>
+	<description>Adds NoMail to the app menu of every signed-in person; it opens Nourax mail in a new tab. It also holds the rules of the Nourax Workspace branding sweep.</description>
+	<version>1.0.0</version>
+	<licence>agpl</licence>
+	<author>Nourax</author>
+	<namespace>NouraxBranding</namespace>
+	<category>customization</category>
+	<dependencies>
+		<php min-version="8.3"/>
+		<nextcloud min-version="35" max-version="35"/>
+	</dependencies>
+</info>
