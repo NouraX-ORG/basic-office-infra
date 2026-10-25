@@ -39,12 +39,28 @@ The address books, calendars and boards belong to the hidden service account `no
 `ORG` (the organisation's name), `UID:nourax-<uid>`, file `<uid>.vcf`. They are rebuilt on every
 call and written only when they differ. Deleting only ever touches cards this API made.
 
-**Read-only means nothing is written.** When a member tries to add or change a card in the
-directory or a team address book, the server answers **404**, not 403: its DAV permission check
-(`DavAclPlugin` in the dav app) gives 403 only to the book's owner and 404 to everyone else, so it
-does not show which books exist that one may not change. The card is not written: a new card is
-not there afterwards (GET 404) and an existing card is unchanged (tested in
-`tests/admin-people.sh`).
+**Read-only: a write gets 403 and nothing is written.** When a member tries to change the
+directory or a team address book through `/remote.php/dav` (NoContacts and every sync app use
+it), the answer is **403** with the message "This address book is read-only. Your organisation
+keeps it up to date." The book stays as it was (tested in `tests/admin-people.sh` and
+`tests/admin-api.sh`).
+
+- Refused: adding, changing or deleting a card (PUT, DELETE), changing a card's or the book's
+  properties (PROPPATCH), moving a card out (MOVE), copying a card in (COPY to the book),
+  deleting the book, and every other write method.
+- Allowed: reading (GET, PROPFIND, REPORT), and copying a card out to one's own address book.
+- How: the server's own permission check (`DavAclPlugin` in the dav app) refuses these writes
+  too, but answers 404 "Addressbook ... could not be found" to anyone but the book's owner, which
+  sync apps read as "the book is gone". So `nourax_api` adds a small DAV plugin
+  (`lib/Dav/ReadOnlyBooksPlugin.php`, through the dav app's `SabrePluginAddEvent`) that answers
+  403 first. It looks only at books the service account owns, and only at people who may read
+  them; anyone else still gets the server's 404, so no book is revealed to people outside the
+  team.
+- Members could not change their own view settings of these books before either (a PROPPATCH
+  needs the write-properties right, which a read-only share does not give), so nothing they
+  could do is lost.
+- The old address `/remote.php/carddav` is not covered by the plugin; there the server's own
+  404 still refuses every write.
 
 **Team folder names:** the characters `/ \ : * ? " < > |` become spaces, at most 100 characters.
 Two teams of the **same** organisation with the same name get "Sales" and "Sales 2"; teams of
@@ -256,13 +272,19 @@ group), `disable`, `directories`. `disable`:
   clients read 503 as a server fault and retry, but read 401 as "this login is gone": NoMail then
   asks `/v1/provision` for a new one and gets 409 `account_disabled`.) This runs on every
   `"active": false` call, so a second call also revokes a token made in between;
-- public links the person made stop working (404);
+- public links the person made stop working (404). Links on **team folder** files were already
+  deleted by the `leave` step. Links on the person's **own** files are only hidden while the
+  account is disabled, not deleted: if the person comes back (`"active": true`), those links work
+  again at once, with the same addresses. Links that should not come back are removed in NoDrive's
+  sharing panel once the person is back (by the person, or by an admin). When the account is
+  deleted (scheduled delete on), its links go with it;
 - keeps the account and its files for **30 days**: `disabled_at` and `delete_after` are stored
   and shown in the step and in the status.
 
 `"active": true` later (a higher version) enables the account again and clears `delete_after`.
 The old app passwords stay revoked: NoMail's next `/v1/provision` gives a new one, and the
-person signs in again in their sync and mobile apps.
+person signs in again in their sync and mobile apps. Public links on their own files work again
+(see above); team folder links do not, as the `leave` step deleted them.
 
 **Deleting is switched off.** The daily job `LeaverDeletion` deletes nothing until the owner says
 yes and `occ config:app:set nourax_api scheduled_delete --value=on` is run. While it is `off` it

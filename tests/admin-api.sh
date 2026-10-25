@@ -236,11 +236,16 @@ else
 		"$(grep -q '^VERSION:4.0' "$T_OUT/vcf" && echo yes || echo no) $(grep -q "^UID:nourax-$QA1" "$T_OUT/vcf" && echo yes || echo no)"
 	check "the card names the organisation" yes "$(grep -q '^ORG:QA t6 Org A' "$T_OUT/vcf" && echo yes || echo no)"
 	printf 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:qa-t6-write-test\r\nFN:Write test\r\nEND:VCARD\r\n' > "$T_OUT/new.vcf"
-	# A read-only shared book is not offered for writing at all (404), and nothing is stored.
+	# The shared books are read-only for members: a write gets 403 and nothing is stored.
 	code="$(curl -sS --netrc-file "$NETRC1" -X PUT -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf" \
 		-o /dev/null -w '%{http_code}' "$book/qa-t6-write-test.vcf")"
-	check "member cannot write to the team address book (403 or 404)" yes "$(case "$code" in 403 | 404) echo yes ;; *) echo "no ($code)" ;; esac)"
+	check "member writes to the team address book -> 403" 403 "$code"
 	check "the card was not stored -> 404" 404 "$(curl -sS --netrc-file "$NETRC1" -o /dev/null -w '%{http_code}' "$book/qa-t6-write-test.vcf")"
+	directory="$DAV_BASE/addressbooks/users/$QA1/org-${ORG_A}_shared_by_nourax-teams"
+	code="$(curl -sS --netrc-file "$NETRC1" -X PUT -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf" \
+		-o /dev/null -w '%{http_code}' "$directory/qa-t6-write-test.vcf")"
+	check "member writes to the organisation directory -> 403" 403 "$code"
+	check "the card was not stored there either -> 404" 404 "$(curl -sS --netrc-file "$NETRC1" -o /dev/null -w '%{http_code}' "$directory/qa-t6-write-test.vcf")"
 	code="$(curl -sS --netrc-file "$NETRC1" -o /dev/null -w '%{http_code}' \
 		"$DAV_BASE/addressbooks/users/$QA1/org-${ORG_A}_shared_by_nourax-teams/$QA1.vcf")"
 	check "member reads the organisation directory -> 200" 200 "$code"

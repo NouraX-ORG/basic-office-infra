@@ -8,7 +8,9 @@ declare(strict_types=1);
 
 namespace OCA\NouraxApi\AppInfo;
 
+use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\NouraxApi\Listener\GroupDriftListener;
+use OCA\NouraxApi\Listener\SabrePluginAddListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -30,6 +32,8 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(UserAddedEvent::class, GroupDriftListener::class);
 		$context->registerEventListener(UserRemovedEvent::class, GroupDriftListener::class);
 		$context->registerEventListener(GroupDeletedEvent::class, GroupDriftListener::class);
+		// The directories and team address books are read-only for members: a write gets 403.
+		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginAddListener::class);
 	}
 
 	public function boot(IBootContext $context): void {

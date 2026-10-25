@@ -10,7 +10,8 @@
 #   organisation and comes back) and qa-t6-4 (added to A1 with occ: the drift the API undoes).
 # Logins are the people's newest NoMail app passwords from /v1/provision, in /etc/nourax/qa.
 # It takes the server-change lock for its whole run (a few minutes), because it changes accounts
-# and groups. It deletes only what it made itself: QA shares and locks, through the leave.
+# and groups. It deletes only what it made itself: QA shares and locks, through the leave, and the
+# public link it made on qa-t6-3's own file, once it has checked that the link works again.
 # Safe to run again: versions are read first and counted on from there.
 # Keys and passwords are never printed. Exit 0 when every check passes.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -191,19 +192,37 @@ BOOKS="$DAV_BASE/addressbooks/users/$QA1"
 as "$NETRC1" PROPFIND "$BOOKS/" -H 'Depth: 1' >/dev/null
 check "$QA1's NoContacts lists the directory and the team book" "yes yes" \
 	"$(grep -q "org-${ORG_A}_shared_by_nourax-teams/<" "$T_OUT/dav" && echo yes || echo no) $(grep -q "team-${TEAM_A1}_shared_by_nourax-teams/<" "$T_OUT/dav" && echo yes || echo no)"
-# The team book is read-only for members. The server's DAV permission check (DavAclPlugin) answers
-# a write by someone who does not own the book with 404, not 403, so it does not reveal books one
-# may not change; only the owner (the service account) would get 403. What counts is that nothing
-# is written: a new card is not there afterwards and an existing card is not changed.
+# The team book is read-only for members: every write gets 403 (nourax_api's ReadOnlyBooksPlugin;
+# the server alone answers 404) and nothing is written.
 printf 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:qa-t6-write-test\r\nFN:Write test\r\nEND:VCARD\r\n' > "$T_OUT/new.vcf"
 QA1_TEAM_BOOK="$BOOKS/team-${TEAM_A1}_shared_by_nourax-teams"
-check "$QA1 cannot add a card to the team book (403 or 404)" yes \
-	"$(case "$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")" in 403 | 404) echo yes ;; *) echo no ;; esac)"
+read_only_answer() { grep -q 'This address book is read-only' "$T_OUT/dav" && echo yes || echo no; }
+check "$QA1 adds a card to the team book -> 403" 403 \
+	"$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")"
+check "  the answer says the book is read-only" yes "$(read_only_answer)"
 check "  and the card was not written (GET -> 404)" 404 "$(as "$NETRC1" GET "$QA1_TEAM_BOOK/qa-t6-write-test.vcf")"
-check "$QA1 cannot overwrite a card of the team book (403 or 404)" yes \
-	"$(case "$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/$QA1.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")" in 403 | 404) echo yes ;; *) echo no ;; esac)"
+check "$QA1 overwrites a card of the team book -> 403" 403 \
+	"$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/$QA1.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")"
 check "  and the card is unchanged" "200 0" \
 	"$(as "$NETRC1" GET "$QA1_TEAM_BOOK/$QA1.vcf") $(grep -c 'Write test' "$T_OUT/dav")"
+check "$QA1 deletes a card of the team book -> 403" 403 "$(as "$NETRC1" DELETE "$QA1_TEAM_BOOK/$QA2.vcf")"
+check "$QA1 changes a card's properties (PROPPATCH) -> 403" 403 \
+	"$(as "$NETRC1" PROPPATCH "$QA1_TEAM_BOOK/$QA2.vcf" -H 'Content-Type: application/xml; charset=utf-8' \
+		--data-binary '<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:displayname>Write test</d:displayname></d:prop></d:set></d:propertyupdate>')"
+check "$QA1 renames the team book (PROPPATCH) -> 403" 403 \
+	"$(as "$NETRC1" PROPPATCH "$QA1_TEAM_BOOK/" -H 'Content-Type: application/xml; charset=utf-8' \
+		--data-binary '<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:displayname>Write test</d:displayname></d:prop></d:set></d:propertyupdate>')"
+check "$QA1 moves a card out of the team book -> 403" 403 \
+	"$(as "$NETRC1" MOVE "$QA1_TEAM_BOOK/$QA2.vcf" -H "Destination: $BOOKS/contacts/qa-t6-move-test.vcf")"
+check "$QA1 copies a card into the team book -> 403" 403 \
+	"$(as "$NETRC1" COPY "$QA1_TEAM_BOOK/$QA2.vcf" -H "Destination: $QA1_TEAM_BOOK/qa-t6-copy-test.vcf")"
+check "$QA1 deletes the team book -> 403" 403 "$(as "$NETRC1" DELETE "$QA1_TEAM_BOOK/")"
+check "the team book still holds the cards of $QA1 and $QA2, unchanged" "$QA1.vcf $QA2.vcf" "$(cards_of "$NETRC1" "$QA1_TEAM_BOOK")"
+check "  and keeps its name" yes \
+	"$(as "$NETRC1" PROPFIND "$QA1_TEAM_BOOK/" -H 'Depth: 0' >/dev/null; grep -q "Team: $A1_NAME<" "$T_OUT/dav" && echo yes || echo no)"
+# Someone who cannot see the book still gets the server's own 404, so no book is revealed.
+check "$QA3 (org B) writes into team A1's book -> 404" 404 \
+	"$(as "$NETRC3" PUT "$DAV_BASE/addressbooks/users/nourax-teams/team-${TEAM_A1}/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")"
 admin_api GET "/v1/admin/orgs/$ORG_A/teams/$TEAM_A1" >/dev/null
 BOARD_A1="$(jq -r .team.board.id "$T_OUT/body")"
 check "the team's leads: folder and board" "$QA2 $QA2" "$(jq -r '.team | "\(.folder.leads | join(",")) \(.board.leads | join(","))"' "$T_OUT/body")"
@@ -260,6 +279,8 @@ check "right after: the board is not listed for $QA1" no "$(board_listed "$NETRC
 check "right after: the board itself -> 403 or 404" yes \
 	"$(case "$(as "$NETRC1" GET "$DECK/boards/$BOARD_A1" -H 'OCS-APIRequest: true' -H 'Accept: application/json')" in 403 | 404) echo yes ;; *) echo no ;; esac)"
 check "right after: the team book holds only $QA2's card" "$QA2.vcf" "$(cards_of "$NETRC2" "$TEAM_BOOK")"
+check "right after: $QA1's write to the A1 team book -> 404 (no longer theirs to see)" 404 \
+	"$(as "$NETRC1" PUT "$QA1_TEAM_BOOK/qa-t6-write-test.vcf" -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf")"
 check "the file $QA1 put in the team folder stays (the lead sees it) -> 207" 207 "$(propfind "$NETRC2" "$QA2/$A1_DAV/qa-t6-1-upload.txt" 0)"
 
 # --- A move between teams, and an email change ---------------------------------------------------
@@ -280,6 +301,7 @@ check "a public link on an own file of $QA3 -> 200" 200 "$(
 	as "$NETRC3" PUT "$DAV_BASE/files/$QA3/qa-t6-3-own.txt" --data-binary "@$T_OUT/own3.txt" >/dev/null
 	ocs "$NETRC3" POST /apps/files_sharing/api/v1/shares --data-urlencode path=/qa-t6-3-own.txt --data-urlencode shareType=3)"
 T3="$(jq -r .ocs.data.token "$T_OUT/dav")"
+S3="$(jq -r .ocs.data.id "$T_OUT/dav")"
 check "$QA3 leaves B1, its last member -> 200" 200 "$(put_person "$QA3" "$QA3@example.invalid" "QA t6 3" "$ORG_B" '[]' true)"
 check "the leave archived B1" true "$(leave_count "$TEAM_B1" archived)"
 check "groupfolders lists \"$B1_NAME (archived)\"" yes \
@@ -321,6 +343,11 @@ check "B1 is back from the archive" "false $B1_NAME" \
 	"$(admin_api GET "/v1/admin/orgs/$ORG_B/teams/$TEAM_B1" >/dev/null; jq -r '.team | "\(.archived) \(.folder.mount_point)"' "$T_OUT/body")"
 check "status: delete_after cleared" null "$(admin_api GET "/v1/admin/people/$QA3" >/dev/null; jq -r .person.delete_after "$T_OUT/body")"
 qa_login "$QA3" "QA t6 3"
+# The disable hid the person's public links on their own files; it did not remove them, so they
+# work again now (docs/teams.md). The test then removes the one link it made.
+check "$QA3's public link on an own file works again -> 200" 200 "$(curl -sS -o /dev/null -w '%{http_code}' "https://${DRIVE_HOST}/s/$T3")"
+check "$QA3 removes that test link -> 200" 200 "$(ocs "$NETRC3" DELETE "/apps/files_sharing/api/v1/shares/$S3")"
+check "  and it is gone -> 404" 404 "$(curl -sS -o /dev/null -w '%{http_code}' "https://${DRIVE_HOST}/s/$T3")"
 
 # --- Drift: a person added outside the API is taken out again ------------------------------------
 check "provision $QA4 -> 200" 200 "$(provision "$QA4" "$QA4@example.invalid" "QA t6 4")"
