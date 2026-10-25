@@ -175,7 +175,8 @@ settings, the issue tracker and design team links under Appearance and accessibi
 address *starts with* an upstream website are hidden on every page, admin pages too, with
 the row or sentence around them where it would make no sense alone. Links that people write
 themselves in documents, comments and cards are left alone, and a file that is only named like an
-upstream address is never hidden.
+upstream address is never hidden. The CSS also hides three screen-reader-only spans on the Photos
+page that hold the source of its placeholder pictures, upstream copyright line included.
 
 **What is left, on purpose:**
 

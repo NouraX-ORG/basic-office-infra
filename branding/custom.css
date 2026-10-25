@@ -81,5 +81,13 @@ body[data-theme-dark-highcontrast] {
 	display: none !important;
 }
 
+/*
+ * Photos (8.0) writes the source of its placeholder pictures, with the upstream copyright line, as
+ * text for screen readers into three spans at the end of the page. Screen readers would read it out.
+ */
+.app-photos #app-content-vue > span.hidden-visually[role="none"] {
+	display: none !important;
+}
+
 /* Product names in the app menu and beside its button (the apps keep their technical ids). */
 __APP_LABELS__
