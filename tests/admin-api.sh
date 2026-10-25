@@ -5,10 +5,11 @@
 # QA objects only (prefix qa-), never the owner's account:
 #   organisations qa-t6-org-a ("QA t6 Org A") and qa-t6-org-b ("QA t6 Org B")
 #   teams qa-t6-team-a1 and qa-t6-team-a2 (both "Sales", in org A) and qa-t6-team-b1 ("Sales", org B)
-#   qa-t6-1 (made by api-provision.sh) is put into org A and team A1 with occ, standing in for the
-#   people API, to check cards and what a member can reach. Its app password is in
-#   /etc/nourax/qa/qa-t6-1.netrc. That occ change is real drift, so org A and team A1 list it in
-#   their "drift"; org B and teams A2 and B1, changed only through the API, show "drift": [].
+#   qa-t6-5 (made here through /v1/provision) is put into org A and team A1 with occ, to check
+#   cards and what a member can reach. Its app password is in /etc/nourax/qa/qa-t6-5.netrc. That
+#   occ change is real drift, so org A and team A1 list it in their "drift" until the drift job
+#   (every 15 minutes) takes qa-t6-5 out again; org B and teams A2 and B1 show "drift": [].
+#   (Part 1 used qa-t6-1 here; the people API of part 2 now owns qa-t6-1, see admin-people.sh.)
 # It takes the server-change lock for its whole run (about a minute), because it changes groups.
 # Nothing is deleted. Safe to run again: versions are read first and counted on from there.
 # The admin key is never printed or passed as an argument. Exit 0 when every check passes.
@@ -16,6 +17,7 @@
 
 . "$(dirname "$0")/lib.sh"
 need_admin_key
+need_nomail_key
 take_lock
 
 ORG_A=qa-t6-org-a
@@ -23,7 +25,7 @@ ORG_B=qa-t6-org-b
 TEAM_A1=qa-t6-team-a1
 TEAM_A2=qa-t6-team-a2
 TEAM_B1=qa-t6-team-b1
-QA1=qa-t6-1
+QA1=qa-t6-5
 NETRC1="$(qa_netrc "$QA1")"
 
 log "base URL: $API_BASE"
@@ -194,16 +196,26 @@ check "three calls at once: another gets 423" yes "$(grep -q '423' <<<"$codes" &
 check "three calls at once: only 200 and 423" yes "$(grep -qvE '^(200 |423 )+$' <<<"$codes" && echo no || echo yes)"
 check "423 says busy" yes "$(for i in 1 2 3; do [ "$(cat "$T_OUT/p$i/code")" != 423 ] || cat "$T_OUT/p$i/error"; done | grep -qv '^busy$' && echo no || echo yes)"
 
-# --- Members: cards and access (qa-t6-1 stands in for a person the people API adds) ------------
+# --- Members: cards and access (qa-t6-5, put in with occ: a change made outside the API) ---------
+# The number of enabled members of a group, as the cards count them.
+enabled_members() { # group
+	local n=0 uid
+	for uid in $(occ group:list --output=json </dev/null | jq -r --arg g "$1" '(.[$g] // [])[]'); do
+		[ "$(occ user:info "$uid" --output=json </dev/null | jq -r .enabled)" = true ] && n=$((n + 1))
+	done
+	echo "$n"
+}
+check "provision $QA1 -> 200" 200 "$(provision "$QA1" "$QA1@example.invalid" "QA t6 5")"
+save_netrc "$NETRC1"
 if [ ! -s "$NETRC1" ]; then
-	check "$NETRC1 exists (run tests/api-provision.sh first)" yes no
+	check "$NETRC1 exists" yes no
 else
 	occ group:adduser "org:$ORG_A" "$QA1" </dev/null >/dev/null
 	occ group:adduser "team:$TEAM_A1" "$QA1" </dev/null >/dev/null
 	check "PUT team A1 with a member -> 200" 200 "$(put_team "$ORG_A" "$TEAM_A1" Sales $((v1 + 2)))"
-	check "team cards: 1 card" "1 card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
+	check "team cards: one per enabled member" "$(enabled_members "team:$TEAM_A1") card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
 	check "PUT org A with a member -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_A" "$(name_version "QA t6 Org A" $((v + 2)))")"
-	check "directory cards: 1 card" "1 card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
+	check "directory cards: one per enabled member" "$(enabled_members "org:$ORG_A") card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
 	# The occ group:adduser above is a change made outside the API, so both groups list it as
 	# open drift (noted on the first run; adding an existing member again notes nothing).
 	check "team A1 drift lists the occ member_added of $QA1" yes "$(drift_lists_added "/v1/admin/orgs/$ORG_A/teams/$TEAM_A1" "$QA1")"

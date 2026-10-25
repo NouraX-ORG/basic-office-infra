@@ -11,6 +11,9 @@ declare(strict_types=1);
  * "Sales 2"; teams of different organisations never see each other's folders, so they may share a
  * name. A rename keeps the folder (same id, same files) and only changes its name.
  *
+ * A team lead may also manage the folder's advanced permissions (setLead, a "user" entry in the
+ * folder's manage list); ordinary members may not.
+ *
  * Uses groupfolders' own FolderManager, the same calls its admin page makes.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -141,7 +144,43 @@ class TeamFolderService {
 		return [$folderId, $result, $detail];
 	}
 
-	/** @return array{id: ?int, exists: bool, mount_point?: string, storage_id?: int, root_id?: int, acl?: bool, groups?: array<string, int>} */
+	/**
+	 * Gives or takes away a person's right to manage the folder's advanced permissions.
+	 *
+	 * @return bool whether anything changed
+	 */
+	public function setLead(int $folderId, string $uid, bool $lead): bool {
+		$isLead = in_array($uid, $this->leads($folderId), true);
+		if ($isLead === $lead) {
+			return false;
+		}
+		$this->manager()->setManageACL($folderId, 'user', $uid, $lead);
+		return true;
+	}
+
+	/** @return list<string> the uids that may manage the folder's advanced permissions */
+	public function leads(int $folderId): array {
+		$folder = $this->manager()->getFolder($folderId);
+		if ($folder === null) {
+			throw new StepFailed('team folder ' . $folderId . ' is missing');
+		}
+		$uids = [];
+		foreach ($folder->manage as $entry) {
+			if (($entry['type'] ?? null) === 'user') {
+				$uids[] = (string)$entry['id'];
+			}
+		}
+		sort($uids, SORT_STRING);
+		return $uids;
+	}
+
+	/** The folder's own storage id (the filecache "storage" of its files), or null when it is gone. */
+	public function storageId(?int $folderId): ?int {
+		$folder = $folderId === null ? null : $this->manager()->getFolder($folderId);
+		return $folder === null ? null : (int)$folder->storageId;
+	}
+
+	/** @return array{id: ?int, exists: bool, mount_point?: string, storage_id?: int, root_id?: int, acl?: bool, groups?: array<string, int>, leads?: list<string>} */
 	public function describe(?int $folderId): array {
 		$folder = $folderId === null ? null : $this->manager()->getFolder($folderId);
 		if ($folder === null) {
@@ -155,6 +194,7 @@ class TeamFolderService {
 			'root_id' => $folder->rootId,
 			'acl' => $folder->acl,
 			'groups' => array_map(fn (array $applicable): int => (int)$applicable['permissions'], $folder->groups),
+			'leads' => $this->leads($folderId),
 		];
 	}
 

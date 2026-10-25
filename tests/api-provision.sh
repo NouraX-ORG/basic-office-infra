@@ -5,7 +5,8 @@
 # It uses only QA ids, never the owner's account:
 #   qa-t6-1  a "Log in with Nourax" account made by the API; its newest app password is kept in
 #            /etc/nourax/qa/qa-t6-1.netrc for the other contract tests (U1-U5)
-#   qa-t6-2  made by the API, then disabled: the API must refuse it and leave it disabled
+#   qa-t6-8  made by the API, then disabled: the API must refuse it and leave it disabled
+#            (qa-t6-2 did this before part 2 of the admin API; admin-people.sh now uses qa-t6-2)
 #   qa-t6-9  a local (password) account: the API must refuse it; disabled, as it never signs in
 # It takes the server-change lock (/run/nourax-deploy.lock) for its whole run, two to three
 # minutes, because it adds and disables QA accounts and writes under /etc/nourax/qa. The last
@@ -19,7 +20,7 @@ need_nomail_key
 take_lock
 
 QA1=qa-t6-1
-QA2=qa-t6-2
+QA2=qa-t6-8
 QA_LOCAL=qa-t6-9
 NETRC1="$(qa_netrc "$QA1")"
 
@@ -111,10 +112,10 @@ check "local account -> error uid_not_oidc" uid_not_oidc "$(jq -r .error "$T_OUT
 
 # A disabled account stays disabled.
 if [ "$(user_exists "$QA2")" = no ]; then
-	check "provision $QA2 -> 200" 200 "$(provision "$QA2" "$QA2@example.invalid" "QA t6 2")"
+	check "provision $QA2 -> 200" 200 "$(provision "$QA2" "$QA2@example.invalid" "QA t6 8")"
 fi
 occ user:disable "$QA2" </dev/null >/dev/null
-check "disabled $QA2 -> 409" 409 "$(provision "$QA2" "$QA2@example.invalid" "QA t6 2")"
+check "disabled $QA2 -> 409" 409 "$(provision "$QA2" "$QA2@example.invalid" "QA t6 8")"
 check "disabled -> error account_disabled" account_disabled "$(jq -r .error "$T_OUT/body")"
 check "$QA2 is still disabled" false "$(occ user:info "$QA2" --output=json </dev/null | jq -r .enabled)"
 

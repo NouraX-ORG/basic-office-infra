@@ -29,16 +29,16 @@ class ObjectLock {
 	}
 
 	/**
-	 * Runs $work while holding the lock $name (e.g. "team/<team_id>").
+	 * Runs $work while holding the lock $name (e.g. "team/<team_id>"), for at most $ttl seconds.
 	 *
 	 * @template T
 	 * @param callable(): T $work
 	 * @return T
 	 * @throws ApiException 423 busy
 	 */
-	public function with(string $name, callable $work): mixed {
+	public function with(string $name, callable $work, int $ttl = self::TTL): mixed {
 		$key = 'admin-lock/' . $name;
-		if ($this->cache !== null && !$this->cache->add($key, 1, self::TTL)) {
+		if ($this->cache !== null && !$this->cache->add($key, 1, $ttl)) {
 			throw new ApiException('busy', 423);
 		}
 		try {

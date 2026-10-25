@@ -97,7 +97,9 @@ class OrgService {
 		if ($row === null || $row['addressbook_id'] === null) {
 			throw new StepFailed('the organisation has no directory yet');
 		}
-		return $this->books->syncCards($row['addressbook_id'], $this->groups->activeMembers($row['group_id']), $row['name']);
+		// One rebuild of a book at a time: two people's calls may change the same directory.
+		return $this->locks->waitFor('cards/' . $row['addressbook_id'], 15,
+			fn (): array => $this->books->syncCards($row['addressbook_id'], $this->groups->activeMembers($row['group_id']), $row['name']));
 	}
 
 	/**

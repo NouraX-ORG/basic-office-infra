@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 /**
  * The team board (NoBoard, the Deck app): "Team: <name>", Nourax cobalt, owned by the service
- * account and shared with the team's group (members may edit cards, not share or manage).
+ * account and shared with the team's group (members may edit cards, not share or manage). A team
+ * lead also gets a share of their own that may manage the board (setLead).
  *
  * Deck's PHP services work only for a signed-in user, so this talks to Deck's REST API
  * (/index.php/apps/deck/api/v1.0) on this same server over the compose network (http://app),
@@ -23,7 +24,8 @@ class DeckClient {
 	public const COLOR = '2563EB';
 	/** Deck allows board titles of at most 100 characters. */
 	public const MAX_TITLE = 100;
-	/** Deck's ACL type for a group. */
+	/** Deck's ACL types for a person and for a group. */
+	public const ACL_USER = 0;
 	public const ACL_GROUP = 1;
 
 	private const API = '/index.php/apps/deck/api/v1.0';
@@ -98,6 +100,63 @@ class DeckClient {
 		return [Steps::UNCHANGED, 'edit for ' . $groupId];
 	}
 
+	/**
+	 * Gives a team lead a board share of their own that may edit and manage (not share), or takes
+	 * it away again.
+	 *
+	 * @return bool whether anything changed
+	 */
+	public function setLead(int $boardId, string $uid, bool $lead): bool {
+		$board = $this->board($boardId);
+		if ($board === null) {
+			throw new StepFailed('board ' . $boardId . ' is missing');
+		}
+		$wanted = ['permissionEdit' => true, 'permissionShare' => false, 'permissionManage' => true];
+		$acl = self::acl($board, self::ACL_USER, $uid);
+		if (!$lead) {
+			if ($acl === null) {
+				return false;
+			}
+			[$status] = $this->call('DELETE', '/boards/' . $boardId . '/acl/' . (int)$acl['id']);
+			if ($status !== 200) {
+				throw new StepFailed('Deck did not remove the lead share (HTTP ' . $status . ')');
+			}
+			return true;
+		}
+		if ($acl === null) {
+			[$status] = $this->call('POST', '/boards/' . $boardId . '/acl', ['type' => self::ACL_USER, 'participant' => $uid] + $wanted);
+			if ($status !== 200) {
+				throw new StepFailed('Deck did not share the board with the lead (HTTP ' . $status . ')');
+			}
+			return true;
+		}
+		foreach ($wanted as $key => $value) {
+			if ((bool)($acl[$key] ?? false) !== $value) {
+				[$status] = $this->call('PUT', '/boards/' . $boardId . '/acl/' . (int)$acl['id'], $wanted);
+				if ($status !== 200) {
+					throw new StepFailed('Deck did not change the lead share (HTTP ' . $status . ')');
+				}
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @return list<string> the uids that have a managing share of their own (the leads) */
+	public function leads(?array $board): array {
+		$uids = [];
+		foreach (($board['acl'] ?? []) as $acl) {
+			if (is_array($acl) && (int)($acl['type'] ?? -1) === self::ACL_USER && (bool)($acl['permissionManage'] ?? false)) {
+				$id = self::participant($acl);
+				if ($id !== null) {
+					$uids[] = $id;
+				}
+			}
+		}
+		sort($uids, SORT_STRING);
+		return $uids;
+	}
+
 	/** The board, or null when it is gone. */
 	public function board(int $boardId): ?array {
 		[$status, $board] = $this->call('GET', '/boards/' . $boardId);
@@ -110,7 +169,7 @@ class DeckClient {
 		throw new StepFailed('Deck answered HTTP ' . $status);
 	}
 
-	/** @return array{id: ?int, exists: bool, title?: string, archived?: bool, shared_edit?: bool} */
+	/** @return array{id: ?int, exists: bool, title?: string, archived?: bool, shared_edit?: bool, leads?: list<string>} */
 	public function describe(?int $boardId, string $groupId): array {
 		$board = $boardId === null ? null : $this->board($boardId);
 		if ($board === null) {
@@ -123,6 +182,7 @@ class DeckClient {
 			'title' => (string)($board['title'] ?? ''),
 			'archived' => (bool)($board['archived'] ?? false),
 			'shared_edit' => $acl !== null && (bool)($acl['permissionEdit'] ?? false),
+			'leads' => $this->leads($board),
 		];
 	}
 
@@ -135,17 +195,23 @@ class DeckClient {
 
 	/** The board's ACL entry for the group, if any. */
 	private static function groupAcl(array $board, string $groupId): ?array {
+		return self::acl($board, self::ACL_GROUP, $groupId);
+	}
+
+	/** The board's ACL entry of this type (ACL_USER or ACL_GROUP) for this participant, if any. */
+	private static function acl(array $board, int $type, string $participantId): ?array {
 		foreach (($board['acl'] ?? []) as $acl) {
-			if (!is_array($acl) || (int)($acl['type'] ?? -1) !== self::ACL_GROUP) {
-				continue;
-			}
-			$participant = $acl['participant'] ?? null;
-			$id = is_array($participant) ? ($participant['primaryKey'] ?? $participant['uid'] ?? null) : $participant;
-			if ($id === $groupId) {
+			if (is_array($acl) && (int)($acl['type'] ?? -1) === $type && self::participant($acl) === $participantId) {
 				return $acl;
 			}
 		}
 		return null;
+	}
+
+	private static function participant(array $acl): ?string {
+		$participant = $acl['participant'] ?? null;
+		$id = is_array($participant) ? ($participant['primaryKey'] ?? $participant['uid'] ?? null) : $participant;
+		return is_string($id) ? $id : null;
 	}
 
 	/**
@@ -172,6 +238,7 @@ class DeckClient {
 			'GET' => $client->get($url, $options),
 			'POST' => $client->post($url, $options),
 			'PUT' => $client->put($url, $options),
+			'DELETE' => $client->delete($url, $options),
 		};
 		$data = json_decode((string)$response->getBody(), true);
 		return [$response->getStatusCode(), is_array($data) ? $data : []];

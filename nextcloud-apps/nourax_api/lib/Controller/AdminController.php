@@ -16,7 +16,8 @@ declare(strict_types=1);
  * Answers of the PUT calls: 200 {"ok":true,"applied":true,"version","steps":[...]} when every
  * step worked, 502 with the same body when a step failed (send it again), 200 with
  * "applied":false and "reason":"stale_version" when a newer version is already stored,
- * 423 {"error":"busy"} while another call works on the same object.
+ * 423 {"error":"busy"} while another call works on the same object. The reconcile call answers
+ * 200 when everything matches afterwards and 502 otherwise (ReconcileService).
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -31,6 +32,10 @@ use OCA\NouraxApi\Service\AdminStore;
 use OCA\NouraxApi\Service\ApiException;
 use OCA\NouraxApi\Service\AuditLog;
 use OCA\NouraxApi\Service\OrgService;
+use OCA\NouraxApi\Service\PeopleService;
+use OCA\NouraxApi\Service\PersonRequest;
+use OCA\NouraxApi\Service\ProvisionRequest;
+use OCA\NouraxApi\Service\ReconcileService;
 use OCA\NouraxApi\Service\TeamService;
 use OCP\AppFramework\Http\Attribute\BruteForceProtection;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -48,6 +53,8 @@ class AdminController extends JsonController {
 	private const APP_PREFIX = '/apps/nourax_api';
 	private const ORG_PATH = '#^/v1/admin/orgs/(?<org>[^/?]+)$#D';
 	private const TEAM_PATH = '#^/v1/admin/orgs/(?<org>[^/?]+)/teams/(?<team>[^/?]+)$#D';
+	private const PERSON_PATH = '#^/v1/admin/people/(?<user>[^/?]+)$#D';
+	private const RECONCILE_PATH = '#^/v1/admin/orgs/(?<org>[^/?]+)/reconcile$#D';
 	private const AUDIT_PATH = '#^/v1/admin/audit(?:\?(?<query>.*))?$#D';
 
 	/** What the audit row names as the call's object, e.g. "team:<team_id>". Never a body. */
@@ -64,6 +71,8 @@ class AdminController extends JsonController {
 		private IThrottler $throttler,
 		private OrgService $orgs,
 		private TeamService $teams,
+		private PeopleService $people,
+		private ReconcileService $reconciler,
 	) {
 		parent::__construct($request, $limiter, $audit, $logger);
 	}
@@ -118,6 +127,42 @@ class AdminController extends JsonController {
 		});
 	}
 
+	/** PUT /v1/admin/people/{user_id} {"email","display_name","org_id","teams","active","version"} */
+	#[PublicPage]
+	#[NoCSRFRequired]
+	#[BruteForceProtection(action: self::BRUTE_FORCE_ACTION)]
+	public function putPerson(): JSONResponse {
+		return $this->signed('PUT /v1/admin/people/{user_id}', self::PERSON_PATH, function (array $path, string $body): JSONResponse {
+			$userId = self::userId($path['user']);
+			$this->auditTarget = $userId;
+			return $this->outcome($this->people->put(PersonRequest::fromJson($userId, $body)));
+		});
+	}
+
+	/** GET /v1/admin/people/{user_id} */
+	#[PublicPage]
+	#[NoCSRFRequired]
+	#[BruteForceProtection(action: self::BRUTE_FORCE_ACTION)]
+	public function getPerson(): JSONResponse {
+		return $this->signed('GET /v1/admin/people/{user_id}', self::PERSON_PATH, function (array $path): JSONResponse {
+			$userId = self::userId($path['user']);
+			$this->auditTarget = $userId;
+			return $this->json($this->people->status($userId));
+		});
+	}
+
+	/** POST /v1/admin/orgs/{org_id}/reconcile {"teams":[...],"people":[...],"dry_run"?} */
+	#[PublicPage]
+	#[NoCSRFRequired]
+	#[BruteForceProtection(action: self::BRUTE_FORCE_ACTION)]
+	public function reconcile(): JSONResponse {
+		return $this->signed('POST /v1/admin/orgs/{org_id}/reconcile', self::RECONCILE_PATH, function (array $path, string $body): JSONResponse {
+			$orgId = AdminRequest::id($path['org']);
+			$this->auditTarget = AdminStore::orgGroup($orgId);
+			return $this->outcome($this->reconciler->reconcile($orgId, $body));
+		});
+	}
+
 	/** GET /v1/admin/audit?limit=100[&target=team:<team_id>] - the newest audit rows first */
 	#[PublicPage]
 	#[NoCSRFRequired]
@@ -134,6 +179,14 @@ class AdminController extends JsonController {
 			}
 			return $this->json(['ok' => true, 'rows' => $this->audit->recent((int)$limit, $target)]);
 		});
+	}
+
+	/** A person's uid from the path: a Supabase user id or a QA id (400 otherwise). */
+	private static function userId(string $userId): string {
+		if (!ProvisionRequest::validUserId($userId)) {
+			throw new ApiException('invalid_request', 400);
+		}
+		return $userId;
 	}
 
 	/** 200 for a full or a stale answer, 502 when a step failed. */

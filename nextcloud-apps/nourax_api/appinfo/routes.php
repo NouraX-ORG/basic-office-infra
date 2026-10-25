@@ -21,6 +21,9 @@ return [
 		['name' => 'admin#getOrg', 'url' => '/v1/admin/orgs/{orgId}', 'verb' => 'GET'],
 		['name' => 'admin#putTeam', 'url' => '/v1/admin/orgs/{orgId}/teams/{teamId}', 'verb' => 'PUT'],
 		['name' => 'admin#getTeam', 'url' => '/v1/admin/orgs/{orgId}/teams/{teamId}', 'verb' => 'GET'],
+		['name' => 'admin#reconcile', 'url' => '/v1/admin/orgs/{orgId}/reconcile', 'verb' => 'POST'],
+		['name' => 'admin#putPerson', 'url' => '/v1/admin/people/{userId}', 'verb' => 'PUT'],
+		['name' => 'admin#getPerson', 'url' => '/v1/admin/people/{userId}', 'verb' => 'GET'],
 		['name' => 'admin#audit', 'url' => '/v1/admin/audit', 'verb' => 'GET'],
 
 		// Anything else under /v1/ (a trailing slash, dot segments, an unknown path or method):

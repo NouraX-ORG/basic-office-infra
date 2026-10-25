@@ -20,7 +20,8 @@ declare(strict_types=1);
  * One run per account at a time: a Redis lock per uid (60 s). A second call meanwhile gets
  * 409 busy, which NoMail retries. The app password is returned once and never logged.
  *
- * The admin API reuses this with $issuePassword = false (the account and folders only).
+ * The admin API's people calls use the parts on their own: ensureAccount() (the account and
+ * folders, under the same lock) and updateProfile() (display name and email).
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -97,7 +98,8 @@ class ProvisionService {
 			throw new ApiException('busy', 409);
 		}
 		try {
-			[$user, $created] = $this->ensureAccount($request);
+			[$user, $created] = $this->account($request->userId);
+			$this->updateProfile($user, $request->displayName, $request->email);
 			$this->ensureFolders($user->getUID());
 			$answer = ['uid' => $user->getUID(), 'login' => $user->getUID(), 'created' => $created];
 			if ($issuePassword) {
@@ -109,9 +111,53 @@ class ProvisionService {
 		}
 	}
 
+	/**
+	 * For the admin API: the account and its /NoMail folders, without a profile change and
+	 * without an app password. The same refusals and the same per-account lock as provision().
+	 *
+	 * @return array{0: IUser, 1: bool} the account and whether it was made now
+	 * @throws ApiException 409 busy | uid_not_oidc | account_disabled | folder_conflict, 503
+	 */
+	public function ensureAccount(string $uid): array {
+		$lock = 'provision-lock/' . $uid;
+		if ($this->locks !== null && !$this->locks->add($lock, 1, self::LOCK_TTL)) {
+			throw new ApiException('busy', 409);
+		}
+		try {
+			$account = $this->account($uid);
+			$this->ensureFolders($uid);
+			return $account;
+		} finally {
+			$this->locks?->remove($lock);
+		}
+	}
+
+	/**
+	 * Display name and email follow NoMail ("" leaves a value as it is); the uid never changes.
+	 *
+	 * @return list<string> what changed: "display_name", "email"
+	 * @throws ApiException 400 invalid_request for an email that is no address
+	 */
+	public function updateProfile(IUser $user, string $displayName, string $email): array {
+		if ($email !== '' && !$this->mailer->validateMailAddress($email)) {
+			throw new ApiException('invalid_request', 400);
+		}
+		$this->providerId();
+		/** @var UserMapper $oidcUsers */
+		$oidcUsers = $this->container->get(UserMapper::class);
+		$changed = [];
+		if ($this->updateDisplayName($oidcUsers, $user, $displayName)) {
+			$changed[] = 'display_name';
+		}
+		if ($email !== '' && $user->getSystemEMailAddress() !== mb_strtolower($email)) {
+			$user->setSystemEMailAddress($email);
+			$changed[] = 'email';
+		}
+		return $changed;
+	}
+
 	/** @return array{0: IUser, 1: bool} the account and whether it was made now */
-	private function ensureAccount(ProvisionRequest $request): array {
-		$uid = $request->userId;
+	private function account(string $uid): array {
 		$providerId = $this->providerId();
 		/** @var UserMapper $oidcUsers */
 		$oidcUsers = $this->container->get(UserMapper::class);
@@ -139,11 +185,6 @@ class ProvisionService {
 				throw new \RuntimeException('the account just made could not be loaded');
 			}
 			$created = true;
-		}
-
-		$this->updateDisplayName($oidcUsers, $user, $request->displayName);
-		if ($request->email !== '' && $user->getSystemEMailAddress() !== mb_strtolower($request->email)) {
-			$user->setSystemEMailAddress($request->email);
 		}
 
 		if ($created) {
@@ -175,10 +216,12 @@ class ProvisionService {
 	/**
 	 * user_oidc's backend cannot set display names itself, so like user_oidc's own provisioning the
 	 * name is written to its table and a UserChangedEvent updates the account (search, sharing).
+	 *
+	 * @return bool whether the name changed
 	 */
-	private function updateDisplayName(UserMapper $oidcUsers, IUser $user, string $displayName): void {
+	private function updateDisplayName(UserMapper $oidcUsers, IUser $user, string $displayName): bool {
 		if ($displayName === '') {
-			return;
+			return false;
 		}
 		$backendUser = $oidcUsers->getUser($user->getUID());
 		$old = (string)$backendUser->getDisplayName();
@@ -188,7 +231,9 @@ class ProvisionService {
 		}
 		if ($displayName !== $old || $displayName !== $user->getDisplayName()) {
 			$this->dispatcher->dispatchTyped(new UserChangedEvent($user, 'displayName', $displayName, $old));
+			return true;
 		}
+		return false;
 	}
 
 	private function ensureFolders(string $uid): void {

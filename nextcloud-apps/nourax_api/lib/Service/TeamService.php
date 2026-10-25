@@ -155,7 +155,51 @@ class TeamService {
 		if ($row === null || $org === null || $row['addressbook_id'] === null) {
 			throw new StepFailed('the team has no address book yet');
 		}
-		return $this->books->syncCards($row['addressbook_id'], $this->groups->activeMembers($row['group_id']), $org['name']);
+		// One rebuild of a book at a time: two people's calls may change the same team book.
+		return $this->locks->waitFor('cards/' . $row['addressbook_id'], 15,
+			fn (): array => $this->books->syncCards($row['addressbook_id'], $this->groups->activeMembers($row['group_id']), $org['name']));
+	}
+
+	/**
+	 * Archives a team whose last member left, or brings it back when someone joins again. The
+	 * folder is renamed "<name> (archived)" (and back) and the board is archived (and back). The
+	 * group, the folder and its files, the address book and the calendar all stay: nothing is
+	 * deleted.
+	 *
+	 * @return array{0: string, 1: string} [result, detail]
+	 */
+	public function setArchived(string $teamId, bool $archived): array {
+		return $this->locks->waitFor('team/' . $teamId, 15, function () use ($teamId, $archived): array {
+			$row = $this->store->team($teamId);
+			if ($row === null) {
+				throw new StepFailed('team ' . $teamId . ' is not stored');
+			}
+			$changes = [];
+			if (($row['archived'] === 1) !== $archived) {
+				$this->store->setTeamArchived($teamId, $archived);
+				$changes[] = $archived ? 'archived' : 'unarchived';
+			}
+			$folderName = null;
+			if ($row['folder_id'] !== null) {
+				$this->locks->waitFor('org-folders/' . $row['org_id'], 15, function () use ($row, $teamId, $archived, &$changes, &$folderName): void {
+					[$folderId, $result, $detail] = $this->folders->ensure($row['folder_id'], $row['group_id'], $teamId, $row['org_id'], $row['name'], $archived);
+					$this->remember($teamId, $row, 'folder_id', $folderId);
+					$folderName = $detail;
+					if ($result !== Steps::UNCHANGED) {
+						$changes[] = 'folder';
+					}
+				});
+			}
+			if ($row['board_id'] !== null) {
+				[$boardId, $result] = $this->deck->ensureBoard($row['board_id'], self::displayName($row['name']), $archived);
+				$this->remember($teamId, $row, 'board_id', $boardId);
+				if ($result !== Steps::UNCHANGED) {
+					$changes[] = 'board';
+				}
+			}
+			$detail = ($archived ? 'archived' : 'active') . ($folderName === null ? '' : ', ' . $folderName);
+			return [$changes === [] ? Steps::UNCHANGED : Steps::UPDATED, $detail];
+		});
 	}
 
 	/**

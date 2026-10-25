@@ -46,3 +46,10 @@ unset -f nomail_api_key
 if ! occ nourax_api:service-account --check; then
 	log "  WARNING: the teams service account is not ready - the admin API's team steps will fail"
 fi
+
+# The scheduled delete of people who left their organisation 30+ days ago stays OFF until the
+# owner says yes (docs/teams.md). Only a missing setting is written, so a later "on" is kept.
+if ! occ config:app:get nourax_api scheduled_delete >/dev/null 2>&1; then
+	occ config:app:set nourax_api scheduled_delete --value=off
+fi
+log "  scheduled delete of leavers: $(occ config:app:get nourax_api scheduled_delete)"

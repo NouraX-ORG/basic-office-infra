@@ -24,8 +24,13 @@ class Settings {
 	public const CLAMAV_PORT = 'clamav_port';
 	/** The user_oidc provider that "Log in with Nourax" uses; accounts are created for it. */
 	public const OIDC_PROVIDER = 'oidc_provider';
-	/** "yes" switches on the daily deletion of people who left 30+ days ago. Off until the owner says yes. */
-	public const LEAVER_DELETION = 'leaver_deletion_enabled';
+	/**
+	 * "on" switches on the daily deletion of people who left their organisation 30+ days ago
+	 * (LeaverDeletion). Anything else is off. It stays "off" until the owner says yes.
+	 */
+	public const SCHEDULED_DELETE = 'scheduled_delete';
+	/** What the last LeaverDeletion run did, as JSON {at, mode, due, deleted}. Written by the job. */
+	public const LEAVER_DELETION_LAST = 'leaver_deletion_last_run';
 	/** The service account's app password for calls back into this server (Deck). Sensitive, lazy. */
 	public const LOOPBACK_PASSWORD = 'loopback_app_password';
 	/** How this server reaches itself from inside the compose network (the app service). */
@@ -59,7 +64,17 @@ class Settings {
 	}
 
 	public function leaverDeletionEnabled(): bool {
-		return $this->appConfig->getValueString(Application::APP_ID, self::LEAVER_DELETION, 'no') === 'yes';
+		return $this->appConfig->getValueString(Application::APP_ID, self::SCHEDULED_DELETE, 'off') === 'on';
+	}
+
+	/** @return array<string, mixed> what the last LeaverDeletion run did ([] before the first run) */
+	public function leaverDeletionLastRun(): array {
+		$last = json_decode($this->appConfig->getValueString(Application::APP_ID, self::LEAVER_DELETION_LAST, ''), true);
+		return is_array($last) ? $last : [];
+	}
+
+	public function setLeaverDeletionLastRun(array $run): void {
+		$this->appConfig->setValueString(Application::APP_ID, self::LEAVER_DELETION_LAST, (string)json_encode($run));
 	}
 
 	/** Calls per minute for a bucket; 0 or less means no limit. */

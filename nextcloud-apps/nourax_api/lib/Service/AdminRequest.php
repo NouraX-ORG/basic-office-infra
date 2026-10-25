@@ -9,6 +9,7 @@ declare(strict_types=1);
  *   the tests. They are the keys; names are only labels and can change.
  * - The body of PUT .../orgs/{org_id} and PUT .../teams/{team_id} is {"name","version"}:
  *   name 1-255 characters (control characters become spaces), version an integer of at least 1.
+ * - A person's body is checked by PersonRequest, a reconcile body by ReconcileService.
  *
  * A bad id or body is 400 {"error":"invalid_request"}.
  *
@@ -47,7 +48,18 @@ final class AdminRequest {
 	 * @throws ApiException 400 invalid_request
 	 */
 	public static function nameAndVersion(string $body): self {
-		$data = self::object($body);
+		return self::fromArray(self::object($body));
+	}
+
+	/**
+	 * The same rules for {"name","version"} given as an array (a team of a reconcile call).
+	 *
+	 * @throws ApiException 400 invalid_request
+	 */
+	public static function fromArray(mixed $data): self {
+		if (!is_array($data)) {
+			throw new ApiException('invalid_request', 400);
+		}
 		$name = $data['name'] ?? null;
 		$version = $data['version'] ?? null;
 		if (!is_string($name) || !is_int($version) || $version < 1) {
@@ -60,8 +72,16 @@ final class AdminRequest {
 		return new self($name, $version);
 	}
 
-	/** @return array<string, mixed> a JSON object */
-	private static function object(string $body): array {
+	/** The stored name and version, to run an organisation's or team's steps again (drift repair). */
+	public static function stored(string $name, int $version): self {
+		return new self($name, $version);
+	}
+
+	/**
+	 * @return array<string, mixed> a JSON object
+	 * @throws ApiException 400 invalid_request
+	 */
+	public static function object(string $body): array {
 		try {
 			$data = json_decode($body, true, 16, JSON_THROW_ON_ERROR);
 		} catch (\JsonException) {
