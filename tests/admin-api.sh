@@ -151,16 +151,20 @@ check "team A1 folder is Sales again" Sales "$(folder_of "$ORG_A" "$TEAM_A1")"
 check "team A2 folder stayed Sales 2" "Sales 2" "$(folder_of "$ORG_A" "$TEAM_A2")"
 
 # --- One call per object at a time ---------------------------------------------------------------
-# The first call runs in the background with its own files; the second starts while it works.
-mkdir -p "$T_OUT/first"
-( T_OUT="$T_OUT/first"; put_team "$ORG_A" "$TEAM_A1" Sales $((v1 + 2)) > "$T_OUT/code" ) &
-sleep "${BUSY_DELAY:-0.4}"
-second="$(put_team "$ORG_A" "$TEAM_A1" Sales $((v1 + 2)))"
-second_error="$(jq -r .error "$T_OUT/body")"
+# Three calls for the same team at the same time, each with its own files. A team call takes
+# about 250 ms, so they overlap: the one that gets the lock works, the others get 423 busy.
+for i in 1 2 3; do
+	mkdir -p "$T_OUT/p$i"
+	( T_OUT="$T_OUT/p$i"; put_team "$ORG_A" "$TEAM_A1" Sales $((v1 + 2)) > "$T_OUT/code"
+		jq -r '.error // "none"' "$T_OUT/body" > "$T_OUT/error" ) &
+done
 wait
-check "a second call while one runs -> 423" 423 "$second"
-check "a second call while one runs -> error busy" busy "$second_error"
-check "the first call still finished -> 200" 200 "$(cat "$T_OUT/first/code")"
+codes="$(cat "$T_OUT"/p*/code | sort | tr '\n' ' ')"
+log "three calls at once answered: $codes"
+check "three calls at once: one works (200)" yes "$(grep -q '200' <<<"$codes" && echo yes || echo no)"
+check "three calls at once: another gets 423" yes "$(grep -q '423' <<<"$codes" && echo yes || echo no)"
+check "three calls at once: only 200 and 423" yes "$(grep -qvE '^(200 |423 )+$' <<<"$codes" && echo no || echo yes)"
+check "423 says busy" yes "$(for i in 1 2 3; do [ "$(cat "$T_OUT/p$i/code")" != 423 ] || cat "$T_OUT/p$i/error"; done | grep -qv '^busy$' && echo no || echo yes)"
 
 # --- Members: cards and access (qa-t6-1 stands in for a person the people API adds) ------------
 if [ ! -s "$NETRC1" ]; then
@@ -173,17 +177,22 @@ else
 	check "PUT org A with a member -> 200" 200 "$(admin_api PUT "/v1/admin/orgs/$ORG_A" "$(name_version "QA t6 Org A" $((v + 2)))")"
 	check "directory cards: 1 card" "1 card(s)" "$(jq -r '.steps[] | select(.step == "cards") | .detail' "$T_OUT/body" | cut -d' ' -f1-2)"
 
-	book="team-$TEAM_A1"
-	code="$(curl -sS --netrc-file "$NETRC1" -o "$T_OUT/vcf" -w '%{http_code}' \
-		"$DAV_BASE/addressbooks/users/$QA1/${book}_shared_by_nourax-teams/$QA1.vcf")"
+	book="$DAV_BASE/addressbooks/users/$QA1/team-${TEAM_A1}_shared_by_nourax-teams"
+	curl -sS --netrc-file "$NETRC1" -X PROPFIND -H 'Depth: 1' -o "$T_OUT/books" "$DAV_BASE/addressbooks/users/$QA1/"
+	check "member's NoContacts lists the team book and the directory" "yes yes" \
+		"$(grep -q "team-${TEAM_A1}_shared_by_nourax-teams/<" "$T_OUT/books" && echo yes || echo no) $(grep -q "org-${ORG_A}_shared_by_nourax-teams/<" "$T_OUT/books" && echo yes || echo no)"
+	# The server keeps the card as vCard 4.0 and hands out 3.0 unless 4.0 is asked for.
+	code="$(curl -sS --netrc-file "$NETRC1" -H 'Accept: text/vcard; version=4.0' -o "$T_OUT/vcf" -w '%{http_code}' "$book/$QA1.vcf")"
 	check "member reads their card in the team address book -> 200" 200 "$code"
 	check "the card is vCard 4.0 with UID nourax-$QA1" "yes yes" \
 		"$(grep -q '^VERSION:4.0' "$T_OUT/vcf" && echo yes || echo no) $(grep -q "^UID:nourax-$QA1" "$T_OUT/vcf" && echo yes || echo no)"
 	check "the card names the organisation" yes "$(grep -q '^ORG:QA t6 Org A' "$T_OUT/vcf" && echo yes || echo no)"
 	printf 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:qa-t6-write-test\r\nFN:Write test\r\nEND:VCARD\r\n' > "$T_OUT/new.vcf"
+	# A read-only shared book is not offered for writing at all (404), and nothing is stored.
 	code="$(curl -sS --netrc-file "$NETRC1" -X PUT -H 'Content-Type: text/vcard' --data-binary "@$T_OUT/new.vcf" \
-		-o /dev/null -w '%{http_code}' "$DAV_BASE/addressbooks/users/$QA1/${book}_shared_by_nourax-teams/qa-t6-write-test.vcf")"
-	check "member cannot write to the team address book -> 403" 403 "$code"
+		-o /dev/null -w '%{http_code}' "$book/qa-t6-write-test.vcf")"
+	check "member cannot write to the team address book (403 or 404)" yes "$(case "$code" in 403 | 404) echo yes ;; *) echo "no ($code)" ;; esac)"
+	check "the card was not stored -> 404" 404 "$(curl -sS --netrc-file "$NETRC1" -o /dev/null -w '%{http_code}' "$book/qa-t6-write-test.vcf")"
 	code="$(curl -sS --netrc-file "$NETRC1" -o /dev/null -w '%{http_code}' \
 		"$DAV_BASE/addressbooks/users/$QA1/org-${ORG_A}_shared_by_nourax-teams/$QA1.vcf")"
 	check "member reads the organisation directory -> 200" 200 "$code"
