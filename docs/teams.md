@@ -489,6 +489,12 @@ the admin API keeps sharing the team books, calendars and boards with their team
   share with it or see its profile.
 - The old addresses `/remote.php/caldav` and `/remote.php/carddav` have no sharing at all, so
   `OrgSharePlugin` covers every way to share a calendar or an address book.
+- The "Accounts" book at its own address (`/remote.php/dav/addressbooks/system/system/system/`):
+  a full listing, a search, a card fetch and a first sync give only people who share a group
+  (the server filters them; checked in `tests/privacy.sh`). A sync app that asks again later with
+  its sync token is also told which cards were removed since, by file name
+  (`<backend>:<account id>.vcf`), for every account on the server, since the server does not
+  filter removals. That is an account id only, no name or email address.
 
 ### Switching it on, and back off
 
