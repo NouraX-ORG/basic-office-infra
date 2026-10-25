@@ -174,6 +174,51 @@ services:
       start_period: 15m                 # first signature download plus loading
     logging: *logging
 
+  # Search engine for "search inside files": Elasticsearch on 9200 inside the compose network only
+  # (no port is published). The fulltextsearch apps in the file server send it the text of documents
+  # and ask it when someone searches (scripts/configure.d/50-search.sh). One node, so the index has no
+  # replicas. Security is on: the file server signs in as "nourax_drive", which may only use the
+  # nourax_drive* indexes; the "elastic" superuser is only used by 50-search.sh, inside this container.
+  # Details: docs/search-and-antivirus.md.
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-elasticsearch:9.5.5}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      cluster.name: nourax-search
+      node.name: elasticsearch
+      xpack.security.enabled: "true"
+      # Plain HTTP inside the compose network; nothing outside the stack can reach the port.
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.security.enrollment.enabled: "false"
+      # Features we don't use, switched off to save memory.
+      xpack.ml.enabled: "false"
+      xpack.watcher.enabled: "false"
+      ingest.geoip.downloader.enabled: "false"
+      ES_JAVA_OPTS: -Xms${ES_JAVA_HEAP:-512m} -Xmx${ES_JAVA_HEAP:-512m}
+      # The image refuses a password file that others can read: 50-search.sh keeps it at 0640.
+      ELASTIC_PASSWORD_FILE: /run/secrets/elasticsearch_password
+    secrets: [elasticsearch_password]
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ulimits:
+      nofile: { soft: 65535, hard: 65535 }
+    # The Java heap (ES_JAVA_HEAP) plus Elasticsearch's own memory outside it. The limit and the
+    # highest OOM score of the stack make the kernel stop the search engine first, never the
+    # database or the file server. Search then waits; nothing is lost (the index is made from the files).
+    mem_limit: ${ES_MEM_LIMIT:-1g}
+    oom_score_adj: 600
+    stop_grace_period: 2m
+    healthcheck:
+      # 401 means it is up and asks for a password; the check itself needs none.
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:9200/ | grep -qx 401"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    logging: *logging
+
 
   cloudflared:
     image: ${CLOUDFLARED_IMAGE}
@@ -204,6 +249,7 @@ volumes:
   onlyoffice_lib:
   onlyoffice_logs:
   clamav_db:
+  elasticsearch_data:
 
 secrets:
   postgres_password:
@@ -220,3 +266,5 @@ secrets:
     file: ${SECRETS_DIR}/r2_secret_access_key
   tunnel_token:
     file: ${SECRETS_DIR}/tunnel_token
+  elasticsearch_password:
+    file: ${SECRETS_DIR}/elasticsearch_password

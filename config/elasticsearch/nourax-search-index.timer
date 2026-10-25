@@ -1,0 +1,14 @@
+# Runs nourax-search-index.service 5 minutes after boot (or 1 minute after the timer is switched
+# on), then 2 minutes after each run ends, so two runs never overlap.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Index new and changed files for search inside files every 2 minutes
+
+[Timer]
+OnBootSec=5min
+OnActiveSec=1min
+OnUnitInactiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+{
+  "cluster": ["monitor", "manage_ingest_pipelines"],
+  "indices": [
+    {
+      "names": ["nourax_drive*"],
+      "privileges": ["all"]
+    }
+  ],
+  "metadata": {
+    "description": "The file server's account: its own search index and the text-extraction pipeline, nothing else. Set by scripts/configure.d/50-search.sh."
+  }
+}

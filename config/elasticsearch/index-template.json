@@ -1,0 +1,12 @@
+{
+  "index_patterns": ["nourax_drive*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    }
+  },
+  "_meta": {
+    "description": "One node, so no replicas: the index stays green. Set by scripts/configure.d/50-search.sh."
+  }
+}
