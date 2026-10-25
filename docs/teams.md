@@ -530,6 +530,12 @@ still shares the team's book, calendar and board.
 `PRIVACY_BASELINE=1 sudo tests/privacy.sh` runs only the checks that read, for a picture before
 the step is on: every FAIL there is a leak the step closes. It shares nothing.
 
+**With privacy on**, 2026-10-25 11:12–11:14 UTC (commit `c025c99`): `sudo tests/privacy.sh`
+passed every check (105 PASS lines, none failed, the rule file's 52 among them). For example the
+sharee search for "qa-t6" as `qa-t6-1` found only `qa-t6-2` and `qa-t6-1`'s own two groups; the
+exact id, email and name of `qa-t6-3` found nobody; the system book at its own address and its
+sync report held 2 cards, none outside organisation A; every profile page was "not found".
+
 ## What NoMail builds
 
 NoMail is the source of truth for organisations, teams and who is in them. The Drive only

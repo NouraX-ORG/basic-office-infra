@@ -295,6 +295,10 @@ one now 401, exactly one `NoMail` app password), the refusals (`nodrive`, `admin
 UUID, a missing email, a local account, a disabled account `qa-t6-8` that stays disabled, 16 KB+),
 and the rate limit (70 calls in a minute give 429 with `Retry-After`).
 
+**End-of-day run, 2026-10-25** (from `main`, privacy between organisations on): `nomail-api-health.sh`
+11:05 UTC, `api-provision.sh` 11:06–11:08 and `api-scan.sh` 11:17 (39 checks; EICAR infected in
+0.20 s, 5 MiB clean in 1.2 s, 99,614,720 bytes through Cloudflare clean in 12.0 s) all passed.
+
 ## Deploying a change to the app
 
 `git pull` on the server is enough for code changes (PHP notices changed files within a minute).
