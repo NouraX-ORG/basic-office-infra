@@ -41,7 +41,7 @@ Every answer is JSON with `Cache-Control: no-store`. Errors look like `{"error":
 | Status | `error` | When |
 |---|---|---|
 | 401 | `unauthorized` | No key, or the wrong key. Also sends `WWW-Authenticate: Bearer`. |
-| 429 | `rate_limited` | A rate limit is full. `Retry-After: 30`. Also sent by the brute-force protection (below). |
+| 429 | `rate_limited` | A rate limit is full. `Retry-After: 30`. The brute-force block (below) also answers 429, as HTML. |
 | 500 | `internal_error` | Anything unexpected. The server log has the error class and message, nothing else. |
 | 503 | `not_configured` | No key has been imported into the app yet. |
 
@@ -75,11 +75,14 @@ again, then give NoMail the new value the same way as the first time.
 
 - **Rate limits** count all callers together (NoMail's Edge Functions have no fixed IP), per
   minute, in Redis: health 120, provision 60, scan 60 (and at most 2 scans at once), admin 120.
-  NoMail sends at most 10 provisions and 20 scans per run, one run a minute.
+  NoMail sends at most 10 provisions and 20 scans per run, one run a minute. Tested 2026-10-25
+  with `rate_limit_health` set to 3 for a moment: calls 1-3 gave 200, calls 4 and 5 gave 429 with
+  `Retry-After: 30`.
 - **Wrong keys** are counted by the built-in brute-force protection (action `nourax_api_key`), per
-  IP address: each miss slows the next calls from that address, up to 25 seconds, and after more
-  than 10 misses in 12 hours the address gets 429. A call with the right key clears its address's misses.
-  To see or clear them: `occ security:bruteforce:attempts <ip> nourax_api_key`,
+  IP address. After more than 10 misses within 30 minutes, that address gets 429 from this API
+  (a short HTML page, not JSON) until its misses age out. Tested 2026-10-25: calls 1-10 with a
+  wrong key gave 401, calls 11 and 12 gave 429. A call with the right key clears its address's
+  misses. To see or clear them: `occ security:bruteforce:attempts <ip> nourax_api_key`,
   `occ security:bruteforce:reset <ip>`.
 - **Logs:** no request bodies, no keys, no app passwords. Errors are logged as class and message.
   Stack traces never show a key (`#[\SensitiveParameter]`).
