@@ -278,6 +278,15 @@ A finding is fixed where it comes from (a new spelling in `sweep/rules.json` or 
 `sweep/en-overrides.json` and a sweep; a link in `branding/custom.css`; a page in the theme or the
 nourax_branding app), then the page is audited again with `--pages`.
 
+What the audit found so far, and the fix:
+
+| Found | Fix |
+|---|---|
+| Personal settings > Language & locale: a "Help translate" link to the upstream project's translations | `branding/custom.css` hides that row |
+| Arabic: the login page, the public link pages and the other signed-out pages ran left to right (core sets `dir` only on signed-in pages) | nourax_branding `PageDirectionMiddleware` sets `dir="rtl"`; `custom.css` for the few error pages drawn outside the app framework |
+| Arabic: the WebDAV page (`/remote.php/dav` in a browser) was plain text, left to right | nourax_branding `Dav/BrandedGetPlugin.php` answers a small HTML page with its language and direction |
+| NoNotes showed the upstream phone-app badges (a link with the upstream name) while `scripts/configure.sh` ran: it writes `custom.css` first, and the app steps in `configure.d` add their hiding rules minutes later | `custom.css` holds a copy of those rules (NoNotes badges and marker, the upstream-blue colour swatch in every colour picker, NoGantt's default project colour) |
+
 ## Apps and their upstream branding
 
 Every app that is switched on was checked for the upstream name and links in its texts (en_GB

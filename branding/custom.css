@@ -97,6 +97,42 @@ body[data-theme-dark-highcontrast] {
 }
 
 /*
+ * App pages whose own scripts carry the upstream brand (no translation holds it). The app steps
+ * scripts/configure.d/50-apps.sh and 55-gantt.sh add these rules too, but configure.sh first writes
+ * this file alone and the app steps add theirs minutes later, after the text sweep: without a copy
+ * here, every configure run showed the pages below with the upstream badges and blue for a while
+ * (found by the browser audit).
+ * - NoNotes: the "Mobile apps" store badges (one link names the upstream project), their settings
+ *   section and its menu entry (it links to "#settings-section_undefined"); the marker of a note in a
+ *   shared folder, drawn in the upstream blue.
+ * - Every colour picker (NoTasks lists, NoBoard boards, calendars, ...): the swatch in the upstream
+ *   blue, whose name is the upstream brand.
+ * - NoGantt: projects without a colour of their own get the upstream blue.
+ */
+body:has(#content.app-notes) .help-mobile,
+body:has(#content.app-notes) .app-settings-section:has(.help-mobile),
+body:has(#content.app-notes) li:has(> a.navigation-list__link[href="#settings-section_undefined"]),
+.color-picker__simple-color-circle[style*="rgb(0, 130, 201)"] {
+	display: none !important;
+}
+body:has(#content.app-notes) [fill="#0082c9" i],
+body:has(#content.app-nc_gantt) [fill="#0082c9" i] {
+	fill: #2563EB !important;
+}
+body:has(#content.app-nc_gantt) [stroke="#0082c9" i] {
+	stroke: #2563EB !important;
+}
+body:has(#content.app-nc_gantt) .gantt-fill-0082c9 .bar {
+	fill: #2563EB !important;
+}
+body:has(#content.app-nc_gantt) .gantt-fill-0082c9 .bar-progress {
+	fill: #2563EBcc !important;
+}
+body:has(#content.app-nc_gantt) :is([style*="background: rgb(0, 130, 201)"], [style*="background-color: rgb(0, 130, 201)"]) {
+	background: #2563EB !important;
+}
+
+/*
  * Right-to-left languages: signed-out pages get dir="rtl" from the nourax_branding app
  * (Middleware/PageDirectionMiddleware); this covers the few error pages core draws without it.
  */
