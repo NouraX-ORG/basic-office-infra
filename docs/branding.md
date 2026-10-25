@@ -5,6 +5,86 @@ its logo, its blue (`#0082c9`, `#00679e`) or links to nextcloud.com, apps.nextcl
 docs.nextcloud.com or github.com/nextcloud. Nextcloud is credited in the repo only (NOTICE.md,
 README and these docs).
 
+## Text sweep
+
+Every text people can read that comes from a translation file of core, lib or an enabled app is
+rewritten: "Nourax Workspace" where the upstream name means the site or product, "NoDrive" where it
+means files, the product names below where it names an app. This covers every language, including
+"English (US)" (`en`, which has no translation file of its own), and both the texts the server writes
+into pages and e-mails and the texts the browser shows. ONLYOFFICE keeps its own name.
+
+**How it works.** `'theme' => 'nourax'` in config.php switches on the theme folder `themes/nourax` in
+the Nextcloud folder (on the persistent volume; the integrity check skips it). Nextcloud 35 reads
+translation overrides from there:
+
+- the server loads `themes/nourax/<l10n folder>/<lang>.json` after the app's own file and merges the
+  two, for example `themes/nourax/apps/settings/l10n/de.json`. The sweep writes only the texts that
+  change into it;
+- the browser loads one file per app and language and takes the theme's first, so
+  `themes/nourax/<app>/l10n/<lang>.js` (core: `themes/nourax/core/core/l10n/<lang>.js`) is a full copy
+  of the app's translations with the changes in it.
+
+The `nourax_branding` app builds these files from the installed translation files
+(`occ nourax_branding:sweep`, code in `nextcloud-apps/nourax_branding/lib/Service/`). For each text:
+
+1. links to upstream addresses lose the address and keep their text; bare upstream addresses go;
+2. the phrases in `sweep/rules.json` run, for example:
+
+   | Upstream text | Becomes |
+   |---|---|
+   | Nextcloud Files (also "Nextcloud Dateien") | NoDrive |
+   | Nextcloud Calendar, Contacts, Deck, Tasks, Notes, Forms | NoCalendar, NoContacts, NoBoard, NoTasks, NoNotes, NoForms |
+   | Nextcloud Assistant | Nourax AI |
+   | Nextcloud Talk, Office, Mail, Text, Teams, Flow, Photos | the app name alone |
+   | Nextcloud desktop, mobile, Android, iOS, sync client | NoDrive desktop, mobile, ... |
+   | #Nextcloud | #NouraxWorkspace |
+   | user@your-nextcloud.org (in any language) | user@drive.nourax.org |
+   | Nextcloud Hub 27 Winter, "(Nextcloud <= 9)" | Nourax Workspace; left out |
+   | Nextcloud Enterprise | "an enterprise subscription" in English, "Enterprise" elsewhere |
+   | `{productName} iOS app`, `{productName} Android app` | NoDrive iOS app, NoDrive Android app |
+
+3. every other spelling of the name becomes "Nourax Workspace": every case, misspellings such as
+   "Nexcloud", and the spellings in other scripts (Arabic, Persian, Serbian, Mongolian, Hindi and
+   more, all listed in `name_patterns`). A word ending stays after a hyphen ("Nextcloudhoz" becomes
+   "Nourax Workspace-hoz").
+
+A text that names the upstream but has no translation in a language would show its English source
+text there, so it gets the swept English text. Sentences a word swap cannot fix have curated texts in
+`sweep/en-overrides.json`: "english" for `en` and `en_GB`, "every_language" for the upstream's own
+notices (for example about its free push service), which would otherwise speak as the upstream.
+Placeholders such as `{productName}` and `%s` are never changed.
+
+Translations that another step wrote into the theme folder first (the NoGantt wording of
+`scripts/configure.d/55-gantt.sh`) are kept, and the sweep builds on top of them. Each file the sweep
+writes carries a `nouraxSweep` marker with a digest, so it can tell its own files from those.
+
+With theme files for core, Nextcloud would list every language twice in the language menu; the
+`nourax_branding` app removes the doubles from that menu.
+
+**When it runs.** By itself, so nobody has to remember it:
+
+- `sudo scripts/configure.sh` runs it (`scripts/configure.d/20-branding.sh` calls
+  `scripts/branding-sweep.sh`, which also sets the theme);
+- switching an app on or updating it (`occ app:enable`, `app:install`, `app:update`, `occ upgrade`,
+  the Apps page) sweeps that app at once;
+- a background job compares `themes/nourax/sweep-state.json` (server version, rules, every enabled app
+  and its version) with what is installed every 15 minutes and sweeps what changed: a new image, an
+  app added in some other way, or new rules after a `git pull`.
+
+A file is written only when its content changes, always in one step, and nothing is ever deleted; a
+second run writes nothing. Each change raises the theming cache buster, so browsers fetch the new
+files.
+
+**By hand.** `sudo scripts/branding-sweep.sh` sweeps everything now; `--report` also lists, per app,
+the notes and every translation that leaves the name out or spells it in a way the rules do not
+know. Add a new spelling to `name_patterns` in `sweep/rules.json` (the guard reads the same list),
+then run the sweep again. Check the result with
+`sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server --only l10n`. The rules have
+their own tests:
+`sudo docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php`.
+
+**Undo.** `occ config:system:delete theme` switches the overrides off; the files stay and do nothing.
+
 ## Apps and their upstream branding
 
 Every app that is switched on was checked for the upstream name and links in its texts (en_GB

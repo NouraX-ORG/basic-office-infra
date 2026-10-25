@@ -1,0 +1,33 @@
+{
+	"about": [
+		"Curated texts for sentences a word swap cannot fix (see docs/branding.md). Each entry is",
+		"app id -> the exact English source text (the translation key) -> the text people see instead.",
+		"\"english\" is used for en and en_GB (and other English variants); \"every_language\" is used for every",
+		"language, for upstream notices that speak as the upstream project. A plural key takes a list",
+		"[one, many]. Keys that are not installed are listed by occ nourax_branding:sweep --report."
+	],
+	"english": {
+		"core": {
+			"The update was unsuccessful. Please report this issue to the <a href=\"https://github.com/nextcloud/server/issues\" target=\"_blank\">Nextcloud community</a>.": "The update was unsuccessful. Please tell your administrator."
+		},
+		"settings": {
+			"Developed by the {communityopen}Nextcloud community{linkclose}, the {githubopen}source code{linkclose} is licensed under the {licenseopen}AGPL{linkclose}.": "Nourax Workspace is built on open-source software. Its {githubopen}source code{linkclose} is licensed under the {licenseopen}AGPL{linkclose}."
+		}
+	},
+	"every_language": {
+		"core": {
+			"This community release of Nextcloud is unsupported and push notifications are limited.": "Push notifications are limited on this server.",
+			"Enter your subscription key in the support app in order to increase the account limit. This does also grant you all additional benefits that Nextcloud Enterprise offers and is highly recommended for the operation in companies.": "Enter your subscription key in the support app to raise the account limit."
+		},
+		"settings": {
+			"This community release of Nextcloud is unsupported and instant notifications are unavailable.": "Instant notifications are not available on this server.",
+			"This is the unsupported community build of Nextcloud. Given the size of this instance, performance, reliability and scalability cannot be guaranteed. Push notifications are limited to avoid overloading our free service. Learn more about the benefits of Nextcloud Enterprise at {link}.": "Given the size of this instance, performance, reliability and scalability cannot be guaranteed. Push notifications are limited."
+		},
+		"notifications": {
+			"We want to keep offering our push notification service for free, but large number of users overload our infrastructure. For this reason we have to rate-limit the use of push notifications. If you need this feature, consider using Nextcloud Enterprise.": "The free push notification service limits how many push notifications each server can send.",
+			"Nextcloud GmbH sponsors a free push notification gateway for private users. To ensure good service, the gateway limits the number of push notifications per server and the limit was reached for this server. For enterprise users, a more scalable gateway is available.": "The free push notification gateway limits the number of push notifications per server, and this server has reached the limit.",
+			"Nextcloud GmbH sponsors a free push notification gateway for private users. To ensure good service, the gateway limits the number of push notifications per server. For enterprise users, a more scalable gateway is available. Contact Nextcloud GmbH for more information.": "The free push notification gateway limits the number of push notifications per server.",
+			"Contact Nextcloud GmbH": "More information"
+		}
+	}
+}

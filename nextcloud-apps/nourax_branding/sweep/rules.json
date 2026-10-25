@@ -11,9 +11,9 @@
 	"version": 1,
 	"name_patterns": [
 		{"id": "latin", "re": "(?i)next[ -]?cloud", "note": "Nextcloud, Next cloud, Next-cloud, nextcloud.com, #Nextcloud"},
-		{"id": "latin-misspelt", "re": "(?i)nex(?:ct|to)?cloud|nextcould", "note": "Nexcloud (es, hu), Nexctcloud (et), Nextocloud (sc), Nextcould (tr)"},
+		{"id": "latin-misspelt", "re": "(?i)nex(?:ct|to)?cloud|nextcould|nextzcloud|nextcolud", "note": "Nexcloud (es, hu), Nexctcloud (et), Nextocloud (sc), Nextcould and Nextcolud (tr), Nextzcloud (sl)"},
 		{"id": "latin-phonetic", "re": "(?i)nekst ?klaud", "note": "Serbian and Bosnian Latin"},
-		{"id": "arabic", "re": "ن(?:ي)?كست ?كلاود", "note": "Arabic نكست كلاود, نيكست كلاود"},
+		{"id": "arabic", "re": "ن(?:ي)?كست ?كل(?:ا)?ود", "note": "Arabic نكست كلاود, نيكست كلاود, نكست كلود"},
 		{"id": "persian", "re": "نکست[‌ ]?کل(?:ا)?ود", "note": "Persian نکست‌کلود with or without the zero-width non-joiner"},
 		{"id": "cyrillic", "re": "(?i)н[еэ]кст ?клауд", "note": "Serbian Некстклауд, Mongolian Нэкстклауд"},
 		{"id": "hindi", "re": "नेक्स्ट ?क्लाउड", "note": "Hindi"},
@@ -64,6 +64,50 @@
 		"path": "themes/<theme>/sweep-state.json, relative to /var/www/html",
 		"format": {"server": "full server version, e.g. 35.0.2.2 (OCP\\ServerVersion::getVersion() joined with dots)", "apps": {"<app id>": "<installed version of every enabled app>"}},
 		"note": "Written by the sweep after each run; the guard's --server check fails when it is missing or differs from the installed server and apps."
+	},
+	"sweep": {
+		"about": [
+			"How occ nourax_branding:sweep rewrites translations (lib/Service/L10nSweeper.php, docs/branding.md).",
+			"Each text goes through these steps in order: links to upstream addresses lose their address and keep their",
+			"text, bare upstream addresses are dropped, the phrases below run top to bottom, and then every name pattern",
+			"above (except the ones in generic_skip) becomes the product name.",
+			"These patterns are read by PHP only (PCRE with the u modifier); $1 in 'to' is the first group.",
+			"'langs' is 'en' (en, en_GB and other English variants), 'other' (every other language) or left out (all)."
+		],
+		"product": "Nourax Workspace",
+		"generic_skip": ["company"],
+		"phrases": [
+			{"re": "(?i)#next[ -]?cloud", "to": "#NouraxWorkspace", "note": "the federated cloud ID hashtag"},
+			{"re": "(?i)@[^\\s@/<>()\"'\\[\\]]*next[ -]?cloud[^\\s@/<>()\"'\\[\\]]*\\.org\\b", "to": "@drive.nourax.org", "note": "example cloud IDs such as user@your-nextcloud.org or felhasználó@az-ön-nextcloudja.org, in every language"},
+			{"re": "(?i)(?<=[.。])\\s*[(（]\\s*(?:next[ -]?cloud|nex(?:ct|to|tz)?cloud)\\s*(?:<=?|≤)\\s*\\d+\\s*[)）][.。]", "to": "", "note": "the next rule, between two full stops"},
+			{"re": "(?i)\\s*[(（]\\s*(?:next[ -]?cloud|nex(?:ct|to|tz)?cloud)\\s*(?:<=?|≤)\\s*\\d+\\s*[)）]", "to": "", "note": "(Nextcloud <= 9): an old upstream version, nothing to say to people"},
+			{"re": "(?i)\\bHub\\s*\\d+\\s*/\\s*(?=(?:next[ -]?cloud|nex(?:ct|to)?cloud)\\s*\\d)", "to": "", "note": "Hub 10 / Nextcloud 31 keeps only the number part, which becomes the product"},
+			{"re": "(?i)(?:next[ -]?cloud|nex(?:ct|to)?cloud)[ -]Hub(?:\\s*\\d+)?(?:\\s+(?:Spring|Summer|Autumn|Fall|Winter))?(?:\\s*[(（]\\s*(?:next[ -]?cloud|nex(?:ct|to)?cloud)\\s*\\d+\\s*[)）])?", "to": "Nourax Workspace", "note": "upstream release names"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Files|Dateien)\\b", "to": "NoDrive"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Calendar)\\b", "to": "NoCalendar"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Contacts)\\b", "to": "NoContacts"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Deck)\\b", "to": "NoBoard"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Tasks)\\b", "to": "NoTasks"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Notes)\\b", "to": "NoNotes"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Forms)\\b", "to": "NoForms"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:Assistant)\\b", "to": "Nourax AI"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](Talk|Office|Mail|Text|Teams|Flow|Photos)\\b", "to": "$1", "note": "product names that stay without the upstream name"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:All-in-One)", "to": "All-in-One"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -](?i:App ?store)\\b", "to": "App store"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)([ -])((?i:desktop|mobile|Android|iOS|sync)\\b|(?i:client))", "to": "NoDrive$1$2", "note": "the file sync clients"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud) Enterprise\\b", "to": "an enterprise subscription", "langs": "en"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud)[ -]Enterprise\\b", "to": "Enterprise", "langs": "other"},
+			{"re": "(?i:next[ -]?cloud|nex(?:ct|to)?cloud|NC)[ -]GmbH\\b|\\bGmbH\\b", "to": "the upstream project", "note": "the upstream company; its notices have curated texts in en-overrides.json, this only catches new ones"}
+		],
+		"key_rules": [
+			{"app": "settings", "key": "{productName} iOS app", "from": "{productName}", "to": "NoDrive", "note": "the files app for phones is NoDrive"},
+			{"app": "settings", "key": "{productName} Android app", "from": "{productName}", "to": "NoDrive"},
+			{"app": "settings", "key": "{productName} Talk for iOS", "from": "{productName} ", "to": ""},
+			{"app": "settings", "key": "{productName} Talk for Android", "from": "{productName} ", "to": ""},
+			{"app": "settings", "key": "Use {productName} mobile client you want to connect to scan the code", "from": "{productName}", "to": "NoDrive"}
+		],
+		"keep": ["ONLYOFFICE"],
+		"keep_note": "Words the sweep never changes. No pattern above matches them; tests/run.php checks it."
 	},
 	"allow": [],
 	"allow_note": "Exceptions, each {\"area\": \"pages\", \"url\": regex, \"where\": regex, \"snippet\": regex, \"why\": \"...\"}; a finding matching every given regex is not reported. Licence text only where a licence requires it."

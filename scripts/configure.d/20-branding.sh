@@ -1,7 +1,7 @@
 # Nourax branding: the nourax_branding app (nextcloud-apps/nourax_branding). It puts NoMail in the
 # app menu of every signed-in person, right after NoBoard, and opens it in a new tab.
-# Then it switches off the leftover upstream apps that show the upstream name, and hides the App store
-# tile of the app menu (see docs/branding.md).
+# Then it switches off the leftover upstream apps that show the upstream name, hides the App store
+# tile of the app menu, and runs the text sweep of every translation (see docs/branding.md).
 # Sourced by scripts/configure.sh with its helpers (occ, dc, log, secret_path, have_secret).
 # To run only this step on the server:
 #   sudo bash -c '. scripts/lib.sh; load_env; . scripts/configure.d/20-branding.sh'
@@ -49,3 +49,12 @@ unset branding_enabled branding_app
 # to false hides only that tile: admins still install and update apps from Administration > Apps.
 log "branding: hide the App store tile in the app menu of people who are not admins"
 occ config:app:set core appstore_link_shown --type=boolean --value=false >/dev/null
+
+# Text sweep: the upstream name in the translations of core and every enabled app, in every language
+# (scripts/branding-sweep.sh). Apps that later steps switch on are swept by the nourax_branding app as
+# soon as they are switched on. A failure is a loud warning and not a stop, so the steps after this
+# one still run; scripts/check-branding.sh is the real check.
+log "branding: text sweep of every translation"
+if ! bash "$REPO_DIR/scripts/branding-sweep.sh"; then
+	log "WARNING: the text sweep did not finish cleanly - see the lines above, then run: sudo scripts/branding-sweep.sh --report"
+fi
