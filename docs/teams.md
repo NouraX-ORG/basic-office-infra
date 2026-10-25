@@ -13,12 +13,15 @@ again finishes a call that stopped half way and reports `unchanged` for what was
 | Base URL | `https://drive.nourax.org/apps/nourax_api` (the `/index.php/apps/nourax_api` form works too) |
 | Where it runs | The `nourax_api` app (`nextcloud-apps/nourax_api`), next to the [NoMail API](nomail-api.md) |
 | Key | Server secret `nodrive_admin_api_key` (48 characters), imported by `scripts/configure.d/60-nomail-api.sh` |
-| Tests | `sudo tests/admin-api.sh` (part 1) and `sudo tests/admin-people.sh` (part 2) on the server |
+| Tests | `sudo tests/admin-api.sh` (part 1), `sudo tests/admin-people.sh` (part 2) and `sudo tests/privacy.sh` (privacy between organisations) on the server |
 
 **Part 1 (live):** request signing, the audit, organisations and teams.
 **Part 2 (live):** people (`PUT /v1/admin/people/{user_id}`: joins, moves, leaves, leaving the
 organisation), the reconcile call, the drift guard that keeps the groups locked, and the scheduled
 delete of leavers, built **switched off**.
+**Privacy between organisations (built; not switched on yet):** people find, autocomplete and
+share only with people of their own organisation. See
+[Privacy between organisations](#privacy-between-organisations).
 
 ## What one organisation and one team get
 
@@ -420,6 +423,98 @@ The API reads them from the signed path, never from the body.
 `--check` signs in with the app password over `http://app` and prints the HTTP status (200).
 `occ nourax_api:status` shows `service_account` and `loopback_app_password` (set or missing).
 
+## Privacy between organisations
+
+People find, autocomplete and share only with people of their **own organisation**: the people
+in its group `org:{org_id}` (and so in its teams). Nobody of another organisation is suggested,
+found by an exact name, email address or account id, or can be shared with.
+
+**State:** built and tested on 2026-10-25; **not switched on yet**. These are server-wide
+switches (see "Who else this changes"), so the step `scripts/configure.d/60-org-privacy.sh` does
+nothing until it is switched on once, on purpose. Until then the nourax_api checks below do
+nothing either.
+
+### What is limited, and how
+
+| What | With privacy on | Done by |
+|---|---|---|
+| Suggestions in the share dialog, autocomplete (@-mentions in comments and documents), the contacts menu, calendar invitees and DAV principal search | Only people who share a group (an organisation or a team) | core `shareapi_allow_share_dialog_user_enumeration=yes`, `shareapi_restrict_user_enumeration_to_group=yes`, `shareapi_restrict_user_enumeration_to_phone=no` |
+| Typing someone's exact name, email address or account id | Finds nobody outside those groups | core `shareapi_restrict_user_enumeration_full_match=no`, and `..._full_match_user_id`, `..._full_match_email`, `..._full_match_displayname` = `no` |
+| Sharing a file or folder with a person or a group | Only with people who share a group, and only with one's own groups ("Sharing is only allowed with group members.") | core `shareapi_only_share_with_group_members=yes`; `shareapi_only_share_with_group_members_exclude_group_list=["admin"]`, so being in `admin` together never counts |
+| Sharing a calendar or an address book (NoCalendar, NoContacts, any CalDAV or CardDAV app) | The same rule: 403 "Sharing is only allowed with people of your organisation." and nothing is shared. The server itself checks only `mailto:` targets here, not account or group ids. | nourax_api `lib/Dav/OrgSharePlugin.php` (a DAV plugin on `/remote.php/dav`, before the server's sharing plugin) |
+| Sharing a board (NoBoard, in the app or through its REST and OCS APIs) | The same rule: 403 with the same message. Deck itself takes any account or group id. | nourax_api `lib/Middleware/OrgShareMiddleware.php` (looks only at Deck's three "add a board share" actions) |
+| The "Accounts" address book of every account on the server | Not offered in anyone's address books. Asked for at its own address, it lists only people who share a group. Each organisation has its own directory instead. | dav `system_addressbook_exposed=false` |
+| Profile pages (`/u/<uid>`) | Off for everyone: 404 | system `profile.enabled=false` |
+| Shares with other servers, the public lookup server | Off | files_sharing `outgoing_server2server_share_enabled`, `incoming_server2server_share_enabled`, `outgoing_server2server_group_share_enabled`, `incoming_server2server_group_share_enabled`, `lookupServerEnabled`, `lookupServerUploadEnabled` = `no` (the keys live in files_sharing, not federatedfilesharing) |
+| Trusted servers | Off | app `federation` disabled (0 federated shares and 0 trusted servers on 2026-10-25) |
+| The Teams app (circles) | Off | app `circles` disabled: its member search lists every account on the server, disabled ones too, whatever the settings above say, and anyone may add any account to a team (tested 2026-10-25). Team folders, boards and the team address books do not use it. |
+| Search | Unchanged: the search box only finds one's own files and files shared with one, and one's own contacts and directories. Tested with a word only another organisation's file has. | — |
+
+The rule for calendars, address books and boards is the server's own rule for files (core's
+`RestrictInteractionListener`), in `lib/Service/OrgPrivacy.php`: a person only when the two share
+a group other than `admin`; a group only when one is a member and it is not `admin`; a Teams-app
+team or a person on another server never. The service account `nourax-teams` is never limited, so
+the admin API keeps sharing the team books, calendars and boards with their team groups.
+`occ nourax_api:status` shows `org_privacy` (`on` while sharing is limited to group members).
+
+### What stays possible
+
+- **Public links**, and "share by email" (a link sent to any address). Typing an email address
+  offers that address for a link by email; the offer is the typed text only and says nothing
+  about whether an account has that address.
+- **Inviting** anyone to an event by email address (an invitation, as an email would be).
+- **Existing shares** stay: the settings check new shares only.
+
+### Who else this changes
+
+- Accounts in **no organisation** share with nobody but their group-mates. The owner and
+  `nodrive` are only in `admin`, which never counts: they keep links, but no longer share with
+  people directly. To share with an organisation's people, put the account in that organisation.
+- **Other tasks' QA accounts** (for example `qa-t1-7` and `qa-t1-8`, `qa-t5b-*`) are in no common
+  group: shares between them are refused once privacy is on. So it is switched on after their
+  sharing tests.
+- The team **"hammadddd"** (made 2026-10-23 in the Teams app by `nodrive`) is hidden while the
+  Teams app is off. Nothing is deleted; enabling the app shows it again.
+
+### Known limits
+
+- Someone who already knows the exact account id of a person in another organisation (a random
+  36-character id they cannot find through Drive) can still see that the account exists and its
+  avatar picture (`/avatar/<id>/64`), and its online status if one is set. They cannot find it,
+  share with it or see its profile.
+- The old addresses `/remote.php/caldav` and `/remote.php/carddav` have no sharing at all, so
+  `OrgSharePlugin` covers every way to share a calendar or an address book.
+
+### Switching it on, and back off
+
+Under the server-change lock, after the other tasks' sharing tests (it needs no restart):
+
+```
+ssh … 'cd /opt/nourax/basic-office-infra && sudo flock -w 1800 /run/nourax-deploy.lock bash -c "git pull -q --ff-only && ORG_PRIVACY=on bash -c \". scripts/lib.sh; load_env; . scripts/configure.d/60-org-privacy.sh\" && NOURAX_LOCK_HELD=1 tests/privacy.sh"'
+```
+
+It sets the settings above, disables `federation` and `circles` and stores the switch
+(`nourax_api org_privacy_step=on`), so every later `scripts/configure.sh` run keeps it on.
+**Undo** with `ORG_PRIVACY=off` in the same command (without the test): the server's defaults come
+back and both apps are enabled again.
+
+### The test
+
+`sudo tests/privacy.sh` (after `tests/admin-api.sh`). It puts `qa-t6-1` (team A2) and `qa-t6-2`
+(team A1) in organisation A and `qa-t6-3` and `qa-t6-5` (team B1) in organisation B through the
+people API, then, as `qa-t6-1` with its app password from `/v1/provision`, checks every row of the
+table above: the settings, the sharee search (a wide search, the exact id, email and name of
+`qa-t6-3`), autocomplete, the contacts menu, the address book list and the directory's cards, the
+system book at its own address, principal search, the files, full-text and contacts search (with
+`qa-t6-3` finding its own file as the control), profiles, the Teams app, file shares (person,
+group, other server), calendar and address book shares (account, email, group) and board shares
+(REST and OCS), each refused for organisation B and allowed for `qa-t6-2`. It also runs
+`tests/org-privacy-rules.php`, which asks `OrgPrivacy` directly, and checks that a team PUT
+still shares the team's book, calendar and board.
+
+`PRIVACY_BASELINE=1 sudo tests/privacy.sh` runs only the checks that read, for a picture before
+the step is on: every FAIL there is a leak the step closes. It shares nothing.
+
 ## QA objects made by the test
 
 `tests/admin-api.sh` uses only these, and deletes nothing:
@@ -430,6 +525,7 @@ The API reads them from the signed path, never from the body.
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
+| People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team
 B1"; `tests/admin-api.sh` names them "Sales" again. Both count the versions on from what is

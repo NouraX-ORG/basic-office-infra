@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * occ nourax_api:status - what the app knows, as JSON: whether the keys are set (never their
  * values), ClamAV, the sign-in provider, the scheduled delete of leavers (switch and last run),
- * the service account, the open drift rows and the table counts.
+ * the service account, the open drift rows, the table counts, and whether sharing is limited to
+ * one's organisation (org_privacy, docs/teams.md).
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -16,6 +17,7 @@ use OCA\NouraxApi\AppInfo\Application;
 use OCA\NouraxApi\Http\ApiKeyAuth;
 use OCA\NouraxApi\Service\AdminStore;
 use OCA\NouraxApi\Service\HealthService;
+use OCA\NouraxApi\Service\OrgPrivacy;
 use OCA\NouraxApi\Service\ServiceAccountService;
 use OCA\NouraxApi\Settings;
 use OCP\App\IAppManager;
@@ -36,6 +38,7 @@ class Status extends Command {
 		private IDBConnection $db,
 		private IUserManager $userManager,
 		private AdminStore $store,
+		private OrgPrivacy $orgPrivacy,
 	) {
 		parent::__construct();
 	}
@@ -72,6 +75,9 @@ class Status extends Command {
 			'service_account' => $this->userManager->userExists(ServiceAccountService::UID) ? ServiceAccountService::UID : 'missing',
 			'loopback_app_password' => $this->settings->loopbackPassword() !== '' ? 'set' : 'missing',
 			'loopback_url' => $this->settings->loopbackUrl(),
+			// "on" while sharing is limited to group members, which is when calendar, address
+			// book and board shares are limited to one's organisation too.
+			'org_privacy' => $this->orgPrivacy->isOn() ? 'on' : 'off',
 			'rows' => $counts,
 		];
 		$output->writeln((string)json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

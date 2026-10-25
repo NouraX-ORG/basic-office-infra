@@ -16,6 +16,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **Search inside files** | The words inside documents (docx, xlsx, pptx, odt, pdf, txt, md) are found in the normal search box, only by people who can open the file ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#search-inside-files)) |
 | **NoMail** | Nourax mail: the NoMail entry in the app menu, right after NoBoard, opens it in a new tab (`nextcloud-apps/nourax_branding/`) |
 | **Organisations and teams** | Each team gets a group, a team folder, a read-only team address book, a calendar and a board, made by the admin-only teams API ([docs/teams.md](docs/teams.md)) |
+| **Privacy between organisations** | People find, autocomplete and share (files, calendars, address books, boards) only with people of their own organisation; switched on once with `ORG_PRIVACY=on` ([docs/teams.md](docs/teams.md#privacy-between-organisations)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

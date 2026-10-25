@@ -11,6 +11,7 @@ namespace OCA\NouraxApi\AppInfo;
 use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\NouraxApi\Listener\GroupDriftListener;
 use OCA\NouraxApi\Listener\SabrePluginAddListener;
+use OCA\NouraxApi\Middleware\OrgShareMiddleware;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -33,7 +34,11 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(UserRemovedEvent::class, GroupDriftListener::class);
 		$context->registerEventListener(GroupDeletedEvent::class, GroupDriftListener::class);
 		// The directories and team address books are read-only for members: a write gets 403.
+		// The same listener adds the org privacy check of calendar and address book shares.
 		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginAddListener::class);
+		// Privacy between organisations for Deck boards: registered for every app's controllers,
+		// it looks only at Deck's "add a board share" actions (docs/teams.md).
+		$context->registerMiddleware(OrgShareMiddleware::class, true);
 	}
 
 	public function boot(IBootContext $context): void {

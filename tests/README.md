@@ -9,6 +9,7 @@ sudo tests/nomail-api-health.sh
 sudo tests/api-provision.sh
 sudo tests/admin-api.sh      # after api-provision.sh, which makes qa-t6-1
 sudo tests/admin-people.sh   # after admin-api.sh, which makes the QA organisations and teams
+sudo tests/privacy.sh        # after admin-api.sh; once the org privacy step is on (docs/teams.md)
 ```
 
 Each prints one `PASS` or `FAIL` line per check and exits 0 only when every check passed.
@@ -20,6 +21,8 @@ Each prints one `PASS` or `FAIL` line per check and exits 0 only when every chec
 | `provision-request.php` | The input rules of `/v1/provision` on their own, inside the app container: `sudo docker compose exec -T app php < tests/provision-request.php` |
 | `admin-api.sh` | The admin API, part 1 ([docs/teams.md](../docs/teams.md)): signing (no, wrong, old, reused signatures give 401), 413 over 2 MB, input rules, organisations and teams with every step, "Sales" and "Sales 2" in one organisation, renames that keep every id, stale versions, 423 while a call runs, a member's cards and what they can reach (`qa-t6-5`, added with occ), the audit. QA organisations and teams `qa-t6-*` only. |
 | `admin-people.sh` | The admin API, part 2: people PUT and GET (input rules, joins, a lead's rights, stale versions), what a member reaches (the team books are read-only: every write gets 403 and nothing is written; people outside the team still get 404), leaving a team (the shares, the lock, the ONLYOFFICE drop, access gone at once, files stay), a move, an email change that keeps the uid, the last member leaving (team archived, nothing deleted), leaving the organisation (disabled, every app password revoked so WebDAV and OCS answer 401, links hidden, kept 30 days, the delete job off and harmless) and coming back (links on own files work again; the test removes its one link), the reconcile call (dry run and fix; the drift job is run first, so it cannot undo the occ change in the middle of the test), the drift repair, 423 for parallel PUTs, the audit. |
+| `privacy.sh` | Privacy between organisations ([docs/teams.md](../docs/teams.md#privacy-between-organisations)), as `qa-t6-1` of QA organisation A sees `qa-t6-3` and `qa-t6-5` of organisation B: the settings and disabled apps, sharee search (wide, exact id, email and name), autocomplete, the contacts menu, address books (no system book; the directory holds org A only), principal search, files, full-text and contacts search, profiles (404), the Teams app (off), and file, calendar, address book and board shares (refused for org B, allowed for `qa-t6-2`). `PRIVACY_BASELINE=1` runs only the reading checks, for a picture before the step is on. Runs `org-privacy-rules.php` first. |
+| `org-privacy-rules.php` | nourax_api's rule for calendar, address book and board shares (`OrgPrivacy`), asked directly with the real QA accounts as if privacy were on: `sudo docker compose exec -T -u www-data app php < tests/org-privacy-rules.php` |
 
 `lib.sh` holds the shared helpers (`check`, `api`, `provision`, `propfind`, `save_netrc`, `qa_local_user`, `take_lock`, `drift_job_now`).
 
