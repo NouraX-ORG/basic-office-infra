@@ -28,7 +28,7 @@ final class ProvisionRequest {
 
 	// D: "$" must not match before a trailing newline.
 	private const UUID = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
-	private const QA_ID = '/^qa-t[0-9]{1,2}-[0-9]{1,3}$/D';
+	private const QA_ID = '/^qa-t[0-9]{1,2}[a-z]?-[0-9]{1,3}$/D';
 
 	private function __construct(
 		public readonly string $userId,
@@ -66,9 +66,9 @@ final class ProvisionRequest {
 	}
 
 	/**
-	 * A Supabase user id (lowercase UUID) or a QA id (qa-t<task>-<n>). Never a demo- id: this is the
-	 * rule of /v1/provision and of the scheduled delete (LeaverDeletion), so neither ever touches the
-	 * owner's demo accounts.
+	 * A Supabase user id (lowercase UUID) or a QA id (qa-t<task>-<n>; the task may end in one
+	 * letter, as in qa-t6b-1). Never a demo- id: this is the rule of /v1/provision and of the
+	 * scheduled delete (LeaverDeletion), so neither ever touches the owner's demo accounts.
 	 */
 	public static function validUserId(string $userId): bool {
 		return preg_match(self::UUID, $userId) === 1 || preg_match(self::QA_ID, $userId) === 1;

@@ -102,6 +102,8 @@ expect('UUID person accepted', R::validUserId(UUID) && R::validPersonId(UUID) &&
 expect('QA person accepted', R::validUserId('qa-t6-1') && P::fromArray('qa-t6-1', person('qa-t6-org-a'))->orgId === 'qa-t6-org-a');
 expect('QA person in a UUID organisation accepted', P::fromArray('qa-t6-1', person(UUID))->orgId === UUID);
 expect('qa-t6-1000 person refused', !R::validPersonId('qa-t6-1000'));
+expect('qa-t6b-1 person accepted (a task with a letter)', R::validUserId('qa-t6b-1') && P::fromArray('qa-t6b-1', person('qa-t6b-org-a'))->orgId === 'qa-t6b-org-a');
+expect('qa-t6bb-1 and qa-t6B-1 refused', !R::validPersonId('qa-t6bb-1') && !R::validPersonId('qa-t6B-1'));
 expect('POST /v1/provision with qa-t6-1 accepted', R::fromJson('{"user_id":"qa-t6-1","email":"","display_name":""}')->userId === 'qa-t6-1');
 
 echo $fails === 0 ? "all id checks passed\n" : "$fails id check(s) failed\n";
