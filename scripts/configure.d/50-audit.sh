@@ -44,8 +44,10 @@ nourax_audit() {
 
 	# Rotation. The server's job rotates nextcloud.log every hour and admin_audit's job rotates
 	# audit.log every 3 hours, both when the file is over log_rotate_size: the file is renamed to
-	# .1 (replacing the older .1) and a new one is started. 50 MiB (default 100 MiB) keeps each log
-	# under about 100 MiB on disk. The audit log stays at its default place, <datadirectory>/audit.log
+	# .1 (replacing the older .1) and a new one is started. 50 MiB (default 100 MiB). The size is
+	# only checked when the job runs, so a busy server takes the audit log past 50 MiB by up to 3
+	# hours of lines first (measured sizes: docs/apps.md, "Rotation"). The audit log stays at its
+	# default place, <datadirectory>/audit.log
 	# (/var/www/html/data/audit.log, in the "nextcloud" volume): admin_audit's rotation job does not
 	# read logfile_audit, so a log set there would never be rotated.
 	if [ "$(occ config:system:get log_rotate_size 2>/dev/null || true)" != 52428800 ]; then

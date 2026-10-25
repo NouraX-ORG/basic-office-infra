@@ -341,14 +341,25 @@ www-data, mode 0640. It is not moved with `logfile_audit`: admin_audit's rotatio
 that setting, so a log there would never be rotated.
 
 **Rotation:** `log_rotate_size` is 50 MiB (the default is 100 MiB). Every 3 hours admin_audit's job
-`OCA\AdminAudit\BackgroundJobs\Rotate` renames a log over that size to `audit.log.1`, replacing the
-older copy, and a new log starts. The server's own job does the same for `nextcloud.log` every hour.
-So each log keeps at most about 100 MiB. During the QA tests of 2026-10-25 (several test runs at
-once) the audit log grew by about 120 KB a minute with every line, and by 30 to 60 KB a minute
-without the two left-out kinds. At 60 KB a minute, 50 MiB lasts about 14 hours and the two files
-together about a day. Normal use makes far fewer requests, so they last longer. If a longer history
-is needed, raise the size: `OCC config:system:set log_rotate_size --type=integer --value=<bytes>`
-(and the same number in `50-audit.sh`, which otherwise sets 50 MiB again on its next run).
+`OCA\AdminAudit\BackgroundJobs\Rotate` looks at the log: one over that size is renamed to
+`audit.log.1`, replacing the older copy, and a new log starts. The server's own job does the same
+for `nextcloud.log` every hour. The size is only checked when the job runs, so a log passes 50 MiB
+by whatever is written in up to 3 hours before it is rotated. **How big the files get depends on
+how busy the server is:**
+
+| Audit log growth | 3 hours add | Largest `audit.log` | Both files together |
+|---|---|---|---|
+| 60 KB a minute | about 10 MiB | about 60 MiB | about 120 MiB |
+| 400 KB a minute | about 70 MiB | about 120 MiB | about 240 MiB |
+
+Measured on 2026-10-25 during the QA tests, with five test runs at once and after the two left-out
+kinds: 5 to 150 KB a minute in quiet spells, 300 to 400 KB a minute in busy ones (1,547,302 bytes
+at 11:57 UTC, 2,804,033 at 12:01) and 870 KB in the busiest minute. One test account made about 60%
+of it. By size, "Login successful" (one for each request with an app password) was over 40% of the
+lines, "Cache entry inserted" about a quarter. Normal use makes far fewer requests. The disk had
+24 GB free. If a longer history is needed, raise the size:
+`OCC config:system:set log_rotate_size --type=integer --value=<bytes>` (and the same number in
+`50-audit.sh`, which otherwise sets 50 MiB again on its next run).
 
 **Read it** (on the server; `jq` is installed there):
 
@@ -378,6 +389,7 @@ sudo docker compose exec -T app grep -h 'Login failed' data/audit.log | jq -c '{
 | Check | Result |
 |---|---|
 | `OCC app:list --output=json \| jq -r '.enabled.suspicious_login, .enabled.admin_audit'` | `13.0.0`, `2.0.0` |
+| `OCC config:system:get log.condition --output=json` | exactly the `matches` value above. Not the upstream `{"apps":["admin_audit"]}`, on purpose: core `lib/private/Log.php` (`getLogLevel`) lets every line of an app named in a plain `apps` entry through before it reads `matches`, and admin_audit's `ConsoleEventListener` writes each occ command with all its arguments. With the plain value, the ONLYOFFICE key that `configure.sh` hands to occ would be written to `audit.log` in plain text on every run |
 | `OCC config:system:get log_rotate_size` | `52428800` |
 | `OCC background-job:list --class=<job> --output=json \| jq length` for ETLJob, TrainJobIpV4, TrainJobIpV6 and admin_audit's Rotate | 1 each. ETLJob ran at 11:50 UTC, minutes after the app was switched on; the others wait for their time |
 | As `qa-t5-1` from the server's address: WebDAV `PUT` (201), then `GET` (200) of `audit-test.txt` | `audit.log` got "Login successful", "File with id "1126" created", "… written to", then "… accessed", each with `remoteAddr` 57.129.185.78 and the user `qa-t5-1` |
