@@ -188,6 +188,12 @@ password link 401) and `https://drive.nourax.org/s/<token>/preview` (`200 image/
   address: the next requests of that kind from the address wait longer (doubling, up to 25 s, for
   12 hours) and more than 10 in 30 minutes are refused. NoMail's server never needs to open
   public links; mail readers that fetch a removed picture only slow themselves down.
+- **The Drive sends no email yet.** No mail server is set (on 2026-10-25 `occ config:system:get`
+  found `mail_smtpmode`, `mail_smtphost` and `mail_from_address` unset). Link-by-email shares,
+  calendar invitations and the "email address changed" notice that core sends when
+  `/v1/provision` changes an email are not delivered (the notice failed in the provision tests).
+  NoMail gives out links in its own emails, so U1–U5 do not depend on it. Sending through NoMail is
+  an idea for later (the reply to NoMail, section 15).
 - **Antivirus.** A chunked upload over 256 MiB is not scanned while it arrives; the stored-file
   scan checks it within about 15 minutes ([search-and-antivirus.md](search-and-antivirus.md)).
   Files up to 256 MiB are scanned before the `MOVE` answers, which is why the `MOVE` of a 110 MB

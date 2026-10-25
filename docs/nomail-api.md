@@ -233,6 +233,11 @@ shown, never on a command line on the server and never in the clipboard.
   wrong key gave 401, calls 11 and 12 gave 429. A call with the right key clears its address's
   misses. To see or clear them: `occ security:bruteforce:attempts <ip> nourax_api_key`,
   `occ security:bruteforce:reset <ip>`.
+- **HTTPS only.** `http://drive.nourax.org/...` is not redirected to HTTPS: on 2026-10-25
+  `curl http://drive.nourax.org/apps/nourax_api/v1/health` answered 401, so a caller set up with
+  `http://` would send its key unencrypted as far as Cloudflare. NoMail must use the `https://`
+  base URL. Cloudflare's free "Always Use HTTPS" setting would redirect it; it is zone-wide, so it
+  is the owner's choice.
 - **Logs:** no request bodies, no keys, no app passwords. Errors are logged as class and message.
   Stack traces never show a key (`#[\SensitiveParameter]`).
 - **Audit:** every call except a successful health check gets a row in `oc_nourax_api_audit`

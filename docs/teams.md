@@ -130,6 +130,22 @@ async function adminFetch(base: string, key: string, method: "GET" | "PUT", path
 // adminFetch(NODRIVE_API_URL, NODRIVE_ADMIN_API_KEY, "PUT", `/v1/admin/orgs/${orgId}`, { name, version })
 ```
 
+**Worked example** (a made-up key, for unit tests). On 2026-10-25 the code above, run in Node's
+Web Crypto, and the app's own `HmacAuth::sign` (run with `php -r` in the server's `app`
+container) gave the same signature:
+
+| Input | Value |
+|---|---|
+| Key | `example-key-not-real-0123456789abcdefghijklmnop` (not a real key) |
+| Method, path | `PUT`, `/v1/admin/orgs/2f6c1b9e-1d1a-4c55-9a64-3b9b8f0f6a10` |
+| Timestamp, nonce | `1792929600` (2026-10-25 12:00:00 UTC), `0f8a3c2e9b7d4e61a5c3b2d1e0f9a8b7` |
+| Body (exact bytes) | `{"name":"Acme","version":1}` |
+| SHA-256 of the body | `da3a344c0679adfd6995b9371e18ebcde4a4aefa97e187259234d2c7ebe291e9` |
+| Signature | `de96f9d30ba3c7273e4ad3b184471a43399fa616673614df2981cfc6e0290059` |
+
+The key is made up, so the server refuses this request, and a refused signature counts towards
+the brute-force block: use it in unit tests only.
+
 On the server, `tests/lib.sh` has `admin_api METHOD PATH [BODY]`, which signs with python3 and
 reads the key from its secret file (never from a command line).
 
@@ -539,7 +555,10 @@ sync report held 2 cards, none outside organisation A; every profile page was "n
 ## What NoMail builds
 
 NoMail is the source of truth for organisations, teams and who is in them. The Drive only
-follows. NoMail needs (the full list is in the reply to NoMail,
+follows. NoMail stores none of this yet: its code (commit `a9b5f07`, 33 migrations, read on
+2026-10-25) has no table or column for organisations, teams or memberships; it has
+`public.admin_users`, `public.profiles` and one `public.drive_accounts` row per person. NoMail
+needs (the full list, a table sketch and what to do with each answer are in the reply to NoMail,
 `handoffs/2026-10-25-nourax-drive-to-nomail.md`):
 
 | Table | Columns |
@@ -562,6 +581,18 @@ follows. NoMail needs (the full list is in the reply to NoMail,
 - A person leaves the organisation with `"active": false`: their Drive account is disabled at once
   and kept 30 days. There is no delete call. The account is deleted after the 30 days only if the
   owner has switched the scheduled delete on (it is off).
+
+When NoMail calls:
+
+| Event in NoMail | Call |
+|---|---|
+| An organisation is made or renamed | `PUT /v1/admin/orgs/{org_id}` |
+| A team is made or renamed | `PUT /v1/admin/orgs/{org_id}/teams/{team_id}` (after its organisation) |
+| A person's account is confirmed and placed in an organisation | `PUT /v1/admin/people/{user_id}`, `"active": true` (makes the Drive account if needed, without an app password) |
+| Team join, leave, move, role change, email or name change | The person PUT with the whole new state |
+| A move to another organisation | One person PUT with the new `org_id` (supported; not tested across organisations) |
+| Leaving the organisation, or closing the NoMail account | The person PUT with `"active": false`, before NoMail deletes anything |
+| Every night | `POST /v1/admin/orgs/{org_id}/reconcile`, per organisation |
 
 ## QA objects made by the test
 
