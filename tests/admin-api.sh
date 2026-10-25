@@ -159,7 +159,7 @@ for i in 1 2 3; do
 		jq -r '.error // "none"' "$T_OUT/body" > "$T_OUT/error" ) &
 done
 wait
-codes="$(cat "$T_OUT"/p*/code | sort | tr '\n' ' ')"
+codes="$(for i in 1 2 3; do cat "$T_OUT/p$i/code"; echo; done | sort | tr '\n' ' ')"
 log "three calls at once answered: $codes"
 check "three calls at once: one works (200)" yes "$(grep -q '200' <<<"$codes" && echo yes || echo no)"
 check "three calls at once: another gets 423" yes "$(grep -q '423' <<<"$codes" && echo yes || echo no)"
