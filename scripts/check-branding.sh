@@ -151,6 +151,7 @@ HTTP_AREAS = {'pages', 'l10n', 'theming', 'share', 'dav', 'errors', 'css'}
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 nourax-check-branding/1'
 OLD_UA = 'Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko'
 SHARE_LABEL = 'branding-check '
+L10N_REF = 'en_GB'
 
 only = [a for a in E['NBC_ONLY'].split(',') if a] or DEFAULT_AREAS
 unknown = [a for a in only if a not in ALL_AREAS]
@@ -841,6 +842,12 @@ def run_http(http, cred):
 	tokens = setup_share(http, uid) if ('share' in AREAS or 'errors' in AREAS) else {}
 
 	jobs = []   # (area, req, kind)
+	# English has no translation files, so the l10n check needs another language to know which
+	# texts exist; en_GB pages are read for that when it is not asked for, and not reported.
+	ref = [L10N_REF] if 'l10n' in AREAS and L10N_REF not in LANGS else []
+	for lang in ref:
+		for path in signed_in + ['/login'] + ['/index.php/s/%s' % t for t in tokens.values()]:
+			jobs.append(('pages', page_req(path, lang, path.startswith(('/apps/', '/settings/', '/u/')), ref=True), 'page'))
 	for lang in LANGS:
 		for path in signed_in:
 			jobs.append(('pages', page_req(path, lang, True), 'sync' if path.endswith('/sync-clients') else 'page'))
@@ -865,12 +872,12 @@ def run_http(http, cred):
 	if not tokens and 'share' in AREAS:
 		rep.skip('share', '/branding-check', 'no test links, so no public page was checked')
 
-	l10n_urls = {lang: [] for lang in LANGS}
+	l10n_urls = {lang: [] for lang in ref + LANGS}
 	icons, manifests, themecss, sheets = {}, {}, {}, {}
 	l10n_apps = set()
 	for (area, req, kind), resp in zip(jobs, http.run([j[1] for j in jobs])):
 		url = label(req['url']) + (' [old browser]' if req.get('ua') == OLD_UA else '') + (' [signed in]' if req.get('auth') and area == 'errors' else '')
-		report = area in AREAS
+		report = area in AREAS and not req.get('ref')
 		if resp.blocked:
 			if report:
 				rep.skip(area, url, 'blocked by the Cloudflare firewall for this IP (run from the owner\'s PC)')
