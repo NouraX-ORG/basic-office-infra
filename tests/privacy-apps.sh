@@ -20,8 +20,11 @@
 # applies, org B's group; each is refused with 403 and changes nothing. A same-organisation try
 # with qa-t6b-2 still works. The QA objects are kept for the next run, under the names below
 # (qa-t6b-4's): a folder qa-t6b-privacy, a NoGantt project, a NoForms form, a NoBoard board with
-# one list and card, a Photos album, a task list (calendar), and a folder qa-t6b-acl in the team
-# folder; plus "QA t6b transfer" board and form passed to qa-t6b-2 and back. It deletes nothing.
+# one list and card (and two comments on it, "@qa-t6b-3 ..." and "@qa-t6b-2 ..."), a Photos album,
+# a task list (calendar), and a folder qa-t6b-acl in the team folder; plus "QA t6b transfer" board
+# and form passed to qa-t6b-2 and back. qa-t6b-2 and qa-t6b-3 keep a status message and an out of
+# office for today and tomorrow (set again each run), qa-t6b-4 an out of office with qa-t6b-2 as
+# its replacement. The Text session on the probe file is closed at the end. It deletes nothing.
 # An object that an earlier leak reached (a project, form or album shared with org B, a folder with
 # a rule for org B, a board handed to qa-t6b-3) is never used again: the test makes a new one with
 # the same name (or "... 2", qa-t6b-acl-2), so every run starts from one that org B cannot see.
@@ -114,8 +117,21 @@ yes_no() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi; }
 refused() { [ "$1" = 403 ] && echo yes || echo "no ($1)"; }
 # The OCS status code of the last answer.
 ocs_status() { jq -r '.ocs.meta.statuscode // "none"' "$T_OUT/r" 2>/dev/null || echo unreadable; }
+# An OCS controller reached through /index.php (NoBoard's import API) answers OCS version 1:
+# HTTP 200, with the status in the answer (403 refused, 100 done).
+ocs1_refused() { [ "$1" = 200 ] && [ "$(ocs_status)" = 403 ] && echo yes || echo "no ($1, OCS $(ocs_status))"; }
 version_or_1() { # path jq-path
 	if [ "$(admin_api GET "$1")" = 200 ]; then jq -r "$2" "$T_OUT/body"; else echo 1; fi
+}
+# The name NoCalendar's appointments page gives (its "userInfo" state), or nothing.
+appointments_name() { # uid-or-"-"-for-not-signed-in id
+	if [ "$1" = - ]; then
+		curl -sS -g -o "$T_OUT/r" "$WEB/apps/calendar/appointments/$2"
+	else
+		call "$1" GET "$WEB/apps/calendar/appointments/$2" >/dev/null
+	fi
+	{ grep -o 'id="initial-state-calendar-userInfo" value="[^"]*"' "$T_OUT/r" | sed 's/.*value="//; s/"$//' |
+		base64 -d | jq -r '.displayName // empty'; } 2>/dev/null || true
 }
 put_ok() { # label status
 	check "$1 -> 200" 200 "$2"
@@ -268,6 +284,27 @@ for side in "demo-a01:demo-b:Karim:demo-b01:demo-b01@demo-beta.invalid:Karim (Ma
 	check "$me hovercard of $MATE -> 200 (same organisation)" 200 "$(call "$me" GET "$OCS/hovercard/v1/$MATE")"
 	call "$me" GET "$OCS/apps/user_status/api/v1/statuses?limit=100" >/dev/null
 	check "$me online statuses: nobody of the other organisation" yes "$(names_none "${OTHER[@]}")"
+
+	# Avatars asked by id: without an uploaded picture, the server draws the first letters of the
+	# name. For another organisation's person the answer is that of an account that does not
+	# exist: 404 "[]", or with guestFallback the guest picture of the id that was typed.
+	check "$me avatar of $id -> 404 [], as for an account that does not exist" "404 []" \
+		"$(call "$me" GET "$WEB/avatar/$id/64") $(cat "$T_OUT/r")"
+	check "$me dark avatar of $id -> 404" 404 "$(call "$me" GET "$WEB/avatar/$id/64/dark")"
+	call "$me" GET "$WEB/avatar/guest/$id/64" >/dev/null
+	guest="$(sha256sum < "$T_OUT/r")"
+	check "$me avatar of $id with guestFallback: the guest picture of the id" yes \
+		"$(code="$(call "$me" GET "$WEB/avatar/$id/64?guestFallback=true")"; [[ "$code" =~ ^20[01]$ ]] && [ "$(sha256sum < "$T_OUT/r")" = "$guest" ] && echo yes || echo "no ($code)")"
+	check "$me DAV avatar of $id -> 404" 404 "$(call "$me" GET "$DAV_BASE/avatars/$id/64.png")"
+	check "$me avatar and DAV avatar of $MATE -> 200 (same organisation)" "200 200" \
+		"$(call "$me" GET "$WEB/avatar/$MATE/64") $(call "$me" GET "$DAV_BASE/avatars/$MATE/64.png")"
+
+	# NoCalendar's appointments page (public, no sign-in) puts the person's name in the page
+	# ("userInfo"). Without a public booking page, another organisation's person, and anyone for
+	# a visitor who is not signed in, gets the page of an account that does not exist.
+	check "$me appointments page of $id: no name" "" "$(appointments_name "$me" "$id")"
+	check "appointments page of $id, not signed in: no name" "" "$(appointments_name - "$id")"
+	check "$me appointments page of $MATE: the name (same organisation)" "$MATE_NAME" "$(appointments_name "$me" "$MATE")"
 
 	# The account API is open only to the owner's address, so it is asked inside the app
 	# container (127.0.0.1), with the key on a pipe.
@@ -499,10 +536,10 @@ import_json() { # acl-type participant
 }
 imports() { call "$1" GET "$DECK/boards" >/dev/null; jq -r '[.[]? | select(.title == "QA t6b import")] | length' "$T_OUT/r"; }
 before="$(imports "$QA3")"
-check "board import shared with $QA3 (org B) -> 403" yes "$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA3")")")"
-check "board import shared with the group org:$ORG_B -> 403" yes "$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 1 "org:$ORG_B")")")"
-check "board import mapping an account to $QA3 (uidRelation) -> 403" yes \
-	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 someone | jq -c --arg u "$QA3" '.config.uidRelation = {someone: $u}')")")"
+check "board import shared with $QA3 (org B) -> OCS 403" yes "$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA3")")")"
+check "board import shared with the group org:$ORG_B -> OCS 403" yes "$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 1 "org:$ORG_B")")")"
+check "board import mapping an account to $QA3 (uidRelation) -> OCS 403" yes \
+	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 someone | jq -c --arg u "$QA3" '.config.uidRelation = {someone: $u}')")")"
 check "board upload (the web import) shared with $QA3 -> 403" yes \
 	"$(refused "$(import_json 0 "$QA3" | jq -c .data | call "$QA1" POST "$WEB/apps/deck/boards/import" -F 'file=@-;filename=board.json;type=application/json')")"
 card_import() { # field-of-the-card json -> an import with one list and one card holding it
@@ -510,14 +547,14 @@ card_import() { # field-of-the-card json -> an import with one list and one card
 		cards: [{id: 1, title: "QA t6b card", description: "", lastModified: 0, lastEditor: null, createdAt: 0, archived: false,
 			order: 0, duedate: null} + $f]}]'
 }
-check "board import with a card for $QA3 (org B) -> 403" yes \
-	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{assignedUsers: [{participant: {primaryKey: $u, uid: $u, type: 0}}]}')")")")"
-check "board import with a comment by $QA3 (org B) -> 403" yes \
-	"$(refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{comments: [{id: 1, actorType: "users", actorId: $u, message: "QA t6b", creationDateTime: "2026-10-25T12:00:00+00:00"}]}')")")")"
+check "board import with a card for $QA3 (org B) -> OCS 403" yes \
+	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{assignedUsers: [{participant: {primaryKey: $u, uid: $u, type: 0}}]}')")")")"
+check "board import with a comment by $QA3 (org B) -> OCS 403" yes \
+	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{comments: [{id: 1, actorType: "users", actorId: $u, message: "QA t6b", creationDateTime: "2026-10-25T12:00:00+00:00"}]}')")")")"
 check "board imports: $QA3 got no board from those tries" "$before" "$(imports "$QA3")"
 if [ "$(boards_of "$QA1" "QA t6b import (same organisation)")" = "" ]; then
-	check "board import shared with $QA2 (org A) -> 200" 200 \
-		"$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA2" | jq -c '.data.boards[0].title = "QA t6b import (same organisation)"')")"
+	check "board import shared with $QA2 (org A) -> 200, OCS 100" "200 100" \
+		"$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA2" | jq -c '.data.boards[0].title = "QA t6b import (same organisation)"')") $(ocs_status)"
 fi
 
 # --- NoDrive: asking someone to take over one's files ---
@@ -644,5 +681,75 @@ call "$QA1" GET "$OCS/apps/files_sharing/api/v1/shares?path=/qa-t6b-privacy/prob
 check "ONLYOFFICE mention of $QA3: the file is not shared with $QA3" yes "$(yes_no jq -e --arg u "$QA3" '[.ocs.data[]? | select(.share_with == $u)] | length == 0' "$T_OUT/r")"
 call "$QA3" GET "$WEB/apps/notes/api/v1/notes" >/dev/null
 check "$QA3's notes: none of org A's" yes "$(names_none "$QA1" "QA t6b 4")"
+
+# --- Online status and out of office, asked by account id ---
+# Anyone who knew an id could read that person's status message and absence (dates, message,
+# replacement), and naming someone as one's replacement answered their name.
+status_message() { json "$1" PUT "$OCS/apps/user_status/api/v1/user_status/message/custom" "$(jq -cn --arg m "$1 status probe" '{message: $m}')"; }
+check "$QA3 sets a status message (200)" 200 "$(status_message "$QA3")"
+check "$QA2 sets a status message (200)" 200 "$(status_message "$QA2")"
+check "$QA1 reads $QA3's status -> 404, no message" "404 yes" \
+	"$(call "$QA1" GET "$OCS/apps/user_status/api/v1/statuses/$QA3") $(names_none "status probe" "QA t6b 3")"
+check "$QA1 reads $QA2's status -> 200 (same organisation)" 200 "$(call "$QA1" GET "$OCS/apps/user_status/api/v1/statuses/$QA2")"
+today="$(date -u +%Y-%m-%d)"
+tomorrow="$(date -u -d '+1 day' +%Y-%m-%d)"
+absence() { # uid [replacement] -> that person's out of office, today and tomorrow
+	json "$1" POST "$OCS/apps/dav/api/v1/outOfOffice/$1" "$(jq -cn --arg a "$today" --arg b "$tomorrow" --arg m "$1 away probe" --arg r "${2:-}" \
+		'{firstDay: $a, lastDay: $b, status: "QA t6b away", message: $m} + (if $r == "" then {} else {replacementUserId: $r} end)')"
+}
+check "$QA3 sets an out of office (200)" 200 "$(absence "$QA3")"
+check "$QA2 sets an out of office (200)" 200 "$(absence "$QA2")"
+for path in "$QA3" "$QA3/now"; do
+	check "$QA1 reads $QA3's out of office ($path) -> 404, no message" "404 yes" \
+		"$(call "$QA1" GET "$OCS/apps/dav/api/v1/outOfOffice/$path") $(names_none "away probe" "QA t6b 3")"
+done
+check "$QA1 reads $QA2's out of office -> 200 (same organisation)" "200 yes" \
+	"$(call "$QA1" GET "$OCS/apps/dav/api/v1/outOfOffice/$QA2") $(names "$QA2 away probe")"
+check "$QA1 names $QA3 (org B) as its replacement -> 403, no name" "403 yes" "$(absence "$QA1" "$QA3") $(names_none "QA t6b 3")"
+check "$QA1 names an id that does not exist as its replacement -> 403" 403 "$(absence "$QA1" "$NOBODY")"
+check "$QA1 names $QA2 (org A) as its replacement -> 200" "200 yes" "$(absence "$QA1" "$QA2") $(names "QA t6b 2")"
+
+# --- NoBoard: card comments that mention someone ---
+# Deck answers each comment with the server's name of everyone mentioned in it.
+CARD_COMMENTS="$OCS/apps/deck/api/v1.0/cards/$card/comments"
+call "$QA1" GET "$CARD_COMMENTS?limit=100" >/dev/null
+for who in "$QA3" "$QA2"; do
+	if ! grep -qF "@$who privacy probe" "$T_OUT/r"; then
+		check "$QA1 comments \"@$who\" on its card -> 200" 200 \
+			"$(json "$QA1" POST "$CARD_COMMENTS" "$(jq -cn --arg m "@$who privacy probe" '{message: $m}')")"
+		call "$QA1" GET "$CARD_COMMENTS?limit=100" >/dev/null
+	fi
+done
+mention_name() { jq -r --arg u "$1" '[.ocs.data[]?.mentions[]? | select(.mentionId == $u) | .mentionDisplayName] | unique | join(",")' "$T_OUT/r"; }
+check "card comments: @$QA3 shows the id, not the name" "$QA3 yes" "$(mention_name "$QA3") $(names_none "QA t6b 3")"
+check "card comments: @$QA2 shows the name (same organisation)" "QA t6b 2" "$(mention_name "$QA2")"
+call "$QA1" GET "$CARD_COMMENTS?limit=100&format=xml" >/dev/null
+check "card comments (XML): @$QA3 shows the id, not the name" "yes yes" \
+	"$(names "<mentionDisplayName>$QA3</mentionDisplayName>") $(names_none "QA t6b 3")"
+check "$QA3 got no NoBoard notification" 0 "$(notifications_from "$QA3" deck)"
+
+# --- Text documents: the @-mention list and a mention ---
+# The list is the server's people search plus the people in the document; a mention notifies
+# only someone who can open the file (Text's Notifier drops the rest).
+TEXT="$WEB/apps/text"
+code="$(call "$QA1" PUT "$TEXT/session/file/$PROBE_ID/create")"
+doc="$(jq -r '.document.id // empty' "$T_OUT/r")"
+sid="$(jq -r '.session.id // empty' "$T_OUT/r")"
+tok="$(jq -r '.session.token // empty' "$T_OUT/r")"
+check "$QA1 opens its probe file in Text (200, a session)" "200 yes" "$code $([ -n "$doc" ] && [ -n "$sid" ] && [ -n "$tok" ] && echo yes || echo no)"
+text_session() { jq -cn --arg d "$doc" --arg s "$sid" --arg t "$tok" '{documentId: ($d | tonumber), sessionId: ($s | tonumber), sessionToken: $t}'; }
+text_users() { json "$QA1" POST "$TEXT/api/v1/users" "$(text_session | jq -c --arg f "$1" '. + {filter: $f, limit: 50}')" >/dev/null; }
+if [ -n "$doc" ]; then
+	for term in qa-t6b "$QA3" "QA t6b 3"; do
+		text_users "$term"
+		check "Text mention list \"$term\": nobody of org B" yes "$(names_none "${QA_B_NAMES[@]}")"
+	done
+	text_users "$QA2"
+	check "Text mention list \"$QA2\" finds $QA2 (same organisation)" yes "$(names "$QA2")"
+	before="$(notifications_from "$QA3" text)"
+	json "$QA1" PUT "$TEXT/session/$doc/mention" "$(text_session | jq -c --arg m "$QA3" '. + {mention: $m}')" >/dev/null
+	check "Text mention of $QA3: no notification" "$before" "$(notifications_from "$QA3" text)"
+	json "$QA1" POST "$TEXT/session/$doc/close" "$(text_session)" >/dev/null
+fi
 
 finish privacy-apps
