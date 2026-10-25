@@ -15,13 +15,16 @@ nourax_audit() {
 	#    arguments can hold secrets - configure.sh hands the ONLYOFFICE key to occ as one - and the
 	#    log is a plain file. What occ changes in accounts, groups, apps and shares is still logged
 	#    through those actions' own lines.
-	# 2. everything else from admin_audit is written (INFO).
+	# 2. "Login attempt: ..." is left out too. It comes before every sign-in, and every request with
+	#    an app password (phones, desktop, NoMail) is a sign-in, so it was 62% of the lines in our
+	#    test; each attempt also ends in a "Login successful" or "Login failed" line, which stay.
+	# 3. everything else from admin_audit is written (INFO).
 	# The upstream docs' simpler 'apps' => ['admin_audit'] is not used: it is checked before
-	# "matches" and would let the occ lines through. The condition is set before the app is switched
+	# "matches" and would let those lines through. The condition is set before the app is switched
 	# on, so an occ line is never written. occ can't set a nested list in one step, so a short PHP
 	# call replaces the whole value at once, read from stdin.
 	local want have
-	want='{"matches":[{"apps":["admin_audit"],"message":"Console command executed:","loglevel":4},{"apps":["admin_audit"],"loglevel":1}]}'
+	want='{"matches":[{"apps":["admin_audit"],"message":"Console command executed:","loglevel":4},{"apps":["admin_audit"],"message":"Login attempt: \"","loglevel":4},{"apps":["admin_audit"],"loglevel":1}]}'
 	have="$(occ config:system:get log.condition --output=json 2>/dev/null || true)"
 	if [ "$(jq -cS . <<<"${have:-null}" 2>/dev/null || true)" = "$(jq -cS . <<<"$want")" ]; then
 		log "  log condition for the audit log already set"
@@ -36,7 +39,7 @@ nourax_audit() {
 			log "  WARNING: the log condition could not be set, so admin_audit stays off - see: docker compose logs app"
 			return 0
 		fi
-		log "  log condition set: admin_audit at INFO, occ command lines left out"
+		log "  log condition set: admin_audit at INFO, occ command and sign-in attempt lines left out"
 	fi
 
 	# Rotation. The server's job rotates nextcloud.log every hour and admin_audit's job rotates
