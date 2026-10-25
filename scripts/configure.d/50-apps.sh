@@ -46,6 +46,26 @@ nourax_app tasks 0.18.1
 nourax_app notes 6.1.0
 nourax_app forms 5.4.1
 
+# NoForms and privacy between organisations (scripts/configure.d/60-org-privacy.sh, docs/teams.md).
+# Two NoForms options reach every account on the server, across organisations: "show to all
+# accounts" lists a form in everyone's NoForms, and "all accounts may open it" lets anyone signed in
+# fill it in (tested on 2026-10-25: a form of qa-t5-1 showed up for qa-t5-3, who shares no group with
+# qa-t5-1). While org privacy is on, both options are off, so a form reaches only the people, groups
+# and teams it is shared with, and whoever has its public link. Forms that already use them stop
+# reaching everyone at once. While org privacy is off nothing is changed here; to give the options
+# back: occ config:app:set forms allowPermitAll --value=true --type=boolean (and allowShowToAll).
+if [ "$(occ config:app:get nourax_api org_privacy_step 2>/dev/null || true)" = on ]; then
+	for forms_key in allowPermitAll allowShowToAll; do
+		if [ "$(occ config:app:get forms "$forms_key" 2>/dev/null || true)" != false ]; then
+			occ config:app:set forms "$forms_key" --value=false --type=boolean >/dev/null
+		fi
+		log "  NoForms $forms_key = false (org privacy is on)"
+	done
+	unset forms_key
+else
+	log "  NoForms 'all accounts' options left as they are (org privacy is off)"
+fi
+
 # What the three apps show that the text sweep can't reach, because it is in their browser code:
 # - NoNotes: "Mobile apps" (on the empty-notes page and in the settings) shows store badges for the
 #   upstream's phone apps; one link has the upstream name in its address. There are no Nourax phone
