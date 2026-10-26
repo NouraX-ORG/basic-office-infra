@@ -55,8 +55,19 @@
 	"external_url_name_check": "Any URL whose host is not the checked site also fails when it contains a name pattern anywhere.",
 	"asset_patterns": [
 		{"id": "upstream-logo", "re": "^/core/img/logo/", "note": "matched against the path of links to our own site"},
-		{"id": "upstream-favicon", "re": "^/core/img/favicon", "note": "themes/nourax/core/img/favicon-mask.svg does not match: the path must start here"}
+		{"id": "upstream-favicon", "re": "^/core/img/favicon", "note": "themes/nourax/core/img/favicon-mask.svg does not match: the path must start here"},
+		{"id": "upstream-theme-preview", "re": "^/apps/theming/img/[^/]+\\.(?:jpe?g|png|webp|gif)$", "note": "the theming app's theme previews, with the upstream logo and blue header; the nourax_branding app shows its own (img/theme-previews)"}
 	],
+	"upstream_pictures": [
+		"/apps/theming/img/default.jpg",
+		"/apps/theming/img/light.jpg",
+		"/apps/theming/img/dark.jpg",
+		"/apps/theming/img/light-highcontrast.jpg",
+		"/apps/theming/img/dark-highcontrast.jpg",
+		"/apps/theming/img/reduced-motion.jpg",
+		"/apps/theming/img/opendyslexic.jpg"
+	],
+	"upstream_pictures_note": "Upstream pictures people must not see (theme previews with the upstream logo and blue header). The browser audit fetches these and upstream_files and fails on any picture drawn on a page with the same SHA-256.",
 	"upstream_files": [
 		"/core/img/favicon.ico",
 		"/core/img/favicon.png",

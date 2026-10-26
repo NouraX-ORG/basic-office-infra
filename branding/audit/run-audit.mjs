@@ -4,8 +4,10 @@
 // audit"). It signs in as a QA account through the normal login form, opens every page and menu a
 // normal user can reach, in each language and in the light and dark theme, and runs
 // branding/audit/scan-page.js on each of them (text, page title, links, pictures, labels, colours, page
-// direction). It also watches every request the browser makes: none may go to an upstream host, and a
-// translation file fetched as /l10n/<lang>.json (which skips the theme overrides) must not hold the
+// direction), then looks inside every picture a page draws (branding/audit/scan-pictures.js): none may
+// be an upstream file of rules.json (upstream_files, upstream_pictures) or be drawn largely in the
+// upstream blue. It also watches every request the browser makes: none may go to an upstream host, and
+// a translation file fetched as /l10n/<lang>.json (which skips the theme overrides) must not hold the
 // upstream name. Admin pages are not part of it.
 //
 // Usage, from this folder after `npm ci` (Google Chrome must be installed; see audit.config.example.json):
@@ -14,12 +16,14 @@
 // Writes into the config's "out" folder: one screenshot per page, language and theme
 // (<lang>-<theme>-<page>.png), findings.json (what a person could see; empty when all is well),
 // hidden.json (hits in elements that are not drawn at all, for reference), network.json,
-// problems.json (pages or menus that could not be opened), index.json and index.html.
+// pictures.json (every picture drawn, with its size and its share of upstream blue), problems.json
+// (pages or menus that could not be opened), index.json and index.html.
 // Exit code 0 when findings.json and problems.json are empty, 1 when not, 2 when it could not run.
 //
 // Secrets: passwords are read from the files the config names and typed into the login form or
 // sent as HTTP basic auth; they are never printed (every line of output is masked).
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -29,6 +33,7 @@ import { chromium } from 'playwright-core';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
 const SCANNER = fs.readFileSync(path.join(HERE, 'scan-page.js'), 'utf8');
+const PICTURE_SCANNER = fs.readFileSync(path.join(HERE, 'scan-pictures.js'), 'utf8');
 const RULES = JSON.parse(fs.readFileSync(path.join(REPO, 'nextcloud-apps', 'nourax_branding', 'sweep', 'rules.json'), 'utf8'));
 
 // Browser locale (Accept-Language) per Nextcloud language code.
@@ -443,6 +448,75 @@ function problem(cx, what, err) {
 	log(`  PROBLEM ${cx.lang}/${cx.page}: ${what}: ${msg}`);
 }
 
+// --- Pictures ---------------------------------------------------------------------------------------
+
+// What each drawn picture holds, by address, looked at once per run: the same address gives the same
+// picture on every page.
+const PICTURES = new Map();
+// SHA-256 of the upstream files of rules.json (upstream_files, upstream_pictures) => their path.
+const UPSTREAM_PICTURES = new Map();
+// A picture fails when at least this share of its opaque pixels, and this many, are in an upstream
+// blue (within 28 in RGB; the Nourax blues are 55 and more away). A CSS mask draws only its shape, in
+// the element's own colour, so its colours do not count.
+const BLUE_SHARE = 0.005;
+const BLUE_MIN = 16;
+
+async function loadUpstreamPictures() {
+	const paths = [...(RULES.upstream_files || []), ...(RULES.upstream_pictures || [])];
+	for (const p of paths) {
+		try {
+			const r = await fetch(BASE + p, { redirect: 'follow' });
+			if (r.ok) UPSTREAM_PICTURES.set(crypto.createHash('sha256').update(Buffer.from(await r.arrayBuffer())).digest('hex'), p);
+		} catch (e) {
+			// Not served: then it cannot be drawn either.
+		}
+	}
+	log(`upstream files the pictures are compared with: ${UPSTREAM_PICTURES.size} of ${paths.length} (the others are not served)`);
+}
+
+const pictureLabel = (u) => (u.startsWith('data:') ? u.slice(0, 64) + '…' : u);
+
+async function checkPictures(frame, cx, where, res) {
+	let origin = '';
+	try {
+		origin = new URL(frame.url()).origin;
+	} catch (e) {
+		return;
+	}
+	const own = (u) => {
+		if (u.startsWith('data:')) return true;
+		try {
+			return new URL(u).origin === origin;
+		} catch (e) {
+			return false;
+		}
+	};
+	const pictures = res.pictures || [];
+	const todo = [...new Set(pictures.map((p) => p.url))].filter((u) => !PICTURES.has(u) && own(u));
+	if (todo.length) {
+		let measured = [];
+		try {
+			measured = await frame.evaluate(`(${PICTURE_SCANNER})(${JSON.stringify(todo)}, {})`);
+		} catch (e) {
+			problem(cx, 'pictures', e);
+		}
+		for (const m of measured) PICTURES.set(m.url, { ...m, first: `${cx.lang}/${cx.theme || '-'}/${cx.page}`, drawn: [] });
+	}
+	for (const p of pictures) {
+		const m = PICTURES.get(p.url);
+		if (!m) continue;
+		if (m.drawn.length < 3 && !m.drawn.includes(cx.page)) m.drawn.push(cx.page);
+		m.mask = m.mask === false ? false : p.mask;
+		m.maxWidth = Math.max(m.maxWidth || 0, p.width);
+		m.maxHeight = Math.max(m.maxHeight || 0, p.height);
+		const upstream = m.sha256 && UPSTREAM_PICTURES.get(m.sha256);
+		if (upstream) finding(cx, { kind: 'picture', where: `${where}${p.where}: the upstream picture ${upstream}`, snippet: pictureLabel(p.url), url: res.url });
+		if (!p.mask && m.opaque && m.blue >= BLUE_MIN && m.blue / m.opaque >= BLUE_SHARE) {
+			finding(cx, { kind: 'picture', where: `${where}${p.where}: ${(100 * m.blue / m.opaque).toFixed(1)}% of the picture is in an upstream blue`, snippet: pictureLabel(p.url), url: res.url });
+		}
+	}
+}
+
 // --- Browser ---------------------------------------------------------------------------------------
 
 let OUT = '';
@@ -539,6 +613,10 @@ async function capture(page, cx, def, status) {
 				HIDDEN.push({ ...at(tcx), kind: f.kind, where: where + f.where, snippet: f.snippet, url: res.url });
 				row.hidden += 1;
 			}
+			const before = FINDINGS.length;
+			await checkPictures(frame, tcx, where, res);
+			row.findings += FINDINGS.length - before;
+			row.pictures = (row.pictures || 0) + (res.pictures || []).length;
 		}
 		const name = `${cx.lang}-${theme}-${def.id}.png`.replace(/[^A-Za-z0-9_.-]/g, '_');
 		try {
@@ -993,12 +1071,13 @@ function writeReport(meta) {
 	w('problems.json', PROBLEMS);
 	w('network.json', NETWORK);
 	w('notes.json', NOTES);
+	w('pictures.json', [...PICTURES.values()].map((m) => ({ ...m, url: pictureLabel(m.url) })).sort((a, b) => (b.blue || 0) - (a.blue || 0) || a.url.localeCompare(b.url)));
 	w('index.json', { ...meta, pages: INDEX });
 	const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 	const rows = INDEX.map((r) => `<tr class="${r.findings ? 'bad' : ''}"><td>${esc(r.pass)}</td><td>${esc(r.lang)}</td><td>${esc(r.theme)}</td><td>${esc(r.page)}</td><td>${esc(r.status)}</td><td>${esc(r.htmlLang)} ${esc(r.dir)}</td><td>${esc(r.title)}</td><td>${r.findings}</td><td>${r.hidden}</td><td>${r.shot ? `<a href="${esc(r.shot)}">${esc(r.shot)}</a>` : ''}</td></tr>`).join('\n');
 	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Branding audit</title>
 <style>:root{color-scheme:light dark}body{font:14px system-ui,sans-serif;margin:16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #8884;padding:4px 6px;text-align:left;vertical-align:top}tr.bad{background:#f973162e}</style></head><body>
-<h1>Branding audit</h1><p>${esc(meta.started)} to ${esc(meta.finished)}. Languages ${esc(meta.langs.join(', '))}; themes ${esc(meta.themes.join(', '))}. Pages scanned: ${INDEX.length}. Findings: ${FINDINGS.length}. Problems: ${PROBLEMS.length}. Hidden-element hits: ${HIDDEN.length}. Admin pages are not part of this audit.</p>
+<h1>Branding audit</h1><p>${esc(meta.started)} to ${esc(meta.finished)}. Languages ${esc(meta.langs.join(', '))}; themes ${esc(meta.themes.join(', '))}. Pages scanned: ${INDEX.length}. Pictures looked inside: ${PICTURES.size}. Findings: ${FINDINGS.length}. Problems: ${PROBLEMS.length}. Hidden-element hits: ${HIDDEN.length}. Admin pages are not part of this audit.</p>
 <table><tr><th>Pass</th><th>Language</th><th>Theme</th><th>Page</th><th>HTTP</th><th>lang / dir</th><th>Title</th><th>Findings</th><th>Hidden</th><th>Screenshot</th></tr>
 ${rows}</table></body></html>\n`;
 	fs.writeFileSync(path.join(OUT, 'index.html'), html);
@@ -1022,6 +1101,7 @@ async function main() {
 	const started = new Date().toISOString();
 	log(`branding audit of ${BASE}: languages ${langs.join(',')}, themes ${THEMES.join(',')}, passes ${passes.join(',')}; screenshots in ${OUT}`);
 
+	await loadUpstreamPictures();
 	const fx = { ids: {}, tokens: {} };
 	// Sign in through the form before anything else: the first sign-in of an account sets it up (its
 	// calendar, address book and welcome files), but only when it is not made with an app password,
@@ -1098,7 +1178,7 @@ async function main() {
 		await browser.close();
 		writeReport({ base: BASE, started, finished: new Date().toISOString(), langs, themes: THEMES, passes, accounts: [main.login, sharer && sharer.login, ...fresh.map((f) => f.login)].filter(Boolean) });
 	}
-	log(`RESULT ${FINDINGS.length || PROBLEMS.length ? 'FAIL' : 'PASS'}: ${INDEX.length} page scans, ${FINDINGS.length} findings, ${PROBLEMS.length} problems, ${HIDDEN.length} hidden-element hits, ${NETWORK.filter((n) => n.kind === 'l10n-json').length} /l10n/*.json fetches; report ${path.join(OUT, 'index.html')}`);
+	log(`RESULT ${FINDINGS.length || PROBLEMS.length ? 'FAIL' : 'PASS'}: ${INDEX.length} page scans, ${PICTURES.size} pictures looked inside, ${FINDINGS.length} findings, ${PROBLEMS.length} problems, ${HIDDEN.length} hidden-element hits, ${NETWORK.filter((n) => n.kind === 'l10n-json').length} /l10n/*.json fetches; report ${path.join(OUT, 'index.html')}`);
 	return FINDINGS.length || PROBLEMS.length ? 1 : 0;
 }
 

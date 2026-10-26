@@ -8,7 +8,11 @@
 //   const result = await page.evaluate(`(${src})(${JSON.stringify(rules)}, {})`);
 // options: {expectRtl: true|false (default: from <html lang>), maxFindings: 500}.
 // It returns {url, title, lang, dir, rtlOk, elements, counts, findings: [{kind, where, snippet}],
-// hidden: [...]}; kind is name, link, blue, meta or rtl. Same rules as scripts/check-branding.sh.
+// hidden: [...], pictures: [...]}; kind is name, link, blue, meta or rtl. Same rules as
+// scripts/check-branding.sh. `pictures` lists every picture the page draws ({url, where, width,
+// height, mask}: an <img>, an SVG <image>, a poster, a CSS background, border or list picture, and
+// CSS masks, whose own colours are not drawn); run-audit.mjs then looks inside each one
+// (branding/audit/scan-pictures.js): its pixels for the upstream blue, its bytes for an upstream file.
 // An element of the page body that is not drawn at all (display: none on it or around it, so no box)
 // cannot be seen, clicked or read out by a screen reader: what its attributes hold goes to `hidden`,
 // not to `findings` (for example an upstream link that branding/custom.css hides). The <head> always
@@ -41,6 +45,26 @@ function nouraxScanPage(rules, options) {
 	const host = location.hostname.toLowerCase();
 	const findings = [];
 	const hidden = [];
+	// Drawn pictures by address; the biggest place each one is drawn in.
+	const pictures = new Map();
+	const picture = (where, raw, rect, mask) => {
+		const u = String(raw || '').trim();
+		if (!u || u.startsWith('#') || /^(javascript|about):/i.test(u)) return;
+		let abs;
+		try {
+			abs = u.startsWith('data:') ? u : new URL(u, location.href).href;
+		} catch (e) {
+			return;
+		}
+		const next = { url: abs, where: String(where).slice(0, 120), width: Math.round(rect ? rect.width : 0), height: Math.round(rect ? rect.height : 0), mask: Boolean(mask) };
+		const known = pictures.get(abs);
+		if (known) {
+			// A mask only while it is never drawn as a picture itself; the biggest place is kept.
+			next.mask = known.mask && next.mask;
+			if (known.width * known.height >= next.width * next.height) Object.assign(next, { where: known.where, width: known.width, height: known.height });
+		}
+		pictures.set(abs, next);
+	};
 	const counts = { name: 0, link: 0, blue: 0, meta: 0, rtl: 0 };
 	const seen = new Set();
 	// True while the attributes of an element that is not drawn are looked at.
@@ -291,11 +315,22 @@ function nouraxScanPage(rules, options) {
 			else drawn = false;
 			if (drawn) blues(tag + ' ' + p, cs.getPropertyValue(p));
 		}
+		const rect = el.getBoundingClientRect();
 		for (const p of IMAGE_PROPS) {
 			const v = cs.getPropertyValue(p);
 			if (!v || v === 'none') continue;
 			blues(tag + ' ' + p, v);
-			for (const m of v.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) link(tag + ' ' + p, m[1]);
+			for (const m of v.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) {
+				link(tag + ' ' + p, m[1]);
+				picture(tag + ' ' + p, m[1], rect, p.includes('mask'));
+			}
+		}
+		// The pictures themselves (their pixels are looked at by run-audit.mjs).
+		if (el.tagName === 'IMG') picture(tag, el.currentSrc || el.getAttribute('src'), rect, false);
+		else if (el.tagName === 'INPUT' && /^image$/i.test(el.type || '')) picture(tag, el.getAttribute('src'), rect, false);
+		else if (el.tagName === 'VIDEO' && el.getAttribute('poster')) picture(tag + '[poster]', el.getAttribute('poster'), rect, false);
+		else if (el instanceof SVGElement && el.tagName.toLowerCase() === 'image') {
+			picture(tag, el.getAttribute('href') || (el.getAttributeNS ? el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') : ''), rect, false);
 		}
 		// Labels drawn by CSS, such as the product names in the app menu.
 		for (const pseudo of ['::before', '::after']) {
@@ -318,5 +353,5 @@ function nouraxScanPage(rules, options) {
 	const rtlOk = !expectRtl || dir === 'rtl';
 	if (!rtlOk) add('rtl', 'html[dir]', 'lang="' + lang + '" but the page direction is ' + (dir || 'unset') + ', not rtl');
 
-	return { url: location.href, title: document.title, lang, dir, rtlOk, elements: all.length, counts, findings, hidden };
+	return { url: location.href, title: document.title, lang, dir, rtlOk, elements: all.length, counts, findings, hidden, pictures: Array.from(pictures.values()).slice(0, 400) };
 }

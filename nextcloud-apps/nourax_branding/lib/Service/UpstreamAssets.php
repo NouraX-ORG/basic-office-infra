@@ -48,6 +48,28 @@ final class UpstreamAssets {
 	}
 
 	/**
+	 * Our theme previews for Appearance and accessibility, from the app's img/theme-previews folder:
+	 * theme id (the file name, as the theming app's /apps/theming/img/<id>.jpg) => address, with
+	 * ?v= and the start of the file's SHA-1, so browsers fetch a picture again when it changes.
+	 * $urlOf turns a path below img/ into its address (IURLGenerator::imagePath).
+	 *
+	 * @param callable(string): string $urlOf
+	 * @return array<string, string>
+	 */
+	public static function themePreviews(string $dir, callable $urlOf): array {
+		$previews = [];
+		foreach (glob($dir . '/*.png') ?: [] as $file) {
+			$id = basename($file, '.png');
+			if (preg_match('/^[a-z0-9-]+$/', $id) !== 1 || !is_file($file)) {
+				continue;
+			}
+			$previews[$id] = $urlOf('theme-previews/' . $id . '.png') . '?v=' . substr((string)sha1_file($file), 0, 8);
+		}
+		ksort($previews);
+		return $previews;
+	}
+
+	/**
 	 * A whole HTML page in a right-to-left language gets dir="rtl" on its <body>, as Nextcloud 35 does
 	 * only for signed-in pages (layout.user.php): its login, public share and other guest pages set
 	 * no direction, so Arabic ran left to right there. The language is the page's own <html lang>;

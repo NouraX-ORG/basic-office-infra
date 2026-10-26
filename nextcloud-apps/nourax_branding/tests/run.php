@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Tests of the text sweep's rules, of the language list fix, of the upstream colour, background
- * and address rules and of the calendar colour and example contact rules, with the real
+ * and address rules, of the theme previews and of the calendar colour and example contact rules, with the real
  * sweep/rules.json and sweep/en-overrides.json. Plain PHP, no test framework and no Nextcloud needed:
  *   docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php
  * Prints one line per check and exits 1 when any check fails.
@@ -341,6 +341,58 @@ same(UpstreamAssets::recolourValue(' 0082c9 '), '#2563EB', 'calendar colour: wit
 same(UpstreamAssets::recolourValue('#0082c91'), null, 'calendar colour: a longer value is not the blue');
 same(UpstreamAssets::recolourValue('#E9D859'), null, 'calendar colour: another colour stays');
 same(UpstreamAssets::recolourValue(''), null, 'calendar colour: no colour stays');
+
+// Theme previews of Appearance and accessibility (img/theme-previews, js/theme-previews.js): one for
+// every theme of Nextcloud 35, and for every theme the installed theming app has (a later version may
+// add one), each 512x320 with no upstream blue in it.
+$previewDir = __DIR__ . '/../img/theme-previews';
+$previews = UpstreamAssets::themePreviews($previewDir, static fn (string $f): string => '/x/' . $f);
+same(array_keys($previews), ['dark', 'dark-highcontrast', 'default', 'light', 'light-highcontrast', 'opendyslexic', 'reduced-motion'],
+	'theme previews: one for each of the seven Nextcloud 35 themes');
+check(count(array_filter($previews, static fn (string $u, string $id): bool => preg_match('~^/x/theme-previews/' . preg_quote($id, '~') . '\.png\?v=[0-9a-f]{8}$~', $u) === 1, ARRAY_FILTER_USE_BOTH)) === count($previews),
+	'theme previews: each address is the picture with a ?v= of its content', json_encode($previews, JSON_UNESCAPED_SLASHES));
+$themesDir = '/var/www/html/apps/theming/lib/Themes';
+if (is_dir($themesDir)) {
+	$installed = [];
+	foreach (glob($themesDir . '/*.php') ?: [] as $file) {
+		if (preg_match('~function getId\(\)\s*:\s*string\s*\{\s*return\s+\'([a-z0-9-]+)\'~', (string)file_get_contents($file), $m) === 1) {
+			$installed[] = $m[1];
+		}
+	}
+	sort($installed);
+	$missing = array_values(array_diff($installed, array_keys($previews)));
+	check($installed !== [] && $missing === [], 'theme previews: every theme of the installed theming app (' . implode(', ', $installed) . ') has one',
+		'no preview for ' . implode(', ', $missing) . ': draw it in branding/theme-previews/make-previews.py');
+}
+$previewProblems = [];
+foreach (array_keys($previews) as $id) {
+	$file = $previewDir . '/' . $id . '.png';
+	$size = getimagesize($file);
+	if (!is_array($size) || $size[0] !== 512 || $size[1] !== 320 || $size[2] !== IMAGETYPE_PNG) {
+		$previewProblems[] = "$id is not a 512x320 PNG";
+		continue;
+	}
+	if (!function_exists('imagecreatefrompng')) {
+		continue;
+	}
+	$im = imagecreatefrompng($file);
+	$near = 0;
+	for ($y = 0; $y < 320; $y++) {
+		for ($x = 0; $x < 512; $x++) {
+			$rgb = imagecolorat($im, $x, $y);
+			$r = ($rgb >> 16) & 0xff;
+			$g = ($rgb >> 8) & 0xff;
+			$b = $rgb & 0xff;
+			if ($r ** 2 + ($g - 130) ** 2 + ($b - 201) ** 2 <= 1600 || $r ** 2 + ($g - 103) ** 2 + ($b - 158) ** 2 <= 1600) {
+				$near++;
+			}
+		}
+	}
+	if ($near > 0) {
+		$previewProblems[] = "$id has $near pixels near an upstream blue";
+	}
+}
+check($previewProblems === [], 'theme previews: 512x320 PNGs' . (function_exists('imagecreatefrompng') ? ' without a pixel within 40 of an upstream blue' : ' (GD missing: colours not checked)'), implode('; ', $previewProblems));
 
 // The example contact (Service\ExampleContact), on the upstream card's shape: folded photo, two empty
 // photos, the website without a scheme.

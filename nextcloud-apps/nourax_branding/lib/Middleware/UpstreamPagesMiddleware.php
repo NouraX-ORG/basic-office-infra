@@ -24,6 +24,7 @@ use OCP\IInitialStateService;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\L10N\IFactory;
+use OCP\Util;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -38,7 +39,8 @@ use Psr\Log\LoggerInterface;
  *   this app's help page (Controller\HelpController);
  * - /settings/download/reasons, the upstream's "Reasons to use Nextcloud" PDF, answers 404;
  * - Personal settings > Appearance and accessibility: the two backgrounds that credit the upstream
- *   company are left out of the picker (Service\UpstreamAssets::filterBackgrounds);
+ *   company are left out of the picker (Service\UpstreamAssets::filterBackgrounds), and the theme
+ *   previews are our own pictures (js/theme-previews.js, img/theme-previews);
  * - Personal settings > Sharing: when sharing with other servers is on (privacy between
  *   organisations off, scripts/configure.d/60-org-privacy.sh), the Federated Cloud section's
  *   "share it" buttons point at this app's help page instead of nextcloud.com/sharing.
@@ -124,17 +126,32 @@ final class UpstreamPagesMiddleware extends Middleware {
 			return $response;
 		}
 		$section = $this->request->getParam('section');
-		if ($section === 'theming' && class_exists(self::BACKGROUNDS)
-			&& defined(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS')) {
-			$shipped = constant(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS');
-			if (is_array($shipped)) {
-				// Replaces what the theming app gave its page; the page is rendered after this.
-				$this->initialState->provideInitialState('theming', 'shippedBackgrounds', UpstreamAssets::filterBackgrounds($shipped));
+		if ($section === 'theming') {
+			$this->themePreviews();
+			if (class_exists(self::BACKGROUNDS) && defined(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS')) {
+				$shipped = constant(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS');
+				if (is_array($shipped)) {
+					// Replaces what the theming app gave its page; the page is rendered after this.
+					$this->initialState->provideInitialState('theming', 'shippedBackgrounds', UpstreamAssets::filterBackgrounds($shipped));
+				}
 			}
 		} elseif ($section === 'sharing') {
 			$this->initialState->provideInitialState('federatedfilesharing', 'reference',
 				$this->urlGenerator->linkToRouteAbsolute(Application::APP_ID . '.help.topic', ['path' => 'sharing']));
 		}
 		return $response;
+	}
+
+	/**
+	 * Appearance and accessibility: the theme previews. The theming app's page builds each picture's
+	 * address in the browser from the theme's id (/apps/theming/img/<id>.jpg, upstream pictures with
+	 * the upstream logo and blue header), so js/theme-previews.js puts our own picture of the same
+	 * theme in its place there; this gives it their addresses.
+	 */
+	private function themePreviews(): void {
+		$previews = UpstreamAssets::themePreviews(dirname(__DIR__, 2) . '/img/theme-previews',
+			fn (string $file): string => $this->urlGenerator->imagePath(Application::APP_ID, $file));
+		$this->initialState->provideInitialState(Application::APP_ID, 'theme_previews', $previews);
+		Util::addScript(Application::APP_ID, 'theme-previews');
 	}
 }

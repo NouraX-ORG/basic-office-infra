@@ -148,6 +148,21 @@ docs/teams.md); the branding holds with it on or off.
     left out of the picker; the others stay;
   - Sharing (when federation is on): the "share it" buttons point at our help page;
   - `/settings/download/reasons`, the upstream's "Reasons to use Nextcloud" PDF, answers 404.
+- *Theme previews* (`js/theme-previews.js`, `img/theme-previews/`): Personal settings > Appearance and
+  accessibility shows a picture of each theme. The theming app builds their addresses in the browser
+  (`/apps/theming/img/<theme id>.jpg`), and the upstream pictures show the upstream logo and, for the
+  four themes, a header in the upstream blue. On that page only, the app's middleware gives the page
+  the addresses of our own pictures (initial state `nourax_branding` / `theme_previews`) and the small
+  script, which puts our picture of the same theme in place of each upstream one before the browser
+  has fetched it. A theme with no picture of ours (one a later version adds) has its picture hidden
+  instead; `tests/run.php` and `scripts/check-branding.sh` then fail and name it. Our pictures are a
+  NoDrive page in each theme (light, dark, high contrast light and dark, and light and dark side by
+  side for "System default"), drawn with plain shapes and no words so they suit every language, with
+  the Nourax logo as it is, only smaller; "Reduced motion" is a ball that has stopped, and "Dyslexia
+  font" a line of text in that font, as upstream. `branding/theme-previews/make-previews.py` draws
+  them (Pillow; `--font` is the theming app's `fonts/OpenDyslexic-Regular.otf`, SIL OFL 1.1); run it
+  again after changing it and commit the pictures. The upstream files stay where they are and are
+  never shown.
 - *No NoBoard welcome board* (`Listener/NewAccountListener.php`): see the deck row below.
 - *Example contact* (`Service/ExampleContact.php`, `occ nourax_branding:example-contact`, run by
   `scripts/configure.d/20-branding.sh`): every new address book gets one example card, and NoContacts
@@ -233,7 +248,28 @@ link addresses, pictures (`src`, `alt`), `title`, `aria-label` and `placeholder`
 draws (the app names in the app menu), meta tags and icons, the colours every drawn element really
 gets (text, background, border, outline, SVG fill and stroke) against the upstream blue, background
 pictures, and, for Arabic, that the page runs right to left. It uses the same patterns as the sweep
-and the guard (`sweep/rules.json`). An element that is not drawn at all (hidden by
+and the guard (`sweep/rules.json`).
+
+It also looks inside every picture the page draws (`branding/audit/scan-pictures.js`): `<img>`
+pictures, SVG `<image>`s, posters and CSS background, border and list pictures, also inside the
+ONLYOFFICE frames. A picture's address and alt text can be clean while the picture itself shows the
+upstream logo or blue (the theme previews did), so the audit fetches each picture once, the way the
+page does, and fails when
+
+- its bytes are the same as one of the upstream files listed in `rules.json` (`upstream_files`: the
+  upstream logos and icons; `upstream_pictures`: the theming app's theme previews), or
+- at least 0.5% of its pixels (and at least 16) are within 28 (distance in RGB) of an upstream blue.
+  The Nourax blues are 55 or more away. CSS masks only give a shape, drawn in the element's own
+  colour, so their colours do not count.
+
+An address under `/apps/theming/img/` with a picture extension is an upstream asset in `rules.json`
+(`upstream-theme-preview`), so the scanner and `scripts/check-branding.sh` also fail on the address
+alone. `pictures.json` in the output folder lists every picture looked at: its size, how many of its
+pixels are in an upstream blue, and the first pages that drew it. A logo with none of the upstream
+blue in it, in a picture nobody has listed, is the one thing this cannot see; that is why upstream
+pictures that can reach people are listed by name.
+
+An element that is not drawn at all (hidden by
 `branding/custom.css`, for example) cannot be seen, clicked or read out, so a hit there is listed
 apart, in `hidden.json`, and does not fail the audit.
 
@@ -296,7 +332,7 @@ file with its password (for the login form) and a netrc file with its app passwo
 Keep it and those files outside the repo. Passwords are never printed. The output folder gets a
 screenshot per page, language and theme (`<language>-<theme>-<page>.png`), `index.html` (a table of
 every page scanned), `findings.json`, `problems.json` (a page or menu that could not be opened),
-`hidden.json`, `network.json` and `notes.json`. The exit code is 0 only when `findings.json` and
+`hidden.json`, `network.json`, `pictures.json` and `notes.json`. The exit code is 0 only when `findings.json` and
 `problems.json` are both empty. A full run takes about 45 minutes.
 
 A finding is fixed where it comes from (a new spelling in `sweep/rules.json` or a sentence in
@@ -358,7 +394,7 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 | `tasks` (NoTasks) | 0.18.1 | A person's first task list is made in the upstream blue `#0082C9` (it reads a theming field Nextcloud 35 no longer has), shown in NoTasks and in NoCalendar. | The nourax_branding app gives every new calendar in an upstream blue the site colour (links and assets). |
 | `federatedfilesharing` | 2.0.0 | Personal settings > Sharing: the Federated Cloud ID, "Share with me via Nextcloud" and "share it" buttons pointing at nextcloud.com/sharing; "Add to your Nextcloud" on public share pages. | Always on. Sharing with other servers is off while privacy between organisations is on (`60-org-privacy.sh`), which hides all of it. When it is on: the texts are swept, "Add to your …" uses the product name, and the "share it" buttons point at our help page (links and assets). |
 | `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice with social links, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets: our notice in place of the developer notice, `/settings/help` goes to our help page, the PDF answers 404, help links open our help page. |
-| `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; "Adjust the Nextcloud theme"; the upstream blue in the Assistant gradient; app summaries such as "A Calendar app for Nextcloud" in the app manifests. | Always on. Links and assets (CSS, the two backgrounds left out, blue and manifests fixed where they are made), text sweep. |
+| `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; the theme previews of Appearance and accessibility (the upstream logo, and a header in the upstream blue); "Adjust the Nextcloud theme"; the upstream blue in the Assistant gradient; app summaries such as "A Calendar app for Nextcloud" in the app manifests. | Always on. Links and assets (CSS, the two backgrounds left out, our own theme previews, blue and manifests fixed where they are made), text sweep. |
 | `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; the example contact's website (`www.nextcloud.com`); some error texts. | Always on. Links and assets (our own WebDAV page text, the Nourax example contact), text sweep. |
 | `circles` (Teams) | 35.0.0 | 8 texts, for example "Nextcloud Account". | Text sweep. |
 | `calendar` (NoCalendar) | 6.6.3 | 4 texts, mostly the app description. | Text sweep. |

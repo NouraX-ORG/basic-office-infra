@@ -596,6 +596,32 @@ def state(page, sid):
 		return None
 
 
+def check_theme_previews(url, page, page_url, previews):
+	# Appearance and accessibility: the theming app draws a picture of each theme from
+	# /apps/theming/img/<id>.jpg (the upstream logo and blue header, built in the browser). The
+	# nourax_branding app's script puts its own picture of the same theme in its place, from the
+	# addresses this page carries. The pictures themselves are fetched after the pages (previews).
+	rep.checked('pages')
+	themes = state(page, 'theming-themes')
+	items = themes.values() if isinstance(themes, dict) else (themes if isinstance(themes, list) else [])
+	ids = [t.get('id') for t in items if isinstance(t, dict) and t.get('id')]
+	ours = state(page, 'nourax_branding-theme_previews')
+	if not ids:
+		rep.fail('pages', url, 'theme previews', 'the page lists no themes (initial state theming-themes), so its pictures cannot be checked')
+		return
+	if not isinstance(ours, dict) or not ours:
+		rep.fail('pages', url, 'theme previews', 'no Nourax theme previews (initial state nourax_branding-theme_previews): the upstream pictures, with the upstream logo and blue, would show')
+		return
+	missing = [i for i in ids if not ours.get(i)]
+	if missing:
+		rep.fail('pages', url, 'theme previews', 'no Nourax preview for %s (that picture is hidden instead); draw one in branding/theme-previews/make-previews.py' % ', '.join(missing))
+	if not any(urlsplit(s).path.endswith('/nourax_branding/js/theme-previews.js') for s in page.scripts):
+		rep.fail('pages', url, 'theme previews', 'js/theme-previews.js of the nourax_branding app is not on the page, so the upstream pictures would show')
+	for tid, u in ours.items():
+		if isinstance(u, str) and u:
+			previews.setdefault(urljoin(page_url, u), tid)
+
+
 # ---- HTTP through curl -------------------------------------------------------------------------
 
 def cq(s):
@@ -971,7 +997,7 @@ def run_http(http, cred):
 		rep.skip('share', '/branding-check', 'no test links, so no public page was checked')
 
 	l10n_urls = {lang: [] for lang in ref + LANGS}
-	icons, manifests, themecss, sheets = {}, {}, {}, {}
+	icons, manifests, themecss, sheets, previews = {}, {}, {}, {}, {}
 	l10n_apps = set()
 	for (area, req, kind), resp in zip(jobs, http.run([j[1] for j in jobs])):
 		url = label(req['url']) + (' [old browser]' if req.get('ua') == OLD_UA else '') + (' [signed in]' if req.get('auth') and area == 'errors' else '')
@@ -1019,6 +1045,8 @@ def run_http(http, cred):
 		else:
 			page = Page()   # only read, for the l10n and theming areas
 			page.feed(resp.text)
+		if report and area == 'pages' and urlsplit(req['url']).path.rstrip('/').endswith('/settings/user/theming'):
+			check_theme_previews(url, page, resp.url or req['url'], previews)
 		if kind == 'sync' and report:
 			sections = state(page, 'settings-sections') or {}
 			for s in sections.get('personal', []) if isinstance(sections, dict) else []:
@@ -1045,6 +1073,27 @@ def run_http(http, cred):
 					themecss.setdefault(absu, req.get('auth', False))
 				else:
 					sheets.setdefault(absu, req.get('auth', False))
+
+	if previews:
+		# Each Nourax theme preview must be a picture, and none may be an upstream file.
+		ups = RULES.get('upstream_files', []) + RULES.get('upstream_pictures', [])
+		upstream_pics = {}
+		for path, resp in zip(ups, http.run([dict(url=BASE + p) for p in ups])):
+			if resp.status == 200 and resp.body:
+				upstream_pics[hashlib.sha256(resp.body).hexdigest()] = path
+		plist = sorted(previews)
+		for u, resp in zip(plist, http.run([dict(url=u, auth=True) for u in plist])):
+			rep.checked('pages')
+			where = 'theme preview %s' % previews[u]
+			if resp.status != 200:
+				rep.fail('pages', label(u), where, 'answers HTTP %d' % resp.status)
+				continue
+			ctype = resp.headers.get('content-type', '')
+			if not ctype.startswith('image/'):
+				rep.fail('pages', label(u), where, 'is %r, not a picture' % ctype)
+			same = upstream_pics.get(hashlib.sha256(resp.body).hexdigest())
+			if same:
+				rep.fail('pages', label(u), where, 'is the same file as the upstream %s' % same)
 
 	if 'l10n' in AREAS:
 		by_path = {}
