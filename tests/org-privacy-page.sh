@@ -147,7 +147,7 @@ second_factor() { # where
 	*/login/selectchallenge*)
 		case "$where" in http*) ;; *) where="$BASE$where" ;; esac
 		C -o "$T/select.html" "$where"
-		where="$(grep -o 'href="[^"]*/login/challenge/totp[^"]*"' "$T/select.html" | head -n 1 | sed 's/^href="//; s/"$//; s/&amp;/\&/g')"
+		where="$(grep -o 'href="[^"]*/login/challenge/totp[^"]*"' "$T/select.html" | head -n 1 | sed 's/^href="//; s/"$//; s/&amp;/\&/g' || true)"
 		;;
 	esac
 	case "$where" in http*) ;; *) where="$BASE$where" ;; esac

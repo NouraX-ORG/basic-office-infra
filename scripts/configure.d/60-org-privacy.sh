@@ -39,7 +39,9 @@ on | off) org_privacy_want="$ORG_PRIVACY" ;;
 esac
 
 if [ -n "$org_privacy_want" ]; then
-	occ list nourax_api --raw 2>/dev/null </dev/null | grep -q '^nourax_api:org-privacy ' ||
+	# Read the whole list first: with pipefail, grep -q stopping early would fail the pipe.
+	org_privacy_cmds="$(occ list nourax_api --raw 2>/dev/null </dev/null || true)"
+	grep -q '^nourax_api:org-privacy ' <<<"$org_privacy_cmds" ||
 		die "occ nourax_api:org-privacy is missing - is the nourax_api app enabled? (60-nomail-api.sh)"
 	org_privacy_args=("$org_privacy_want" --by=configure)
 	org_privacy_mark=""
@@ -54,7 +56,7 @@ if [ -n "$org_privacy_want" ]; then
 		log "  ${org_privacy_mark}${org_privacy_line}"
 	done < <(jq -r '.changed[]' <<<"$org_privacy_out")
 	log "  org privacy: $(jq -r '"\(.state) (\(.result))"' <<<"$org_privacy_out"); nourax_api: $(occ nourax_api:status </dev/null | jq -r .org_privacy)"
-	unset org_privacy_args org_privacy_mark org_privacy_out org_privacy_line
+	unset org_privacy_cmds org_privacy_args org_privacy_mark org_privacy_out org_privacy_line
 else
 	log "  org privacy is not switched on - see the top of $(basename "${BASH_SOURCE[0]}") to switch it on"
 fi
