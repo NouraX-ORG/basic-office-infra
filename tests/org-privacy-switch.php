@@ -20,6 +20,10 @@ declare(strict_types=1);
  *   is refused.
  * - The page's view: the effects of On (the NoForms one only while NoForms is enabled), what Off
  *   means, and no upstream name in any of those texts (nourax_branding's rules.json).
+ * - The admin page: the section "Nourax Workspace" and its one form are registered (from
+ *   info.xml), the form cannot be delegated, and the rendered form shows the state, every effect
+ *   of On, what Off means, the confirmation and one table row per setting and app; no upstream
+ *   name, link or blue in it, its script, styles or icon.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -27,6 +31,7 @@ declare(strict_types=1);
 namespace NouraxTests;
 
 use OCA\NouraxApi\AdminSettings\PrivacySettings;
+use OCA\NouraxApi\AdminSettings\WorkspaceSection;
 use OCA\NouraxApi\Service\ApiException;
 use OCA\NouraxApi\Service\ObjectLock;
 use OCA\NouraxApi\Service\OrgPrivacySwitch;
@@ -35,6 +40,8 @@ use OCP\IAppConfig;
 use OCP\IConfig;
 use OCP\IDBConnection;
 use OCP\Server;
+use OCP\Settings\IDelegatedSettings;
+use OCP\Settings\IManager as ISettingsManager;
 
 require_once '/var/www/html/lib/base.php';
 Server::get(IAppManager::class)->loadApp('nourax_api');
@@ -222,6 +229,68 @@ foreach (array_merge($rules['name_patterns'] ?? [], $rules['blue_patterns'] ?? [
 }
 check('no upstream name or blue in the page\'s texts (rules.json)', [], $hits);
 check('rules.json was read', true, is_array($rules) && count($rules['name_patterns'] ?? []) > 0);
+
+// --- The admin page: registered, and rendered ----------------------------------------------------
+$settingsManager = Server::get(ISettingsManager::class);
+$sections = [];
+foreach ($settingsManager->getAdminSections() as $byPriority) {
+	foreach ($byPriority as $section) {
+		$sections[$section->getID()] = $section;
+	}
+}
+$section = $sections[WorkspaceSection::ID] ?? null;
+check('the admin section "Nourax Workspace" is registered', 'Nourax Workspace', $section?->getName());
+check('its icon is the app\'s white-on-cobalt mark', true,
+	$section !== null && str_ends_with((string)preg_replace('/\?.*$/', '', $section->getIcon()), '/nourax_api/img/nourax-workspace.svg'));
+$forms = array_merge(...array_values($settingsManager->getAdminSettings(WorkspaceSection::ID)));
+check('its one form is PrivacySettings', [PrivacySettings::class], array_map('get_class', $forms));
+check('the form cannot be delegated to non-admins (not IDelegatedSettings)', false,
+	(Server::get(PrivacySettings::class)) instanceof IDelegatedSettings);
+
+$html = Server::get(PrivacySettings::class)->getForm()->render();
+$e = fn (string $s): string => htmlspecialchars($s, ENT_QUOTES);
+$state = $status['state'];
+check('rendered: the section and its title', true,
+	str_contains($html, '<div id="nourax-org-privacy"') && str_contains($html, '<h2>Privacy between organisations</h2>'));
+check("rendered: the state pill says $state", 1,
+	preg_match('/class="nourax-privacy__pill nourax-privacy__pill--' . $state . '"[^>]*>' . ['on' => 'On', 'off' => 'Off', 'mixed' => 'Some settings differ'][$state] . '</', $html));
+check('rendered: every effect of On, twice (page and confirmation)', [], array_values(array_filter($view['effects'],
+	fn (string $t): bool => substr_count($html, $e($t)) !== 2)));
+check('rendered: what Off means, twice (page and confirmation)', 2, substr_count($html, $e(OrgPrivacySwitch::OFF_WARNING)));
+check('rendered: the confirmation dialog and its two buttons', true, str_contains($html, '<dialog id="nourax-privacy-dialog"')
+	&& str_contains($html, 'value="cancel"') && str_contains($html, 'id="nourax-privacy-confirm"'));
+check('rendered: one table row per setting and per app', count(OrgPrivacySwitch::ITEMS) . ' ' . count(OrgPrivacySwitch::APPS),
+	substr_count($html, '<tr data-item="') . ' ' . substr_count($html, '<tr data-app="'));
+check('rendered: the button that does not apply is hidden', 1,
+	preg_match($state === 'on' ? '/id="nourax-privacy-on"[^>]*hidden/' : ($state === 'off' ? '/id="nourax-privacy-off"[^>]*hidden/' : '/^/'), $html));
+
+// The page, its script, styles and icon against the branding rules: names, blues, and links.
+$appDir = '/var/www/html/nourax_apps/nourax_api';
+$files = ['rendered page' => $html];
+foreach (['js/admin-privacy.js', 'css/admin-privacy.css', 'css/settings-nav.css', 'img/nourax-workspace.svg'] as $path) {
+	$files[$path] = (string)file_get_contents("$appDir/$path");
+}
+$hits = [];
+foreach (array_merge($rules['name_patterns'] ?? [], $rules['blue_patterns'] ?? []) as $rule) {
+	$re = '/' . str_replace('/', '\/', preg_replace('/^\(\?i\)/', '', $rule['re'])) . '/' . (str_starts_with($rule['re'], '(?i)') ? 'i' : '');
+	foreach ($files as $where => $body) {
+		if (@preg_match($re, $body) === 1) {
+			$hits[] = $rule['id'] . ' in ' . $where;
+		}
+	}
+}
+preg_match_all('/\s(?:href|src|action)="([^"]*)"/', $html, $links);
+foreach ($rules['link_patterns'] ?? [] as $rule) {
+	$re = '/' . str_replace('/', '\/', preg_replace('/^\(\?i\)/', '', $rule['re'])) . '/' . (str_starts_with($rule['re'], '(?i)') ? 'i' : '');
+	foreach ($links[1] as $link) {
+		if (@preg_match($re, $link) === 1) {
+			$hits[] = $rule['id'] . ': ' . $link;
+		}
+	}
+}
+check('no upstream name, link or blue in the page, its script, styles or icon (rules.json)', [], $hits);
+check('the icon: a white mark on the cobalt tile', true,
+	str_contains($files['img/nourax-workspace.svg'], 'fill="#2563EB"') && str_contains($files['img/nourax-workspace.svg'], 'fill="#fff"'));
 
 if ($fails > 0) {
 	echo "$fails check(s) failed\n";

@@ -15,7 +15,7 @@ again finishes a call that stopped half way and reports `unchanged` for what was
 | Base URL | `https://drive.nourax.org/apps/nourax_api` (the `/index.php/apps/nourax_api` form works too) |
 | Where it runs | The `nourax_api` app (`nextcloud-apps/nourax_api`), next to the [NoMail API](nomail-api.md) |
 | Key | Server secret `nodrive_admin_api_key` (48 characters), imported by `scripts/configure.d/60-nomail-api.sh` |
-| Tests | `sudo tests/admin-api.sh` (part 1), `sudo tests/admin-people.sh` (part 2) and `sudo tests/privacy.sh` (privacy between organisations) on the server |
+| Tests | `sudo tests/admin-api.sh` (part 1), `sudo tests/admin-people.sh` (part 2), `sudo tests/privacy.sh` and `sudo tests/privacy-apps.sh` (privacy between organisations) and `sudo tests/org-privacy-switch.sh` ([the switch](#the-switch)) on the server |
 | Demo data | `sudo tests/demo-accounts.sh` makes and checks the owner's kept [demo accounts](#demo-accounts) (`--check` reads only) |
 
 **Part 1 (live):** request signing, the audit, organisations and teams.
@@ -700,6 +700,22 @@ again. Nothing needs a restart: every setting is read on the next request.
 - `tests/org-privacy-page.sh normal|admin <creds-dir>` on the owner's PC: the real page and a real
   Off and back On through it, as a temporary QA admin (see the runs below).
 
+**Runs** (UTC, 2026-10-26, privacy on throughout):
+
+| Run | Commit | Result |
+|---|---|---|
+| `sudo tests/org-privacy-switch.sh`, 02:44 | `2694084` | All passed (exit 0): the PHP file's checks, status on with 21 settings and both apps off, a dry run of off listing 18 changes (15 settings, 2 apps, the step) and changing nothing, on while on `unchanged` with its audit row, the configure step's dry run, plain run and wrong value, and 401 / 403 / 403 for the page's address without a session and as `qa-t6b-2`. (The run at 02:43, commit `db1aef6`, had one FAIL, a fault of the test: a check printed jq's own "true" next to its "yes"; fixed in `2694084`.) |
+| `tests/org-privacy-page.sh normal`, 02:47 | `2694084` | All passed: `qa-t6b-admin`, a normal account, signs in (with its new TOTP), the admin page answers 403, the switch's GET and POST with the CSRF token 403 ("Logged in account must be an admin"), signed out. The first run (02:45) set up its TOTP and then could not sign out (the script read a "Log out" link it could not use; it now uses the logout address with the page's token); its session was ended on the server (`occ user:auth-tokens:delete`), as was the half-signed-in one of the run at 02:46, which did not yet answer the TOTP question. |
+| `sudo tests/privacy.sh`, 02:50–02:51, and `sudo tests/privacy-apps.sh`, 02:51–02:54 | `2694084` | Both passed (exit 0); `privacy-apps.sh` 376 PASS, no FAIL, no LEAK line, "no cross-organisation grant left" ([log](../tests/runs/privacy-apps/2026-10-26-0251-after-2694084.log)) |
+| `scripts/check-branding.sh` (owner's PC, as `qa-t6b-2`), 02:57, and `sudo scripts/check-branding.sh --server --only config,mail` | `2694084` | `RESULT PASS (0 hits)` both: pages 92, l10n 124, theming 92, share 18, dav 4, errors 21, config 1, mail 4 checked. (It looks at what normal people see; the admin page itself is checked by `org-privacy-switch.php` with the same rules.) |
+
+**Not run yet: the admin step and a real Off and On.** Adding `qa-t6b-admin` to the admin group
+and switching privacy off (even for a few seconds) were both refused by the permission check of
+the session that built the switch, so they wait for the owner's yes. Until then the switch's
+writes (the settings, and disabling and enabling `federation` and `circles`) are checked as dry
+runs and as on while on; the configure step it replaces made the same writes with occ on
+2026-10-25. `qa-t6b-admin` was never in the admin group; it is disabled.
+
 ### The test
 
 `sudo tests/privacy.sh` (after `tests/admin-api.sh`). It puts `qa-t6-1` (team A2) and `qa-t6-2`
@@ -979,6 +995,7 @@ and writes it to the server file. Then copy the file to the PC again (above).
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
 | People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer", "QA t6b import (same organisation)" and "QA t6b import (no such account)" (boards 132 and 131, made once and found again since `28abfb7`; the earlier copies, boards 97, 99, 109, 110, 113, 123–125, 129 and 130, are kept), the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`; the album "QA t6b privacy 2" and the folders `qa-t6b-acl-2` and `qa-t6b-acl-3` are from earlier runs and kept), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. What the runs before the fixes let through (all between QA accounts) was taken back by the test's undo step: see [The test](#the-test). Kept for the next run. |
+| The switch's test account (`tests/org-privacy-page.sh`) | `qa-t6b-admin` ("QA t6b admin"), a local account with a password and a TOTP second factor (both in `/etc/nourax/qa`), in no group. It is made an admin only with the owner's yes, for the page's real Off and On, and taken out of the admin group and disabled again at once. Disabled. |
 | People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team

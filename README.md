@@ -25,6 +25,7 @@ office documents and boards at `https://drive.nourax.org`.
 | **Nourax AI** | The Assistant (top bar, NoDrive, text editor): chat, summaries, headlines, rewording, translation; Nourax AI models only, no keys or AI settings for anyone, each request charged to the person's Nourax AI budget in NIG; "not available yet" until NIG's key is in ([docs/assistant.md](docs/assistant.md)) |
 | **Demo accounts** | Two demo organisations (Demo Alpha, Demo Beta), four teams of seven and 24 people with demo files, kept for the owner to see how teams, team folders and privacy work ([docs/teams.md](docs/teams.md#demo-accounts)) |
 | **No chat or video calls** | Talk is not part of Nourax Workspace; if anyone switches it on, `configure.sh` switches it off again ([docs/apps.md](docs/apps.md#no-talk)) |
+| **Privacy switch on the admin page** | Administration settings → "Nourax Workspace": privacy between organisations On / Off, with what it changes in plain English, a confirmation, the settings and the last switches; the same list as `occ nourax_api:org-privacy` and `60-org-privacy.sh` ([docs/teams.md](docs/teams.md#the-switch)) |
 
 Nourax Workspace is an independently branded, white-label deployment built from open-source
 software (AGPL-3.0 and others) under its licences; it is not affiliated with or endorsed by the

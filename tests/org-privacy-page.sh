@@ -86,20 +86,24 @@ except Exception:
 	print("none")
 PY
 }
-# The current TOTP code of the account, written to a file (never printed). Waits for the next
-# 30-second step when this one has less than 4 seconds left.
+# The current TOTP code of the account, written to a file (never printed). The server takes each
+# 30-second step's code once, so this waits for a step after the last one used (kept in the
+# .totp file), and for the next step when this one has less than 4 seconds left.
 totp_code() { # out-file
 	"$PY" -I - "$CREDS/$QA_ADMIN.totp" "$1" <<'PY'
 import base64, hashlib, hmac, json, struct, sys, time
 d = json.load(open(sys.argv[1], encoding="utf-8"))
-if 30 - time.time() % 30 < 4:
+while int(time.time()) // 30 <= d.get("last_step", -1) or 30 - time.time() % 30 < 4:
 	time.sleep(30 - time.time() % 30 + 0.5)
+step = int(time.time()) // 30
 secret = d["secret"].upper()
 key = base64.b32decode(secret + "=" * (-len(secret) % 8))
 digest = {"SHA1": hashlib.sha1, "SHA256": hashlib.sha256, "SHA512": hashlib.sha512}[d.get("algorithm", "SHA1").upper()]
-mac = hmac.new(key, struct.pack(">Q", int(time.time()) // 30), digest).digest()
+mac = hmac.new(key, struct.pack(">Q", step), digest).digest()
 at = mac[-1] & 0x0F
 open(sys.argv[2], "w").write("%06d" % ((struct.unpack(">I", mac[at:at + 4])[0] & 0x7FFFFFFF) % 1000000))
+d["last_step"] = step
+json.dump(d, open(sys.argv[1], "w"))
 PY
 }
 C() { curl -sS -A "$UA" -c "$T/jar" -b "$T/jar" "$@"; }
@@ -129,29 +133,43 @@ page_token() {
 	C -o "$T/files.html" "$BASE/apps/files/"
 	TOKEN="$(token_of "$T/files.html")"
 }
+# "Log out": the logout address with the page's CSRF token, as the user menu's link has it.
 sign_out() {
-	local link
-	link="$("$PY" -I - "$T/files.html" <<'PY'
-import base64, json, re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-for value in re.findall(r'id="initial-state-[^"]+" value="([^"]*)"', text):
-	try:
-		blob = json.dumps(json.loads(base64.b64decode(value)))
-	except Exception:
-		continue
-	found = re.search(r'"href": "([^"]*(?:/logout)[^"]*)"', blob)
-	if found:
-		print(found.group(1))
-		break
-PY
-)"
-	[ -n "$link" ] && C -o /dev/null "$link"
+	C -G --data-urlencode "requesttoken=$TOKEN" -o /dev/null "$BASE/logout" || true
 	check "signed out" 401 "$(C -H 'OCS-APIRequest: true' -o /dev/null -w '%{http_code}' "$BASE/ocs/v2.php/cloud/user?format=json")"
 }
+
+# The second factor: from the address the sign-in sent us to (the TOTP challenge, or the page
+# that lists the ways), the current code. Leaves the answer's headers in $T/h-challenge.
+second_factor() { # where
+	local where="$1" challenge_token
+	case "$where" in
+	*/login/selectchallenge*)
+		case "$where" in http*) ;; *) where="$BASE$where" ;; esac
+		C -o "$T/select.html" "$where"
+		where="$(grep -o 'href="[^"]*/login/challenge/totp[^"]*"' "$T/select.html" | head -n 1 | sed 's/^href="//; s/"$//; s/&amp;/\&/g')"
+		;;
+	esac
+	case "$where" in http*) ;; *) where="$BASE$where" ;; esac
+	C -o "$T/challenge.html" "$where"
+	challenge_token="$(token_of "$T/challenge.html")"
+	totp_code "$T/code"
+	C -H "Origin: $BASE" -D "$T/h-challenge" -o /dev/null --data-urlencode "challenge@$T/code" \
+		--data-urlencode "requesttoken=$challenge_token" "$where"
+	rm -f "$T/code"
+}
+asks_second_factor() { case "$1" in */login/challenge/* | */login/selectchallenge*) echo yes ;; *) echo no ;; esac; }
 
 if [ "$MODE" = normal ]; then
 	sign_in
 	where="$(location "$T/h-login")"
+	if [ "$(asks_second_factor "$where")" = yes ]; then
+		# Once its TOTP is set up, the account is asked for it like an admin.
+		[ -s "$CREDS/$QA_ADMIN.totp" ] || die "the sign-in asks for a second factor, but there is no $QA_ADMIN.totp"
+		log "  the sign-in asks for the second factor ($QA_ADMIN has TOTP)"
+		second_factor "$where"
+		where="$(location "$T/h-challenge")"
+	fi
 	check "$QA_ADMIN (a normal account now) signs in with the form" yes "$(case "$where" in */login*) echo no ;; ?*) echo yes ;; *) echo no ;; esac)"
 	page_token
 	check "the CSRF token of a signed-in page" yes "$([ -n "$TOKEN" ] && echo yes || echo no)"
@@ -190,20 +208,8 @@ fi
 [ -s "$CREDS/$QA_ADMIN.totp" ] || die "no $CREDS/$QA_ADMIN.totp - run the normal step first"
 sign_in
 where="$(location "$T/h-login")"
-check "an admin's sign-in asks for the second factor" yes "$(case "$where" in */login/challenge/* | */login/selectchallenge*) echo yes ;; *) echo "no ($where)" ;; esac)"
-case "$where" in
-*/login/selectchallenge*)
-	C -o "$T/select.html" "$BASE${where#"$BASE"}"
-	where="$(grep -o 'href="[^"]*/login/challenge/totp[^"]*"' "$T/select.html" | head -n 1 | sed 's/^href="//; s/"$//; s/&amp;/\&/g')"
-	;;
-esac
-case "$where" in http*) ;; *) where="$BASE$where" ;; esac
-C -o "$T/challenge.html" "$where"
-challenge_token="$(token_of "$T/challenge.html")"
-totp_code "$T/code"
-C -H "Origin: $BASE" -D "$T/h-challenge" -o /dev/null --data-urlencode "challenge@$T/code" \
-	--data-urlencode "requesttoken=$challenge_token" "$where"
-rm -f "$T/code"
+check "an admin's sign-in asks for the second factor" yes "$(asks_second_factor "$where")"
+second_factor "$where"
 check "the code is taken" yes "$(case "$(location "$T/h-challenge")" in */login*) echo no ;; ?*) echo yes ;; *) echo no ;; esac)"
 check "signed in as $QA_ADMIN" "$QA_ADMIN" "$(C -H 'OCS-APIRequest: true' -o "$T/me.json" "$BASE/ocs/v2.php/cloud/user?format=json"; field "$T/me.json" ocs.data.id)"
 page_token
