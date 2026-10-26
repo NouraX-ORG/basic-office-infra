@@ -319,7 +319,7 @@ sweep() { # label
 checkw() { check "$@"; sweep "$1"; }
 
 # What the runs before the fixes left (and any later leak), before the checks begin.
-sweep "a cross-organisation grant from an earlier run"
+sweep "left by an earlier run"
 
 # qa-t6b-4's own probe file (for comments, ONLYOFFICE mentions and the ownership transfer).
 call "$QA1" MKCOL "$DAV_BASE/files/$QA1/qa-t6b-privacy" >/dev/null
