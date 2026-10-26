@@ -439,6 +439,14 @@ A hit is fixed where it comes from: a spelling in `sweep/rules.json` or a senten
 `sweep/en-overrides.json` and a sweep, a link in `branding/custom.css`, a page in the theme or in the
 nourax_branding app. `allow` in `rules.json` is only for licence text that a licence requires.
 
+**At the end of Task 3** (26 October, `main` at `b4826ec`, right after `sudo scripts/configure.sh`;
+the commit that added this paragraph changes only this page):
+
+| Where | Result |
+|---|---|
+| The owner's PC, from a fresh copy of `origin/main`: `scripts/check-branding.sh qa-t3-1.netrc --langs en_GB,en,de,ar` | pages 92, l10n 124, theming 92, share 18, dav 4, errors 21 checked: 0 FAIL, 0 SKIP. *RESULT PASS (0 hits)*, exit 0, 30 seconds |
+| The server: `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` | pages 44 checked (37 SKIP, the pages only the owner's address may open), l10n 8713, theming 73, share 18, dav 4, errors 18 (4 SKIP), config 1, mail 4: 0 FAIL. *RESULT PASS (0 hits)*, exit 0, 31 seconds |
+
 ## Browser audit
 
 `scripts/check-branding.sh` reads what the server sends. The browser audit looks at what a person
