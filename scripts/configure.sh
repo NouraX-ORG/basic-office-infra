@@ -77,8 +77,20 @@ occ config:app:set onlyoffice DocumentServerInternalUrl --value="http://onlyoffi
 occ config:app:set onlyoffice StorageUrl --value="http://app/"
 occ config:app:set onlyoffice jwt_header --value="AuthorizationJwt"
 occ config:app:set onlyoffice verify_peer_off --value="false"
-# Read from the secret file on the server; never typed or printed.
-occ config:app:set onlyoffice jwt_secret --value="$(cat "$(secret_path onlyoffice_jwt_secret)")" --sensitive >/dev/null
+# Read from the secret file on the server; never typed or printed. It goes in from stdin and is stored
+# encrypted (sensitive), so it never shows in a process list or in 'occ config:list'. It is marked
+# sensitive before the real value is written, so that is never stored unencrypted.
+dc exec -T -u www-data app php -r '
+		require "/var/www/html/lib/base.php";
+		$config = \OCP\Server::get(\OCP\IAppConfig::class);
+		$app = "onlyoffice";
+		$key = "jwt_secret";
+		if (!$config->hasKey($app, $key, null)) {
+			$config->setValueString($app, $key, "");
+		}
+		$config->updateSensitive($app, $key, true);
+		$config->setValueString($app, $key, trim(stream_get_contents(STDIN)));
+	' < "$(secret_path onlyoffice_jwt_secret)"
 occ onlyoffice:documentserver --check \
 	|| log "WARNING: ONLYOFFICE check failed. It needs https://${OFFICE_HOST} reachable (Tunnel + DNS); run configure.sh again then."
 
