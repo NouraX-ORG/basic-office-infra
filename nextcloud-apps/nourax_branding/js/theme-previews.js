@@ -6,8 +6,9 @@
  * The theming app (Nextcloud 35) draws one picture per theme, <img src="/apps/theming/img/<id>.jpg">,
  * the address built in the browser from the theme's id. The upstream pictures show the upstream logo
  * and its blue header. This gives every such picture the Nourax preview of the same theme
- * (img/theme-previews/<id>.png, drawn by branding/theme-previews/make-previews.py) before the browser
- * has fetched the upstream one, so it never shows. A preview of a theme the app has no picture for
+ * (img/theme-previews/<id>.png, drawn by branding/theme-previews/make-previews.py) as soon as the
+ * theming app adds it to the page. The browser may already have started to download the upstream
+ * picture by then, but it is never drawn. A preview of a theme the app has no picture for
  * yet (one a later version adds) is hidden instead, keeping its place on the page.
  *
  * The addresses come from the page's initial state (nourax_branding / theme_previews: theme id =>

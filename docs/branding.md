@@ -5,11 +5,62 @@ its logo, its blue (`#0082c9`, `#00679e`) or links to nextcloud.com, apps.nextcl
 docs.nextcloud.com or github.com/nextcloud. Nextcloud is credited in the repo only (NOTICE.md,
 README and these docs).
 
-## Text sweep
+This page has the naming rules, how the sweep that keeps the upstream name off people's screens
+works, how to run it and its guard again, how to undo each change, and the exceptions.
+
+## Naming rules
+
+| What people see | Its name |
+|---|---|
+| The site and the product as a whole: page titles, the login page, e-mails, the web app's name, "your …" | **Nourax Workspace** |
+| Files: folders, share links, WebDAV, and the desktop and phone apps for files once they ship | **NoDrive** ("NoDrive desktop", "NoDrive iOS app") |
+| Calendar | **NoCalendar** |
+| Contacts | **NoContacts** |
+| Deck (boards and cards) | **NoBoard** |
+| Tasks | **NoTasks** |
+| Notes | **NoNotes** |
+| Forms | **NoForms** |
+| Gantt | **NoGantt** ([docs/gantt.md](gantt.md)) |
+| The mail link in the app menu, after NoBoard (opens `https://mail.nourax.org` in a new tab) | **NoMail** |
+| The Assistant | **Nourax AI** |
+| Group folders | **Team folders** |
+| The office editors | **ONLYOFFICE** keeps its own name, in the app menu and inside the editors |
+| Other apps (Photos, Activity, Text, Flow and so on) | A plain word for what they do, never with the upstream name in front |
+
+Rules for every new text, page, e-mail, picture or app, in every language:
+
+- Never write the upstream name, in any case, spelling or script, and never show its logo or its two
+  blues. Use the Nourax colours (cobalt `#2563EB`, light `#3B82F6`, accent `#F97316`/`#EA580C`) and
+  the Nourax logo as it is (`branding/nourax-logo.png`, never recoloured or redrawn).
+- Never link to an upstream website: nextcloud.com and its subdomains, apps.nextcloud.com,
+  docs.nextcloud.com, github.com/nextcloud, the upstream's translation project, social media or app
+  store pages. Help links go to our own help page, `/apps/nourax_branding/help`.
+- Where a text must say what Nourax Workspace is built on, it says "open-source software" and links
+  our own repo, github.com/NouraX-ORG/basic-office-infra, as the notice on the Profile page does.
+- A product that is not in the table above gets its name from the owner first.
+- The names in the app menu come from `APP_LABELS` in `scripts/configure.sh` and the files in
+  `config/nextcloud/app-labels.d/`. The site's name is the theming name and the theming
+  `productName`, both "Nourax Workspace" (`scripts/configure.sh`).
+- Plain English. Everything a task adds must pass `scripts/check-branding.sh` (see *Running the
+  guard*).
+
+## Trademark summary
+
+- Nextcloud is a trademark of Nextcloud GmbH; ONLYOFFICE is a trademark of Ascensio System SIA.
+- We credit Nextcloud in NOTICE.md and the README only, and we never use its name or logo as our
+  brand: not on a screen, in an e-mail, in a page title or in a link. Other docs in this repo, this
+  one included, name it only to say what was changed and why.
+- NOTICE.md lists the software Nourax Workspace is built from, with its licences and sources, as the
+  licences ask. The README says Nourax Workspace is an independent deployment that is not affiliated
+  with or endorsed by the authors of that software.
+- ONLYOFFICE is the one outside name people see, as the name of the document editors.
+- Licence texts stay where a licence asks for them (see *Exceptions*).
+
+## How the sweep works
 
 Every text people can read that comes from a translation file of core, lib or an enabled app is
 rewritten: "Nourax Workspace" where the upstream name means the site or product, "NoDrive" where it
-means files, the product names below where it names an app. This covers every language, including
+means files, the product names of *Naming rules* where it names an app. This covers every language, including
 "English (US)" (`en`, which has no translation file of its own), and both the texts the server writes
 into pages and e-mails and the texts the browser shows. ONLYOFFICE keeps its own name.
 
@@ -25,6 +76,21 @@ translation overrides from there:
   of the app's translations with the changes in it. It starts from the app's own `.js` file, whose
   texts are not always the same as its `.json` file (onlyoffice's `ja.js` has texts its `ja.json`
   lacks), and sweeps those too.
+
+**Why the two differ** (Nextcloud 35.0.2 source, read on the server on 2026-10-26):
+
+- On the server, `OC\L10N\Factory::getL10nFilesForApp()` lists the app's own `<lang>.json` and then
+  the theme's file of the same name. `OC\L10N\L10N` loads them in that order and merges them
+  (`array_merge`), so a text in the theme's file wins and every other text stays the app's. A small
+  file with only the changed texts is enough.
+- In the browser, `OC\Template\JSResourceLocator::doFind()` looks for a translation script in a
+  fixed order: `core/<app>/l10n`, the theme's `core/<app>/l10n`, `<app>/l10n` under the server
+  folder, the theme's `<app>/l10n`, the app's own folder, then the theme's `apps/<app>/l10n`. The
+  places are joined with `||`, so it stops at the first file it finds; its code comment says it loads
+  them all, but it does not. For an app the first file found is the theme's `<app>/l10n/<lang>.js`,
+  and for core it is the theme's `core/core/l10n/<lang>.js`. Only that one file reaches the browser,
+  so it must hold every text of the app. A file with only the changed texts would leave all the
+  others in English.
 
 The `nourax_branding` app builds these files from the installed translation files
 (`occ nourax_branding:sweep`, code in `nextcloud-apps/nourax_branding/lib/Service/`). For each text:
@@ -67,6 +133,34 @@ out where it belongs (Arabic "Failed to add the public link to your Nextcloud" s
 server"; it now says "your Nourax Workspace"). Placeholders such as `{productName}` and `%s` are never
 changed.
 
+**The rule files** are in `nextcloud-apps/nourax_branding/sweep/`. The sweep, the guard and the browser
+audit all read them, and each file starts with an `about` list that explains it.
+
+- `rules.json`:
+  - `name_patterns`: one `{id, re, note}` per spelling of the name. Each `re` must work in Python,
+    PHP and JavaScript (its `about` says how). The ids in `sweep.generic_skip` are found but never
+    replaced;
+  - `near_name`: the likeness check for spellings nobody has listed yet (`word`, `max_distance` 2,
+    `min_length`, `max_length`);
+  - `sweep`: `product` (the text that replaces the name, "Nourax Workspace"); `phrases`, each
+    `{re, to, note, langs}`, run top to bottom before the name patterns (`langs` is `en`, `other` or
+    left out for every language); `key_rules`, each `{app, key, from, to}`, one change inside one exact
+    text of one app; `keep`, words that are never changed (ONLYOFFICE);
+  - for the guard and the browser audit: `link_patterns` (upstream addresses), `asset_patterns`
+    (upstream logo paths), `blue_patterns`, `upstream_files` and `upstream_pictures` (upstream
+    pictures, found by their bytes), `backgrounds_off`, `customclient_keys` and `upstream_ios_appid`,
+    `apps_off` (apps that must stay off), and `allow` (exceptions for the guard, each
+    `{area, url, where, snippet, why}`; empty today);
+  - `sweep_state`: where the sweep's state file is and what it holds.
+- `en-overrides.json`: whole sentences, as app id, then the exact English source text, then the text
+  people see instead. `english` is used for `en`, `en_GB` and the other English variants,
+  `every_language` for every language, and `by_language` (language, then app id, source text and
+  text) for one language; `by_language` wins over the other two. A plural text takes a list
+  `[one, many]`.
+
+After a change to either file, run the sweep, the rule tests and the guard (see *Running the sweep
+again after updates*).
+
 A translation file that starts with a byte order mark (onlyoffice's `eu.json`) cannot be read by
 Nextcloud, which then shows that language in English. The sweep reads it all the same and writes every
 one of its texts into the theme file, so Basque people see Basque, without the name.
@@ -78,32 +172,22 @@ writes carries a `nouraxSweep` marker with a digest, so it can tell its own file
 With theme files for core, Nextcloud would list every language twice in the language menu; the
 `nourax_branding` app removes the doubles from that menu.
 
-**When it runs.** By itself, so nobody has to remember it:
+**The listener and the 15-minute job.** The sweep runs by itself, so nobody has to remember it:
 
-- `sudo scripts/configure.sh` runs it (`scripts/configure.d/20-branding.sh` calls
-  `scripts/branding-sweep.sh`, which also sets the theme);
-- switching an app on or updating it (`occ app:enable`, `app:install`, `app:update`, `occ upgrade`,
-  the Apps page) sweeps that app at once;
-- a background job compares `themes/nourax/sweep-state.json` (server version, rules, every enabled app
-  and its version) with what is installed every 15 minutes and sweeps what changed: a new image, an
-  app added in some other way, or new rules after a `git pull`.
+- `Listener/AppChangeListener.php` listens for `AppEnableEvent` and `AppUpdateEvent`. Switching an
+  app on or updating it (`occ app:enable`, `app:install`, `app:update`, `occ upgrade`, the Apps page)
+  sweeps that app at once.
+- `BackgroundJob/RefreshSweep.php` runs every 15 minutes, as a time-sensitive background job of the
+  cron container. It compares `themes/nourax/sweep-state.json` (the server version, a digest of
+  `rules.json`, `en-overrides.json` and the sweep's own version, and every enabled app with its
+  version) with what is installed, and sweeps what changed: a new image, an app added in some other
+  way, or new rules after a `git pull`. When nothing changed, it only reads that one file.
+- `sudo scripts/configure.sh` runs it too: `scripts/configure.d/20-branding.sh` calls
+  `scripts/branding-sweep.sh`, which also copies the theme files and switches the theme on.
 
 A file is written only when its content changes, always in one step, and nothing is ever deleted; a
 second run writes nothing. Each change raises the theming cache buster, so browsers fetch the new
 files.
-
-**By hand.** `sudo scripts/branding-sweep.sh` sweeps everything now; `--report` also lists, per app,
-the notes, every translation that leaves the name out or spells it in a way the rules do not know, and
-every spelling `near_name` found ("guessed spelling"). Add a new spelling to `name_patterns` in
-`sweep/rules.json` (the guard and the browser audit read the same list and the same `near_name`), then
-run the sweep again. Check the result with
-`sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server --only l10n`: for every enabled
-app and every language it works out what the server shows (the app's file with the theme file on top,
-English where a text is missing) and what the browser shows (the first `.js` file Nextcloud's loader
-finds), and fails on any spelling of the name. The rules have their own tests:
-`sudo docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php`.
-
-**Undo.** `occ config:system:delete theme` switches the overrides off; the files stay and do nothing.
 
 ## Links and assets
 
@@ -158,8 +242,11 @@ docs/teams.md); the branding holds with it on or off.
   (`/apps/theming/img/<theme id>.jpg`), and the upstream pictures show the upstream logo and, for the
   four themes, a header in the upstream blue. On that page only, the app's middleware gives the page
   the addresses of our own pictures (initial state `nourax_branding` / `theme_previews`) and the small
-  script, which puts our picture of the same theme in place of each upstream one before the browser
-  has fetched it. A theme with no picture of ours (one a later version adds) has its picture hidden
+  script, which puts our picture of the same theme in place of each upstream one as soon as the
+  theming app adds it to the page. The browser still downloads the seven upstream pictures, because
+  the theming app asks for them before the script can step in, but they are never kept on the page or
+  drawn (QA checked this on 26 October by watching every change to the page and every frame drawn).
+  A theme with no picture of ours (one a later version adds) has its picture hidden
   instead; `tests/run.php` and `scripts/check-branding.sh` then fail and name it. Our pictures are a
   NoDrive page in each theme (light, dark, high contrast light and dark, and light and dark side by
   side for "System default"), drawn with plain shapes and no words so they suit every language, with
@@ -231,31 +318,126 @@ upstream address is never hidden. The CSS also hides three screen-reader-only sp
 page that hold the source of its placeholder pictures, upstream copyright line included, and draws
 the browser's letter avatars that would be in the upstream blue in cobalt (see *Letter avatars*).
 
-**What is left, on purpose:**
+What is still left on purpose (stylesheet fallbacks, a calendar program id, people's data made before
+the fixes, admin pages) is listed under *Exceptions* at the end of this page. To check all of the
+above, run the guard (*Running the guard*).
 
-- Fallback values in stylesheets that are never used while the theming app works: the static
-  `apps/theming/css/default.css` (upstream primary blue), and `var(--…, <upstream blue or logo>)`
-  defaults in `core/css/guest.css` and in the Calendar and Forms stylesheets. The theming app defines
-  every one of these variables on every page. `scripts/check-branding.sh --only css` lists them.
-- `PRODID:-//Nextcloud/Nextcloud CalDAV Server//EN` inside calendar invitation files: a program id that
-  calendar programs do not show.
-- An upload error text written in English inside the dav app ("Expected filesize of … (from Nextcloud
-  client)"), shown only when an upload breaks off half way.
-- Boards that Deck made before the welcome board was switched off: people's data. They can be
-  renamed or deleted by their owners. On 26 October these were the owner's own board "Welcome to
-  Nextcloud Deck!", the demo account demo-a01's board (renamed "Welcome to NoBoard!"; 4 of its cards
-  still name the upstream) and boards of some other tasks' QA accounts. No board was made after the
-  fix, and by 26 October 01:20 UTC all 24 demo accounts had Deck's `firstRun` set to `no` (set at
-  their sign-ins), so none of them gets a welcome board any more.
-- Example cards that accounts got before the Nourax example contact was in place, and calendars or
-  task lists made in the upstream blue before the app recoloured new ones: people's data, so nothing
-  changes them by itself. `occ nourax_branding:example-contact --existing --all` and
-  `occ nourax_branding:calendar-colours --all` list them; with `--apply` (or `--user UID --apply` for
-  one account) they change them. `scripts/check-branding.sh --server` counts the calendars (INFO).
-- The Administration overview's release name (admin page only; see the admin table below).
+## Running the sweep again after updates
 
-**Check:** `scripts/check-branding.sh CREDENTIALS_FILE` (pages, theming, share, dav, errors) and, on the
-server, `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` (also config and mail).
+The listener and the background job (*How the sweep works*) sweep new and updated apps and a new server
+version by themselves. Run the sweep by hand to have the result at once, after a change to the rules or
+the theme files, or to read its report. On the server, in `/opt/nourax/basic-office-infra`, under the
+deploy lock like every server change:
+
+```
+sudo flock -w 1800 /run/nourax-deploy.lock bash -c 'git pull -q --ff-only && scripts/branding-sweep.sh'
+sudo flock -w 1800 /run/nourax-deploy.lock bash -c 'git pull -q --ff-only && scripts/configure.sh'
+```
+
+- `sudo scripts/branding-sweep.sh` copies `branding/theme` into the theme folder when it changed,
+  switches the theme on if it is off, and sweeps core, lib and every enabled app. Its options go to
+  `occ nourax_branding:sweep`: `--report` also lists, per app, the notes, every translation that leaves
+  the name out or spells it in a way the rules do not know, and every spelling `near_name` found
+  ("guessed spelling"); `--dry-run` writes nothing; `--app ID` (more than once if needed) sweeps only
+  those apps.
+- `sudo scripts/configure.sh` runs every branding step (`scripts/configure.d/20-branding.sh`), the
+  sweep included.
+
+When to run it:
+
+- **After a new Nextcloud image or app updates.** `scripts/update.sh` is not part of the branding work
+  and does not call the sweep. The apps it updates (`occ app:update --all`) are swept at once by the
+  listener, and the background job sees a new server version within 15 minutes. Run
+  `sudo scripts/branding-sweep.sh` straight after the update to skip that wait, then the guard.
+- **After a change to `sweep/rules.json` or `sweep/en-overrides.json`.** The background job finds new
+  rules within 15 minutes of the `git pull`; the sweep by hand does it at once. Run the rule tests
+  first: `sudo docker compose exec -T -u www-data app php /var/www/html/nourax_apps/nourax_branding/tests/run.php`.
+- **After a change to `branding/theme`.** Only `scripts/branding-sweep.sh` (or `configure.sh`) copies
+  the theme files; the background job does not.
+- **After adding an app.** Switching it on sweeps it. Then run the guard and add the app's row under
+  *Apps and their upstream branding*.
+
+A new spelling in the report goes into `name_patterns` in `sweep/rules.json` (the guard and the browser
+audit read the same list and the same `near_name`); then run the sweep again. To check only the
+translations: `sudo scripts/check-branding.sh /etc/nourax/qa/<QA user>.netrc --server --only l10n`.
+For every enabled app and every language it works out what the server shows (the app's file with the
+theme file on top, English where a text is missing) and what the browser shows (the first `.js` file
+Nextcloud's loader finds), and fails on any spelling of the name.
+
+## Running the guard
+
+`scripts/check-branding.sh` reads what the server sends and fails on any upstream name, link, logo or
+blue. Every task runs it at its end, and it is worth running after any change people can see.
+
+```
+scripts/check-branding.sh CREDENTIALS_FILE [--base https://drive.nourax.org] [--langs en_GB,en,de,ar]
+    [--only pages,l10n,theming,share,dav,errors,config,mail,css] [--server] [--limit 25]
+```
+
+- **From the owner's PC** (Cloudflare lets only its address open `/login`, `/settings` and the user
+  API): `scripts/check-branding.sh <scratchpad>/qa/qa-t3-1.netrc`. It needs bash, curl and Python 3.8
+  or newer (Git Bash on Windows works) and takes about 25 seconds.
+- **On the server**, read only: `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server`.
+  It adds the config and mail areas, the server-side merge of every enabled app's translations in every
+  language, a comparison of `sweep-state.json` with what is installed, and the page of a deleted or
+  expired link. The pages Cloudflare opens only from the owner's address show as SKIP there. About 30
+  seconds.
+
+**The credentials file** belongs to a normal QA account: never an admin, never `nodrive`, never a real
+person. It holds either one netrc line,
+
+```
+machine drive.nourax.org login qa-t3-1 password <app password>
+```
+
+or `qa-t3-1:<app password>` on its first line. It must be an app password: outside the browser the
+server takes only app passwords (`token_auth_enforced`). Keep the file at mode 0600 and outside the
+repo: `/etc/nourax/qa/` on the server (root, folder 0700), the scratchpad on the PC. The guard gives
+the secret to curl only through `--netrc-file` or a curl config on standard input, never on a command
+line, and never prints it.
+
+To make a QA account for it, on the server under the lock, with the login password in a 0600 file
+that is passed through the environment, never on a command line:
+
+```
+OC_PASS="$(cat /etc/nourax/qa/qa-tN-1.pass)" docker compose exec -T -e OC_PASS -u www-data app \
+    php occ user:add --password-from-env --display-name "QA tN 1" qa-tN-1
+OC_PASS="$(cat /etc/nourax/qa/qa-tN-1.pass)" docker compose exec -T -e OC_PASS -u www-data app \
+    php occ user:add-app-password --password-from-env --name "branding check" qa-tN-1 \
+    | tail -n 1 | tr -d '\r\n' > /etc/nourax/qa/qa-tN-1.apppass
+```
+
+The last line that command prints is the app password, so it goes straight into a 0600 file (set
+`umask 077` first). Make the netrc line from that file without showing it. Task 3's accounts `qa-t3-1` and `qa-t3-2` were
+disabled at its end (26 October); a disabled account cannot sign in, so use your own task's QA
+account, or switch one on for the check only (`occ user:enable qa-t3-1`, then
+`occ user:disable qa-t3-1`), as Task 5 did with `qa-t5-4`.
+
+**What it checks** (every area but `css` by default):
+
+| Area | What |
+|---|---|
+| `pages` | Signed-in pages (every app in the app menu, so apps added later are covered) and the login page: visible text, page title, attributes, meta tags, every link, the page settings (`var _theme …`) and the initial-state data; on the Appearance page also the theme previews and the background picker |
+| `l10n` | Every `/l10n/*.js` file those pages load, in each `--langs` language; with `--server` also the server-side merge for every enabled app and every language, `en` included |
+| `theming` | Manifests, theme CSS, custom CSS, logos, favicon, touch and mask icons |
+| `share` | A test folder and file of the QA account and four public links to them (file, folder, password, file drop), opened signed out |
+| `dav` | The page shown when `/remote.php/dav` is opened in a browser |
+| `errors` | 404, 403, a missing path in a link, the unsupported-browser page, `status.php`; with `--server` the page of a deleted or expired link |
+| `config` | (`--server`) the theme, the `customclient_*` keys, the apps that must stay off, the example contact new accounts get; it counts people's calendars still in the upstream blue (INFO) |
+| `mail` | (`--server`) sample e-mails rendered on the server, never sent |
+| `css` | Every other stylesheet the pages link, for hard-coded blues (lists the fallbacks under *Exceptions*) |
+
+The first run makes a folder `branding-check` in the QA account, with `probe.txt` and the four public
+links; later runs find and reuse them. They stay with the account.
+
+**Output.** One line `FAIL <area> <url> <where>: <snippet>` per hit (a hit that repeats on many pages
+is listed once and counted; `--limit 0` shows every one), `SKIP` and `INFO` lines, then
+`SUMMARY <area> N checked, N FAIL, N SKIP` per area and `RESULT PASS (0 hits)` or
+`RESULT FAIL (N hits)`. The exit code is 0 when clean, 1 on any hit, and 2 when it could not run.
+
+A hit is fixed where it comes from: a spelling in `sweep/rules.json` or a sentence in
+`sweep/en-overrides.json` and a sweep, a link in `branding/custom.css`, a page in the theme or in the
+nourax_branding app. `allow` in `rules.json` is only for licence text that a licence requires.
 
 ## Browser audit
 
@@ -379,6 +561,7 @@ signed-out pages and the extra passes; its folder is kept with its screenshots.
 | Personal settings > Appearance and accessibility drew the theming app's theme previews (`/apps/theming/img/<theme>.jpg`): the upstream logo on five of them, a header in the upstream blue on four. Found by QA on 26 Oct, in every language and theme: the scanner looked at pictures' addresses and alt texts, not inside them | our own previews (`js/theme-previews.js`, `img/theme-previews/`); the audit now looks inside every picture (`scan-pictures.js`: upstream bytes, upstream-blue pixels), and the theming picture addresses are upstream assets in `rules.json` | 26 Oct 00:51–00:54, that page in all four languages and both themes: the seven pictures drawn are ours, none has an upstream-blue pixel, no upstream file is drawn. A test that put the seven upstream pictures back on a page in a test browser: all seven found (address, same bytes; four also by their blue). Full pass 26 Oct 01:53–02:30 (qa-t3-4, qa-t3-2, fresh qa-t3-73): 592 page scans, 178 pictures looked inside, 0 findings, 0 problems. The Appearance page (8 scans): the seven pictures drawn are ours, no upstream preview drawn. |
 | The same page's background picker: Clouds (the upstream's old default background), Underwater ocean and Waxing crescent moon have 55%, 32% and 4.5% of their pixels in the upstream blue. Found by the new picture check, 26 Oct 00:51 | left out of the picker (`rules.json` `backgrounds_off`); `tests/run.php` measures every shipped background | On the server after deploying it (26 Oct): `tests/run.php` 454 pass, among them "every shipped background mostly in an upstream blue is in backgrounds_off"; `scripts/check-branding.sh` from the owner's PC: the picker offers none of them. Full pass 26 Oct 01:53–02:30 (qa-t3-4, qa-t3-2, fresh qa-t3-73): 592 page scans, 178 pictures looked inside, 0 findings, 0 problems. The picker drew 16 backgrounds, none of the five left out; the most upstream blue in any picture drawn was 7 pixels (0.007%) of Barents bloom. |
 | Letter avatars: one name in 18 gets the upstream blue `#0082C9` (Nextcloud's avatar colours; 4 of 131 accounts, QA accounts of other tasks). Found while building the picture check, by reading core's avatar code | nourax_branding `AvatarColourMiddleware` redraws those avatars in cobalt; `custom.css` does the same for the initials the browser draws | 26 Oct 01:06, qa-t3-72 ("QA t3 72 u"): its avatars (64 and 512, light and dark) and a guest avatar answer in cobalt with 0 upstream-blue pixels; a contact "Blue Test m" in NoContacts shows its initials in cobalt (inline style still the upstream blue, computed colour `rgb(37, 99, 235)`). Full pass 26 Oct 01:53–02:30 (qa-t3-4, qa-t3-2, fresh qa-t3-73): 592 page scans, 178 pictures looked inside, 0 findings, 0 problems. The fresh account "QA t3 73 s" (upstream-blue colour): its avatars on every page of its pass, 0 upstream-blue pixels. |
+| Trial run 25 Oct 12:42 (qa-t3-1, English (British), 20 findings; 2 of them are the "Help translate" row above). NoDrive's Recent and Shares lists showed the file "Nextcloud sample image - add your image here!.jpg" (16 hits: its name, its checkbox label and its link title, light and dark), and Activity showed "You have renamed the board Welcome to Nextcloud Deck! to Welcome to NoBoard!" (2 hits). Deck's welcome board puts that sample picture in a person's NoDrive folder `Deck` and attaches it to a card; qa-t3-1 had got the board at 03:16 that day, before the fix | No welcome board any more (`NewAccountListener`, see the deck row under *Apps*), so no sample picture either. The copies and Activity entries that accounts already had are people's data (*Exceptions*). qa-t3-1's own copy was renamed "Sample image - add your image here!.jpg" on 25 Oct; the later full passes use a new main account (qa-t3-4), whose Activity has no such entry | Read-only database check 26 Oct 03:05: 12 accounts have the sample picture (plus one older version each), the newest made 25 Oct 22:46:41, none since; the newest welcome board is from 22:46:42 too (board ids now go up to 134), and the PostLoginEvent fix of 23:47 came after both. The fresh accounts qa-t3-73 (26 Oct, audit) and qa-t3-81 (26 Oct, QA) and the main account qa-t3-4 have no `Deck` folder and no sample picture. Full pass 26 Oct 01:53–02:30 (qa-t3-4, qa-t3-2, fresh qa-t3-73): 592 page scans, 0 findings, NoDrive Recent, Shares and Activity included. |
 
 ## Apps and their upstream branding
 
@@ -464,3 +647,86 @@ code comments, and links in command-line tools are not shown to people.
 | `nc_gantt` (NoGantt) | 2.4.1 | Shown as NoGantt (docs/gantt.md). |
 | `nourax_api`, `nourax_antivirus`, `nourax_branding` | 1.0.0 | Nourax's own apps. |
 | `lookup_server_connector` | 2.0.0 | Always on, no screen. `'lookup_server' => ''` in `config/nextcloud/zz-nourax.config.php` stops its calls. |
+
+## Undo
+
+Each change can be undone on the server with occ (`cd /opt/nourax/basic-office-infra && sudo docker
+compose exec -T -u www-data app php occ …`), under the deploy lock. `scripts/configure.sh` puts every
+one of them back the next time it runs, so to undo one for good, also take it out of
+`scripts/configure.d/20-branding.sh` (and, where the guard checks it, out of `sweep/rules.json`).
+Undoing any of these brings the upstream name, links or pictures back on people's screens.
+
+| Change | Undo |
+|---|---|
+| The theme folder `themes/nourax`: every translation override, the web app manifest, the mask icon and the Profile page notice | `occ config:system:delete theme`. The files stay in the folder and do nothing. |
+| The upstream desktop and mobile app links and the iOS app banner hidden | `occ config:system:delete customclient_desktop`, and the same for `customclient_android`, `customclient_ios`, `customclient_fdroid` and `customclient_ios_appid`. When the NoDrive apps ship, set our own addresses in `20-branding.sh` instead. |
+| Help links open our help page | `occ config:app:delete theming docBaseUrl` |
+| The "App store" tile hidden | `occ config:app:delete core appstore_link_shown` |
+| The `office` and `privacy` apps switched off | `occ app:enable office`, `occ app:enable privacy`; also take them out of the loop in `20-branding.sh` and out of `apps_off` in `rules.json`. |
+| The nourax_branding app: NoMail in the app menu, the help page, the WebDAV page, the fixes in other apps' answers, the theme previews, the letter avatars, no welcome board, new calendars in the site colour, right to left when signed out, the language menu without doubles, the sweep's listener and background job | `occ app:disable nourax_branding`, and take `occ app:enable nourax_branding` out of `20-branding.sh`. What it already set stays: Deck's `firstRun` of the accounts that signed in, the example contact (next row), the calendar colours it gave. |
+| NoMail's address | `occ config:app:delete nourax_branding nomail_url` goes back to `https://mail.nourax.org/` |
+| The Nourax example contact for new accounts | Administration > Groupware > Example content > reset. Cards changed with `occ nourax_branding:example-contact --existing … --apply` are not changed back. |
+| Old calendars recoloured with `occ nourax_branding:calendar-colours … --apply` | Not undone by itself: give a calendar its old colour in NoCalendar. |
+| The hiding rules and colours in `branding/custom.css` | Edit the file, then `sudo scripts/configure.sh`. |
+| Sharing with other servers off (the federation keys) | Not part of the branding: `scripts/configure.d/60-org-privacy.sh` sets them, with privacy between organisations. Undo with `occ nourax_api:org-privacy off` or the admin page ([docs/teams.md](teams.md#the-switch)). The branding holds with federation on or off. |
+
+## Exceptions
+
+What people may still meet, and why. Anything else the guard or the browser audit finds is a fault
+to fix.
+
+**Licence text, only where a licence requires it.** The notice at the end of Personal settings >
+Profile and contact is the source offer the AGPL asks for (section 13): it says Nourax Workspace is
+open-source software and links our own repo, github.com/NouraX-ORG/basic-office-infra, and the licence.
+It does not name the upstream. Licence and copyright files inside the shipped apps stay as they are;
+no page links them. `allow` in `rules.json` is the place for a licence text that would have to show the
+name on a screen; it is empty today.
+
+**Not text people read:**
+
+- code identifiers, config keys and app ids, HTTP paths (`/remote.php/dav`, `/ocs/v2.php`,
+  `/apps/theming/…`), the `nc:` and `oc:` XML namespaces of WebDAV answers, HTML ids and class names
+  such as `#nextcloud` (the link around the logo in the top bar), and server logs;
+- `PRODID:-//Nextcloud/Nextcloud CalDAV Server//EN` inside calendar invitation files and calendar
+  downloads: a program id that calendar programs do not show;
+- fallback values in stylesheets that are never used while the theming app works: the static
+  `apps/theming/css/default.css` (upstream primary blue), and `var(--…, <upstream blue or logo>)`
+  defaults in `core/css/guest.css` and in the Calendar and Forms stylesheets. The theming app defines
+  every one of these variables on every page. `scripts/check-branding.sh --only css` lists them;
+- an upload error text written in English inside the dav app ("Expected filesize of … (from Nextcloud
+  client)"), shown only when an upload breaks off half way.
+
+**Upstream addresses that nothing links to.** The upstream's own files are still on the server
+(the Docker image is not changed) and answer when someone types their address: for example
+`/core/img/logo/logo.svg`, the upstream logo, and the theming app's theme previews
+`/apps/theming/img/<theme>.jpg`, which the browser downloads on the Appearance page but never draws
+(*Theme previews*). The route of the upstream "Reasons to use Nextcloud" PDF,
+`/settings/download/reasons`, answers 404 (the nourax_branding app). No page links any of them; the
+guard and the browser audit fail if one does.
+
+**People's data made before the fixes.** Nothing changes these by itself, and no task may change
+the owner's or the demo accounts' data; their owners can rename or delete them.
+
+- Boards that Deck made before the welcome board was switched off. On 26 October these were the
+  owner's own board "Welcome to Nextcloud Deck!", the demo account demo-a01's board (renamed "Welcome
+  to NoBoard!"; 4 of its cards still name the upstream) and boards of some other tasks' QA accounts.
+  No board was made after the fix, and by 26 October 01:20 UTC all 24 demo accounts had Deck's
+  `firstRun` set to `no` (set at their sign-ins), so none of them gets a welcome board any more.
+- The sample picture those welcome boards put in the person's NoDrive folder `Deck`, "Nextcloud sample
+  image - add your image here!.jpg", attached to one of the board's cards. On 26 October 12 accounts
+  had it (the owner's, demo-a01's and ten QA accounts of Tasks 1, 5 and 5b), each with one older
+  version. The newest is from 25 October 22:46 UTC; none has been made since.
+- Activity entries written before the fixes keep the names they had then, for example "You have
+  renamed the board Welcome to Nextcloud Deck! to Welcome to NoBoard!" and the entries about the
+  sample picture: 234 entries in 15 accounts on 26 October (29 of them the owner's). The Activity app
+  clears entries after a year (`activity_expire_days`, 365 by default).
+- Example cards that accounts got before the Nourax example contact was in place, and calendars or
+  task lists made in the upstream blue before the app recoloured new ones.
+  `occ nourax_branding:example-contact --existing --all` and
+  `occ nourax_branding:calendar-colours --all` list them; with `--apply` (or `--user UID --apply` for
+  one account) they change them. `scripts/check-branding.sh --server` counts the calendars (INFO).
+
+**Admin pages only.** Admin pages are not part of the user check, and people who are not admins never
+see them. What is left there is in the admin table under *Apps and their upstream branding*: the
+Administration overview's release name "Nextcloud Hub 26 Summer", and app texts and descriptions that
+only admins see (swept where they are translations, links hidden by CSS).
