@@ -6,7 +6,7 @@
  *
  * Switch on / Switch off opens a confirmation that says what changes. "Switch ..." in it then asks
  * for the admin's password when the server wants a fresh confirmation (the server's own dialog;
- * signing in counts for 30 minutes), and sends POST /apps/nourax_api/admin/org-privacy with the
+ * signing in counts for 30 minutes), and sends POST /apps/nourax_api/settings/org-privacy with the
  * page's CSRF token. The answer redraws the state, the buttons, the settings table and the recent
  * changes. Every text it shows is in the template, except the short messages below.
  */

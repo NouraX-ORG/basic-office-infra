@@ -11,6 +11,7 @@
 # also sets up the account's second factor (TOTP), as any admin must have one here, and keeps
 # its secret in CREDS-DIR/qa-t6b-admin.totp; the admin step signs in with password and code.
 #
+# The switch's address is /apps/nourax_api/settings/org-privacy.
 # normal: signs in with the sign-in form, then the admin page answers 403, and the switch's GET
 #   and POST (with the page's CSRF token, and without it but with "OCS-APIRequest: true") answer
 #   403: a normal person cannot see or switch it.
@@ -45,7 +46,7 @@ case "$MODE" in normal | admin) ;; *) die "usage: tests/org-privacy-page.sh norm
 DRIVE_HOST="${DRIVE_HOST:-drive.nourax.org}"
 BASE="https://$DRIVE_HOST"
 PAGE="$BASE/settings/admin/nourax-workspace"
-ROUTE="$BASE/apps/nourax_api/admin/org-privacy"
+ROUTE="$BASE/apps/nourax_api/settings/org-privacy"
 RULES="$REPO_DIR/nextcloud-apps/nourax_branding/sweep/rules.json"
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36'
 PY="$(command -v python3 || command -v python || true)"
@@ -309,7 +310,7 @@ print("menu-icon", "yes" if icon.endswith("/nourax_api/img/nourax-workspace.svg"
 print("page-title", "yes" if title and "Nourax Workspace" in html.unescape(title.group(1)) else "no")
 assets = re.findall(r'(?:src|href)="(/[^"]*nourax_api/(?:js/admin-privacy\.js|css/admin-privacy\.css|css/settings-nav\.css)[^"]*)"', page)
 print("assets", " ".join(sorted({re.sub(r"\?.*", "", a).rsplit("/", 1)[-1] for a in assets})))
-print("initial-state-url", "yes" if (st.get("nourax_api-org-privacy") or {}).get("url", "").endswith("/apps/nourax_api/admin/org-privacy") else "no")
+print("initial-state-url", "yes" if (st.get("nourax_api-org-privacy") or {}).get("url", "").endswith("/apps/nourax_api/settings/org-privacy") else "no")
 
 hits = []
 def scan(where, s, link_list=()):

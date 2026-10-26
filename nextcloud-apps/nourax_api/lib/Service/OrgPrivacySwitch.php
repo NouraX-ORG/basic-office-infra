@@ -22,8 +22,10 @@ declare(strict_types=1);
  * - One switch at a time: a second one meanwhile gets 423 busy (an ObjectLock, 120 s at most).
  * - Switching off enables an app again only when its code and installed versions match;
  *   otherwise nothing is changed and the answer says to run occ app:enable on the server.
- * - Every on and off (not a dry run) writes an audit row (AuditLog, route "org-privacy"): who, how
- *   (occ or the admin page) and what it did (switched_on, switched_off, unchanged or failed).
+ * - Every on and off (not a dry run) writes an audit row (AuditLog): who, how and what it did
+ *   (switched_on, switched_off, unchanged or failed). Its route says how: "org-privacy" for occ
+ *   and the configure step, "settings/org-privacy" (the switch's address under /apps/nourax_api/)
+ *   for the admin page.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -39,8 +41,12 @@ use OCP\Server;
 class OrgPrivacySwitch {
 	/** The stored state: "on" or "off" (unset before the first switch). configure.sh follows it. */
 	public const STEP_KEY = 'org_privacy_step';
-	/** The route of its audit rows. */
+	/** The route of the audit rows of occ and the configure step. */
 	public const AUDIT_ROUTE = 'org-privacy';
+	/** The route of the admin page's audit rows: the switch's address under /apps/nourax_api/. */
+	public const AUDIT_ROUTE_PAGE = 'settings/org-privacy';
+	/** Both, for reading every switch back. */
+	public const AUDIT_ROUTES = [self::AUDIT_ROUTE, self::AUDIT_ROUTE_PAGE];
 	/** Audit results that are a change (the admin page's "Recent changes" shows only these). */
 	public const AUDIT_CHANGES = ['switched_on', 'switched_off', 'failed'];
 
@@ -209,7 +215,8 @@ class OrgPrivacySwitch {
 	 * Switches privacy on or off. A dry run only lists what it would change and writes no audit row.
 	 *
 	 * @param string $state "on" or "off"
-	 * @param array{key_id: string, method: string, who: string, ip: string, http_status: int} $actor for the audit row
+	 * @param array{key_id: string, method: string, route?: string, who: string, ip: string, http_status: int} $actor
+	 *   for the audit row; route is one of AUDIT_ROUTES (default AUDIT_ROUTE, occ's)
 	 * @return array{result: string, changed: list<string>, dry_run: bool}
 	 *   result: switched_on or switched_off when something changed, unchanged otherwise (a dry
 	 *   run: would_switch_on, would_switch_off or unchanged)
@@ -219,6 +226,9 @@ class OrgPrivacySwitch {
 	public function apply(string $state, bool $dryRun, array $actor): array {
 		if ($state !== 'on' && $state !== 'off') {
 			throw new \InvalidArgumentException('state must be on or off');
+		}
+		if (!in_array($actor['route'] ?? self::AUDIT_ROUTE, self::AUDIT_ROUTES, true)) {
+			throw new \InvalidArgumentException('the audit route must be one of ' . implode(', ', self::AUDIT_ROUTES));
 		}
 		$started = microtime(true);
 		return $this->lock->with(self::LOCK, function () use ($state, $dryRun, $actor, $started): array {
@@ -247,7 +257,7 @@ class OrgPrivacySwitch {
 	 */
 	public function history(int $limit = 5): array {
 		$rows = [];
-		foreach ($this->audit->recentForRoute(self::AUDIT_ROUTE, $limit, self::AUDIT_CHANGES) as $row) {
+		foreach ($this->audit->recentForRoutes(self::AUDIT_ROUTES, $limit, self::AUDIT_CHANGES) as $row) {
 			$rows[] = [
 				'at' => $row['at'],
 				'who' => (string)$row['target'],
@@ -393,12 +403,12 @@ class OrgPrivacySwitch {
 	}
 
 	/**
-	 * @param array{key_id: string, method: string, who: string, ip: string, http_status: int} $actor
+	 * @param array{key_id: string, method: string, route?: string, who: string, ip: string, http_status: int} $actor
 	 * @param ?int $failedStatus the HTTP status of a failure (occ's rows keep status 0)
 	 */
 	private function record(array $actor, string $result, float $started, ?int $failedStatus = null): void {
 		$status = $actor['http_status'] === 0 || $failedStatus === null ? $actor['http_status'] : $failedStatus;
-		$this->audit->record($actor['key_id'], $actor['method'], self::AUDIT_ROUTE, $actor['who'],
+		$this->audit->record($actor['key_id'], $actor['method'], $actor['route'] ?? self::AUDIT_ROUTE, $actor['who'],
 			$status, $result, $actor['ip'], (int)round((microtime(true) - $started) * 1000));
 	}
 }

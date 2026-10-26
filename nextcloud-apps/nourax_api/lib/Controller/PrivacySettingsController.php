@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 /**
  * The routes behind the admin page's privacy switch (AdminSettings/PrivacySettings):
- *   GET  /apps/nourax_api/admin/org-privacy                  the page's view, as JSON
- *   POST /apps/nourax_api/admin/org-privacy {"state":"on"}   switch on (or "off")
+ *   GET  /apps/nourax_api/settings/org-privacy                  the page's view, as JSON
+ *   POST /apps/nourax_api/settings/org-privacy {"state":"on"}   switch on (or "off")
  *
  * Both are for admins only: no NoAdminRequired, so the server answers 403 to anyone else before
  * this code runs; no NoCSRFRequired, so a request without the page's CSRF token gets 412. The
@@ -15,7 +15,7 @@ declare(strict_types=1);
  * POST also needs a password confirmation from the last 30 minutes (PasswordConfirmationRequired:
  * signing in counts, and the page asks for the password when it is older), so neither an app
  * password nor a session left open for long can switch. Each switch writes an audit row with the
- * admin's account id (OrgPrivacySwitch).
+ * admin's account id, key id admin-page and the route settings/org-privacy (OrgPrivacySwitch).
  *
  * Answers: 200 with {result, changed, status, effects, on_note, off_warning, history};
  * 400 invalid_state; 409 app_needs_upgrade; 412 csrf_check_failed; 423 busy; 500 failed (with
@@ -66,6 +66,7 @@ class PrivacySettingsController extends Controller {
 			$done = $this->switch->apply($state, false, [
 				'key_id' => 'admin-page',
 				'method' => 'POST',
+				'route' => OrgPrivacySwitch::AUDIT_ROUTE_PAGE,
 				'who' => $uid,
 				'ip' => $this->request->getRemoteAddress(),
 				'http_status' => 200,

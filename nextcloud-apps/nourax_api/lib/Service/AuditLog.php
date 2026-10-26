@@ -5,9 +5,10 @@ declare(strict_types=1);
 /**
  * One row per API call in nourax_api_audit: who (which key), what (method, route, target id),
  * the answer and how long it took. Never a request or response body, never a key.
- * Also one row per switch of privacy between organisations (OrgPrivacySwitch, route
- * "org-privacy"): key id "occ" (method CLI, HTTP status 0) or "admin-page", the target is who
- * switched (the admin's account id, or occ's --by name), the result what it did.
+ * Also one row per switch of privacy between organisations (OrgPrivacySwitch): route
+ * "org-privacy" with key id "occ" (method CLI, HTTP status 0), or route "settings/org-privacy"
+ * with key id "admin-page"; the target is who switched (the admin's account id, or occ's --by
+ * name), the result what it did.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -82,16 +83,17 @@ class AuditLog {
 	}
 
 	/**
-	 * The newest rows of one route first, optionally only those with one of $results (for the
-	 * privacy switch's "Recent changes" on the admin page).
+	 * The newest rows of the given routes first, optionally only those with one of $results (for
+	 * the privacy switch's "Recent changes" on the admin page).
 	 *
+	 * @param list<string> $routes
 	 * @param list<string> $results
 	 * @return list<array{id: int, at: string, key_id: string, method: string, route: string, target: ?string, http_status: int, result: ?string, remote_ip: string, duration_ms: int}>
 	 */
-	public function recentForRoute(string $route, int $limit, array $results = []): array {
+	public function recentForRoutes(array $routes, int $limit, array $results = []): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')->from('nourax_api_audit')
-			->where($qb->expr()->eq('route', $qb->createNamedParameter($route)))
+			->where($qb->expr()->in('route', $qb->createNamedParameter($routes, IQueryBuilder::PARAM_STR_ARRAY)))
 			->orderBy('id', 'DESC')
 			->setMaxResults(max(1, $limit));
 		if ($results !== []) {

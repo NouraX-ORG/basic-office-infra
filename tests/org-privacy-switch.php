@@ -6,7 +6,8 @@ declare(strict_types=1);
  * The privacy switch's list and its dry runs (nourax_api OrgPrivacySwitch), inside the app
  * container as www-data. It switches nothing:
  *   sudo docker compose exec -T -u www-data app php < tests/org-privacy-switch.php
- * tests/org-privacy-switch.sh runs it.
+ * tests/org-privacy-switch.sh runs it, also without -u www-data: started as root, it first becomes
+ * the owner of config.php (www-data), as occ asks.
  *
  * - The list is exactly the one scripts/configure.d/60-org-privacy.sh had on 2026-10-25 (copied
  *   below, so a change to the list must change this test too), plus the two NoForms options that
@@ -23,7 +24,9 @@ declare(strict_types=1);
  * - The admin page: the section "Nourax Workspace" and its one form are registered (from
  *   info.xml), the form cannot be delegated, and the rendered form shows the state, every effect
  *   of On, what Off means, the confirmation and one table row per setting and app; no upstream
- *   name, link or blue in it, its script, styles or icon.
+ *   name, link or blue in it, its script, styles or icon; its initial state names the switch's
+ *   address /apps/nourax_api/settings/org-privacy.
+ * - The audit routes: "org-privacy" for occ, "settings/org-privacy" for the admin page.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -36,6 +39,7 @@ use OCA\NouraxApi\Service\ApiException;
 use OCA\NouraxApi\Service\ObjectLock;
 use OCA\NouraxApi\Service\OrgPrivacySwitch;
 use OCP\App\IAppManager;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IAppConfig;
 use OCP\IConfig;
 use OCP\IDBConnection;
@@ -43,6 +47,19 @@ use OCP\Server;
 use OCP\Settings\IDelegatedSettings;
 use OCP\Settings\IManager as ISettingsManager;
 
+// Piped in as root (docker compose exec without -u www-data): become the owner of config.php
+// first, as occ asks, so nothing the server writes belongs to root.
+if (function_exists('posix_getuid') && posix_getuid() === 0) {
+	$owner = fileowner('/var/www/html/config/config.php');
+	$account = $owner === false ? false : posix_getpwuid($owner);
+	if ($account === false || $owner === 0 || !posix_setgid($account['gid'])
+		|| !posix_initgroups($account['name'], $account['gid']) || !posix_setuid($owner)) {
+		echo "FAIL could not become the owner of config.php; run it with -u www-data\n";
+		exit(1);
+	}
+	echo 'started as root, now running as ' . $account['name'] . ", the owner of config.php\n";
+	unset($owner, $account);
+}
 require_once '/var/www/html/lib/base.php';
 Server::get(IAppManager::class)->loadApp('nourax_api');
 
@@ -96,6 +113,8 @@ $expected = [
 check('the list is the old step\'s list plus the two NoForms options', $expected,
 	array_map(fn (array $i): array => [$i[0], $i[1], text($i[2]), text($i[3])], OrgPrivacySwitch::ITEMS));
 check('the apps: federation and circles', ['federation', 'circles'], OrgPrivacySwitch::APPS);
+check('the audit routes: org-privacy (occ, configure), settings/org-privacy (the admin page)',
+	['org-privacy', 'settings/org-privacy'], [OrgPrivacySwitch::AUDIT_ROUTE, OrgPrivacySwitch::AUDIT_ROUTE_PAGE]);
 check('every setting has a plain-English effect', [],
 	array_values(array_filter(OrgPrivacySwitch::ITEMS, fn (array $i): bool => !isset(OrgPrivacySwitch::EFFECTS[$i[5]]))));
 
@@ -159,7 +178,7 @@ function snapshot(): array {
 	$values['step'] = Server::get(IConfig::class)->getAppValue('nourax_api', 'org_privacy_step', '');
 	$qb = Server::get(IDBConnection::class)->getQueryBuilder();
 	$qb->select($qb->func()->count('*', 'n'))->from('nourax_api_audit')
-		->where($qb->expr()->eq('route', $qb->createNamedParameter(OrgPrivacySwitch::AUDIT_ROUTE)));
+		->where($qb->expr()->in('route', $qb->createNamedParameter(OrgPrivacySwitch::AUDIT_ROUTES, IQueryBuilder::PARAM_STR_ARRAY)));
 	$values['audit_rows'] = (int)$qb->executeQuery()->fetchOne();
 	return $values;
 }
@@ -248,6 +267,9 @@ check('the form cannot be delegated to non-admins (not IDelegatedSettings)', fal
 	(Server::get(PrivacySettings::class)) instanceof IDelegatedSettings);
 
 $html = Server::get(PrivacySettings::class)->getForm()->render();
+$pageState = json_decode(Server::get(\OC\InitialStateService::class)->getInitialStates()['nourax_api-org-privacy'] ?? 'null', true);
+check('rendered: its initial state names the switch\'s address /apps/nourax_api/settings/org-privacy', true,
+	str_ends_with((string)($pageState['url'] ?? ''), '/apps/nourax_api/settings/org-privacy'));
 $e = fn (string $s): string => htmlspecialchars($s, ENT_QUOTES);
 $state = $status['state'];
 check('rendered: the section and its title', true,

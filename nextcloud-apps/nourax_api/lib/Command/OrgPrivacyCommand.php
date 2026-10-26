@@ -58,7 +58,7 @@ class OrgPrivacyCommand extends Command {
 
 		try {
 			$done = $this->switch->apply($action, (bool)$input->getOption('dry-run'),
-				['key_id' => 'occ', 'method' => 'CLI', 'who' => $by, 'ip' => '', 'http_status' => 0]);
+				['key_id' => 'occ', 'method' => 'CLI', 'route' => OrgPrivacySwitch::AUDIT_ROUTE, 'who' => $by, 'ip' => '', 'http_status' => 0]);
 		} catch (ApiException $e) {
 			return $this->fail($output, $e->errorCode, match ($e->errorCode) {
 				'busy' => 'another switch is running; try again in a minute',

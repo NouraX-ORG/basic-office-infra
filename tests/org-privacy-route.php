@@ -6,7 +6,7 @@ declare(strict_types=1);
  * The guards in front of the privacy switch's route (PrivacySettingsController), inside the app
  * container as www-data, without an admin account and without switching anything:
  *   sudo docker compose exec -T -u www-data app php < tests/org-privacy-route.php
- * tests/org-privacy-switch.sh runs it.
+ * tests/org-privacy-switch.sh runs it. (Started as root, it first becomes the owner of config.php.)
  *
  * It runs the server's own security check (the installed SecurityMiddleware, the one that runs
  * before every app controller) on real requests, then the controller itself:
@@ -15,6 +15,9 @@ declare(strict_types=1);
  * - the controller gets a stand-in switch that only notes each call. Its lock refuses, so even
  *   the real switching code could not run behind it.
  * Checks:
+ * - the address: the server's router sends GET and POST /apps/nourax_api/settings/org-privacy to
+ *   the controller's status and setState, the page's link is that address, and the old address
+ *   /apps/nourax_api/admin/org-privacy (main 726a196 and older) matches no route;
  * - the route's method has no NoAdminRequired, NoCSRFRequired, PublicPage, SubAdminRequired or
  *   AuthorizedAdminSetting, has PasswordConfirmationRequired, and the controller is no
  *   OCSController;
@@ -24,7 +27,8 @@ declare(strict_types=1);
  *   server's CSRF check lets it through (Request::passesCSRFCheck), and the controller answers
  *   412 csrf_check_failed, for the POST and the GET, without calling the switch;
  * - an admin's request with the page's token: through, and the POST reaches the switch once,
- *   with the state and the audit details (key id admin-page, method POST, the client address);
+ *   with the state and the audit details (key id admin-page, method POST, route
+ *   settings/org-privacy, the client address);
  * - nothing changed: every setting, the apps, the stored step and the audit rows.
  * (The password confirmation is another check of the server's, after this one; a live admin
  * session is needed for it, see tests/org-privacy-page.sh admin.)
@@ -39,6 +43,7 @@ use OC\AppFramework\Middleware\Security\Exceptions\CrossSiteRequestForgeryExcept
 use OC\AppFramework\Middleware\Security\Exceptions\NotAdminException;
 use OC\AppFramework\Middleware\Security\SecurityMiddleware;
 use OC\AppFramework\Utility\ControllerMethodReflector;
+use OC\Route\Router;
 use OC\Security\CSRF\CsrfTokenManager;
 use OC\Settings\AuthorizedGroupMapper;
 use OCA\NouraxApi\Controller\PrivacySettingsController;
@@ -54,6 +59,7 @@ use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\AppFramework\Http\Attribute\SubAdminRequired;
 use OCP\AppFramework\OCSController;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\Group\ISubAdmin;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
@@ -68,7 +74,21 @@ use OCP\L10N\IFactory;
 use OCP\Security\Ip\IRemoteAddress;
 use OCP\Server;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Routing\RequestContext;
 
+// Piped in as root (docker compose exec without -u www-data): become the owner of config.php
+// first, as occ asks, so nothing the server writes belongs to root.
+if (function_exists('posix_getuid') && posix_getuid() === 0) {
+	$owner = fileowner('/var/www/html/config/config.php');
+	$account = $owner === false ? false : posix_getpwuid($owner);
+	if ($account === false || $owner === 0 || !posix_setgid($account['gid'])
+		|| !posix_initgroups($account['name'], $account['gid']) || !posix_setuid($owner)) {
+		echo "FAIL could not become the owner of config.php; run it with -u www-data\n";
+		exit(1);
+	}
+	echo 'started as root, now running as ' . $account['name'] . ", the owner of config.php\n";
+	unset($owner, $account);
+}
 require_once '/var/www/html/lib/base.php';
 Server::get(IAppManager::class)->loadApp('nourax_api');
 
@@ -106,7 +126,7 @@ function snapshot(): array {
 	}
 	$qb = Server::get(IDBConnection::class)->getQueryBuilder();
 	$qb->select($qb->func()->count('*', 'n'))->from('nourax_api_audit')
-		->where($qb->expr()->eq('route', $qb->createNamedParameter(OrgPrivacySwitch::AUDIT_ROUTE)));
+		->where($qb->expr()->in('route', $qb->createNamedParameter(OrgPrivacySwitch::AUDIT_ROUTES, IQueryBuilder::PARAM_STR_ARRAY)));
 	$values['audit_rows'] = (int)$qb->executeQuery()->fetchOne();
 	return $values;
 }
@@ -124,10 +144,33 @@ $standIn = new class(Server::get(IConfig::class), Server::get(IAppConfig::class)
 	public array $calls = [];
 	public function apply(string $state, bool $dryRun, array $actor): array {
 		$this->calls[] = ['state' => $state, 'dry_run' => $dryRun, 'key_id' => $actor['key_id'],
-			'method' => $actor['method'], 'ip' => $actor['ip']];
+			'method' => $actor['method'], 'route' => $actor['route'] ?? null, 'ip' => $actor['ip']];
 		return ['result' => 'stand_in', 'changed' => [], 'dry_run' => $dryRun];
 	}
 };
+
+// --- The address ---------------------------------------------------------------------------------
+// The router reads appinfo/routes.php here (this process has its own, empty route cache).
+check('the page\'s link to the switch is /apps/nourax_api/settings/org-privacy', true,
+	str_ends_with(Server::get(IURLGenerator::class)->linkToRoute('nourax_api.privacy_settings.setState'), '/apps/nourax_api/settings/org-privacy'));
+$router = Server::get(Router::class);
+/** The route the server's router picks for a method and path, or the exception's name. */
+function routeOf(Router $router, string $method, string $path): string {
+	$router->setContext(new RequestContext('', $method));
+	try {
+		return (string)($router->findMatchingRoute($path)['_route'] ?? 'none');
+	} catch (\Exception $e) {
+		return (new \ReflectionClass($e))->getShortName();
+	}
+}
+check('GET /apps/nourax_api/settings/org-privacy -> privacy_settings.status', 'nourax_api.privacy_settings.status',
+	routeOf($router, 'GET', '/apps/nourax_api/settings/org-privacy'));
+check('POST /apps/nourax_api/settings/org-privacy -> privacy_settings.setState', 'nourax_api.privacy_settings.setState',
+	routeOf($router, 'POST', '/apps/nourax_api/settings/org-privacy'));
+check('the old address /apps/nourax_api/admin/org-privacy matches no route (GET, POST)',
+	'ResourceNotFoundException ResourceNotFoundException',
+	routeOf($router, 'GET', '/apps/nourax_api/admin/org-privacy') . ' ' . routeOf($router, 'POST', '/apps/nourax_api/admin/org-privacy'));
+$router->setContext(new RequestContext('', 'GET'));
 
 // --- The route's attributes ----------------------------------------------------------------------
 $probe = new PrivacySettingsController(Server::get(\OCP\IRequest::class), $standIn,
@@ -157,7 +200,7 @@ $csrf = Server::get(CsrfTokenManager::class);
 function request(string $method, array $headers, bool $withToken): Request {
 	$server = [
 		'REQUEST_METHOD' => $method,
-		'REQUEST_URI' => '/apps/nourax_api/admin/org-privacy',
+		'REQUEST_URI' => '/apps/nourax_api/settings/org-privacy',
 		'REMOTE_ADDR' => '203.0.113.7',
 		'HTTP_ACCEPT' => 'application/json',
 	];
@@ -224,8 +267,9 @@ check('none of the refused requests reached the switch', [], $standIn->calls);
 check('an admin, GET with the token -> 200, the view', '200 view', run('GET', 'status', [], true, true, $standIn));
 check('an admin, POST off with the token -> through to the switch', '200 stand_in',
 	run('POST', 'setState', ['Content-Type' => 'application/json'], true, true, $standIn));
-check('the switch got one call: off, not a dry run, key admin-page, POST, the client address',
-	[['state' => 'off', 'dry_run' => false, 'key_id' => 'admin-page', 'method' => 'POST', 'ip' => '203.0.113.7']], $standIn->calls);
+check('the switch got one call: off, not a dry run, key admin-page, POST, route settings/org-privacy, the client address',
+	[['state' => 'off', 'dry_run' => false, 'key_id' => 'admin-page', 'method' => 'POST', 'route' => 'settings/org-privacy',
+		'ip' => '203.0.113.7']], $standIn->calls);
 
 check('nothing changed: settings, apps, step, audit rows', $before, snapshot());
 check('privacy is on after the test', 'on', Server::get(OrgPrivacySwitch::class)->status()['state']);

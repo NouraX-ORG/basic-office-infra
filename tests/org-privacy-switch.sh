@@ -1,25 +1,30 @@
 #!/usr/bin/env bash
 # The switch for privacy between organisations (docs/teams.md#the-switch), with privacy on, without
-# switching it off. Run it on the server: sudo tests/org-privacy-switch.sh
+# switching it off. Run it on the server: sudo tests/org-privacy-switch.sh (or sudo
+# tests/privacy-switch.sh, the same test under the name of Task 6b's plan). Not inside flock: it
+# takes the server-change lock itself (or set NOURAX_LOCK_HELD=1 when you hold it already).
 #
 # One list, three ways in: the nourax_api service OrgPrivacySwitch is behind the occ command
 # nourax_api:org-privacy, the configure step scripts/configure.d/60-org-privacy.sh and the admin
 # page "Nourax Workspace". This checks:
-# - tests/org-privacy-switch.php (the list, status, dry runs, the lock, the page's texts);
-# - tests/org-privacy-route.php (the server's security check and the route, in process, with a
-#   stand-in switch: a normal person 403, an admin without the token 412, also with the
-#   OCS-APIRequest header that the server's CSRF check lets through, and with the token through);
+# - tests/org-privacy-switch.php (the list, status, dry runs, the lock, the page's texts, the audit
+#   routes), as www-data, and again piped in as root without -u www-data (it becomes www-data);
+# - tests/org-privacy-route.php (the address /apps/nourax_api/settings/org-privacy in the server's
+#   router, the server's security check and the route, in process, with a stand-in switch: a
+#   normal person 403, an admin without the token 412, also with the OCS-APIRequest header that
+#   the server's CSRF check lets through, and with the token through);
 # - occ nourax_api:org-privacy status: on, the stored step on, sharing limited, every setting on,
 #   federation and circles disabled; nourax_api:status says the same;
 # - occ ... off --dry-run lists the changes and changes nothing; on (already on) changes nothing
 #   and writes an audit row "unchanged" by "tests" (read back through the signed admin API);
 #   a wrong action or --by is refused;
 # - the configure step: ORG_PRIVACY=off with ORG_PRIVACY_DRY_RUN=1 only logs, a plain run keeps it
-#   on and changes nothing, ORG_PRIVACY=maybe stops with an error and changes nothing;
-# - the admin page's route through Cloudflare: no session -> 401, a normal QA person's app
-#   password (qa-t6b-2) -> 403 for both the GET and the POST, even with the OCS header that
-#   passes the CSRF check; or, once the address is locked to the owner's address in Cloudflare's
-#   rule 1, Cloudflare's block for all of them. (The page itself, a real switch and the CSRF
+#   on and changes nothing, ORG_PRIVACY=bogus stops with an error and changes nothing;
+# - the admin page's route through Cloudflare (/apps/nourax_api/settings/org-privacy): no session
+#   -> 401, a normal QA person's app password (qa-t6b-2) -> 403 for both the GET and the POST,
+#   even with the OCS header that passes the CSRF check; or, once the address is locked to the
+#   owner's address in Cloudflare's rule 1, Cloudflare's block for all of them. The old address
+#   /apps/nourax_api/admin/org-privacy (main 726a196 and older) -> 404. (The page itself, a real switch and the CSRF
 #   refusal are checked from the owner's PC by tests/org-privacy-page.sh: the settings pages are
 #   open only there.)
 #
@@ -31,7 +36,8 @@
 need_admin_key
 take_lock
 
-ROUTE="https://${DRIVE_HOST}/apps/nourax_api/admin/org-privacy"
+ROUTE="https://${DRIVE_HOST}/apps/nourax_api/settings/org-privacy"
+OLD_ROUTE="https://${DRIVE_HOST}/apps/nourax_api/admin/org-privacy"
 QA_NORMAL=qa-t6b-2
 
 privacy() { occ nourax_api:org-privacy "$@" </dev/null; }
@@ -54,6 +60,15 @@ for name in org-privacy-switch org-privacy-route; do
 	fi
 	sed 's/^/  /' "$T_OUT/php.log"
 done
+# The same list test piped in as root (no -u www-data): it becomes the owner of config.php first.
+if dc exec -T app php < "$REPO_DIR/tests/org-privacy-switch.php" > "$T_OUT/php.log" 2>&1 \
+	&& grep -qx "all org-privacy-switch checks passed" "$T_OUT/php.log" \
+	&& grep -qx "started as root, now running as www-data, the owner of config.php" "$T_OUT/php.log"; then
+	check "tests/org-privacy-switch.php without -u www-data (it runs as www-data)" pass pass
+else
+	check "tests/org-privacy-switch.php without -u www-data (it runs as www-data)" pass fail
+	sed 's/^/  /' "$T_OUT/php.log"
+fi
 
 log "--- occ nourax_api:org-privacy status"
 privacy status > "$T_OUT/status.json"
@@ -106,17 +121,17 @@ step_run > "$T_OUT/step.log" || true
 sed 's/^/  /' "$T_OUT/step.log"
 check "step, plain run: keeps it on, nothing changed" yes "$(grep -q 'org privacy: on (unchanged); nourax_api: on' "$T_OUT/step.log" && echo yes || echo no)"
 code=0
-step_run ORG_PRIVACY=maybe > "$T_OUT/step-bad.log" || code=$?
-check "step, ORG_PRIVACY=maybe: stops with the error" "1 yes" "$code $(grep -q "ORG_PRIVACY must be on or off, not 'maybe'" "$T_OUT/step-bad.log" && echo yes || echo no)"
+step_run ORG_PRIVACY=bogus > "$T_OUT/step-bad.log" || code=$?
+check "step, ORG_PRIVACY=bogus: stops with the error" "1 yes" "$code $(grep -q "ORG_PRIVACY must be on or off, not 'bogus'" "$T_OUT/step-bad.log" && echo yes || echo no)"
 check "step runs changed nothing" "$before" "$(same_values)"
 
 log "--- the admin page's route, through Cloudflare"
 # The server is not the owner's address: once the address is added to Cloudflare's rule 1 (the
 # owner's yes, docs/teams.md#the-switch), every request from here gets Cloudflare's block page
 # (403) and never reaches the app. Before that, the app answers.
-answer() { # expected-app-status
+answer() { # expected-app-status [curl options...] (ANSWER_URL: another address than the switch's)
 	local code
-	code="$(curl -sS -o "$T_OUT/r" -w '%{http_code}' "${@:2}" "$ROUTE")"
+	code="$(curl -sS -o "$T_OUT/r" -w '%{http_code}' "${@:2}" "${ANSWER_URL:-$ROUTE}")"
 	if [ "$code" = 403 ] && grep -qi 'cloudflare' "$T_OUT/r"; then echo "blocked by Cloudflare"; else echo "$code"; fi
 }
 NETRC="$(qa_netrc "$QA_NORMAL")"
@@ -142,6 +157,9 @@ else
 		--data-binary '{"state":"off"}')"
 	log "  the answer: $(head -c 200 "$T_OUT/r")"
 fi
+check "the old address /apps/nourax_api/admin/org-privacy: GET and POST -> 404 (no route)" "404 404" \
+	"$(ANSWER_URL="$OLD_ROUTE" answer 404 -H 'Accept: application/json') $(ANSWER_URL="$OLD_ROUTE" answer 404 -X POST \
+		-H 'Accept: application/json' -H 'Content-Type: application/json' --data-binary '{"state":"off"}')"
 check "after the refused POST: still on, nothing changed" "$before" "$(same_values)"
 
 finish org-privacy-switch
