@@ -37,6 +37,9 @@
 # Only the test's own QA objects are changed (the run brief's rule-3 exception); a grant of any
 # other account (a demo account) is logged "LEAK (not undone)" and never touched. The last check,
 # "no cross-organisation grant left", reads the list again.
+# Every failed check (after the setup) is followed at once by its LEAK lines: the grants it left,
+# each taken back, or "LEAK (undone): nothing to take back" when it stored none (a read). So a run
+# against code without the fixes (docs/teams.md "The test") names each leak and leaves nothing.
 #
 # Keys and app passwords are never printed. Exit 0 when every check passes.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -280,10 +283,14 @@ undo_grant() { # kind undo-by a b c who
 }
 # Finds every cross-organisation grant now, logs each as a FAIL and takes it back. Hand-overs go
 # first, then the list is read again (the object's shares count from its rightful owner).
-sweep() { # label
-	local label="$1" pass line order kind by a b c who what new
+# With "after-fail", the check that just failed has already counted the leak: each grant is then
+# logged by its LEAK line only, and $SWEEP_FOUND says how many there were.
+SWEEP_FOUND=0
+sweep() { # label [after-fail]
+	local label="$1" mode="${2:-}" pass line order kind by a b c who what new
 	local -a lines first
 	local -A seen=()
+	SWEEP_FOUND=0
 	for pass in 1 2 3 4 5 6; do
 		read_grants
 		mapfile -t lines < "$T_OUT/grants"
@@ -301,8 +308,11 @@ sweep() { # label
 			[ -z "${seen["$kind $a $b $c $who"]:-}" ] || continue
 			seen["$kind $a $b $c $who"]=1
 			new=yes
-			log "FAIL $label: a cross-organisation grant: $what"
-			fails=$((fails + 1))
+			SWEEP_FOUND=$((SWEEP_FOUND + 1))
+			if [ "$mode" != after-fail ]; then
+				log "FAIL $label: a cross-organisation grant: $what"
+				fails=$((fails + 1))
+			fi
 			if [ "$SWEEP_UNDO" = yes ] && undo_grant "$kind" "$by" "$a" "$b" "$c" "$who"; then
 				log "LEAK (undone): $what"
 			elif [ "$by" = - ]; then
@@ -317,6 +327,20 @@ sweep() { # label
 # A check of a try to share with, or hand something to, another organisation: whatever it let
 # through is found and undone at once.
 checkw() { check "$@"; sweep "$1"; }
+
+# From here on, every FAIL line of a check is followed at once by what became of that leak: each
+# grant it left, taken back ("LEAK (undone): <the grant>"), or, when it stored no grant at all (a
+# read, or an answer that tells too much), "LEAK (undone): nothing to take back". So a run against
+# code without the fixes names every leak and leaves nothing behind it. ("LEAK (undone)" means:
+# nothing of this leak is left on the server.)
+eval "lib_$(declare -f check)"
+check() { # name expected actual
+	local before="$fails"
+	lib_check "$@"
+	[ "$fails" -eq "$before" ] && return 0
+	sweep "$1" after-fail
+	[ "$SWEEP_FOUND" -gt 0 ] || log "LEAK (undone): nothing to take back: \"$1\" stored no grant (the grant list holds nothing new)"
+}
 
 # What the runs before the fixes left (and any later leak), before the checks begin.
 sweep "left by an earlier run"
@@ -450,6 +474,13 @@ for side in "demo-a01:demo-b:Karim:demo-b01:demo-b01@demo-beta.invalid:Karim (Ma
 		dc exec -T app curl -sS --netrc-file /dev/stdin -H "Host: $DRIVE_HOST" -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 			-o /dev/null -w '%{http_code}' "http://localhost/ocs/v2.php/cloud/users/$id")"
 	check "$me account API for $id is refused ($code)" yes "$([[ "$code" =~ ^(403|404)$ ]] && echo yes || echo no)"
+
+	# The profile API (profile pages are off for everyone): no name or field of anyone. An account
+	# answers 400 ("profile is disabled") and an id that is no account 404, so it tells whether an
+	# account exists (docs/teams.md "Known limits").
+	code="$(call "$me" GET "$OCS/profile/$id")"
+	check "$me profile API for $id: no name or field ($code)" yes "$(names_none "${OTHER[@]}")"
+	log "$me profile API: $id answers $code, ${prefix}99 (no such account) $(call "$me" GET "$OCS/profile/${prefix}99") (see Known limits)"
 
 	# NoCalendar: attendee suggestions, the photo of an address, a contact group's members, the
 	# principal search, and free/busy (the invite dialog's availability).
@@ -692,6 +723,17 @@ checkw "board import with a card for $QA3 (org B) -> OCS 403" yes \
 checkw "board import with a comment by $QA3 (org B) -> OCS 403" yes \
 	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{comments: [{id: 1, actorType: "users", actorId: $u, message: "QA t6b", creationDateTime: "2026-10-25T12:00:00+00:00"}]}')")")")"
 check "board imports: $QA3 got no board from those tries" "$before" "$(imports "$QA3")"
+# An id that is no account here is skipped, by Deck and by the check alike: the board is made
+# without that share. So an import tells an account of another organisation (403, above) from an
+# id that is no account (docs/teams.md "Known limits"). Made once; later runs find the board.
+NOBODY_IMPORT="QA t6b import (no such account)"
+if [ "$(boards_of "$QA1" "$NOBODY_IMPORT")" = "" ]; then
+	check "board import shared with an id that does not exist -> 200, OCS 100 (Deck skips it)" "200 100" \
+		"$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$NOBODY" | jq -c --arg t "$NOBODY_IMPORT" '.data.boards[0].title = $t')") $(ocs_status)"
+fi
+nobody_board="$(boards_of "$QA1" "$NOBODY_IMPORT")"
+check "that import's board has no share" "yes 0" \
+	"$([ -n "$nobody_board" ] && echo yes || echo no) $(call "$QA1" GET "$DECK/boards/${nobody_board:-0}" >/dev/null; jq -r '[.acl[]?] | length' "$T_OUT/r" 2>/dev/null)"
 if [ "$(boards_of "$QA1" "QA t6b import (same organisation)")" = "" ]; then
 	check "board import shared with $QA2 (org A) -> 200, OCS 100" "200 100" \
 		"$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA2" | jq -c '.data.boards[0].title = "QA t6b import (same organisation)"')") $(ocs_status)"
