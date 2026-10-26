@@ -1088,6 +1088,8 @@ def run_http(http, cred):
 			if resp.status == 200 and resp.body:
 				upstream_pics[hashlib.sha256(resp.body).hexdigest()] = path
 		plist = sorted(previews)
+		rep.info('Appearance and accessibility: %d theme previews of ours (%s), compared with %d upstream files' % (
+			len(plist), ', '.join(sorted(set(previews.values()))), len(upstream_pics)))
 		for u, resp in zip(plist, http.run([dict(url=u, auth=True) for u in plist])):
 			rep.checked('pages')
 			where = 'theme preview %s' % previews[u]
