@@ -30,12 +30,12 @@ jq -c --argjson since "$SINCE" '[.rows[]
 	| select(.t >= $since)] | sort_by(.id)' "$T_OUT/body" > "$T_OUT/rows.json"
 jq -r '.[] | "  row \(.id): \(.at) key \(.key_id) \(.method) \(.http_status) \(.result) by \(.target) from \(.remote_ip), \(.duration_ms) ms"' "$T_OUT/rows.json" | while IFS= read -r line; do log "$line"; done
 
-check "two org-privacy rows since $(date -u -d "@$SINCE" '+%H:%M:%S') UTC: switched_off, then switched_on" \
+check "two org-privacy rows since $(date -u -d "@$SINCE" '+%Y-%m-%d %H:%M:%S') UTC: switched_off, then switched_on" \
 	"switched_off switched_on" "$(jq -r 'map(.result) | join(" ")' "$T_OUT/rows.json")"
 check "both from the admin page: key id admin-page, POST, HTTP 200, by $WHO" \
 	"admin-page POST 200 $WHO|admin-page POST 200 $WHO" \
 	"$(jq -r 'map("\(.key_id) \(.method) \(.http_status) \(.target)") | join("|")' "$T_OUT/rows.json")"
-ip="$(jq -r 'map(.remote_ip) | unique | if length == 1 then .[0] else "different: " + join(", ") end' "$T_OUT/rows.json")"
+ip="$(jq -r 'map(.remote_ip) | unique | if length == 0 then "" elif length == 1 then .[0] else "different: " + join(", ") end' "$T_OUT/rows.json")"
 proxies="$(occ config:system:get trusted_proxies </dev/null 2>/dev/null | tr '\n' ' ' || true)"
 real_ip=no
 case "$ip" in
