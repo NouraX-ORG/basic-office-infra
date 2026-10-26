@@ -737,13 +737,22 @@ audit rows have the route `org-privacy`.
 | `sudo tests/privacy.sh`, 02:50–02:51, and `sudo tests/privacy-apps.sh`, 02:51–02:54 | `2694084` | Both passed (exit 0); `privacy-apps.sh` 376 PASS, no FAIL, no LEAK line, "no cross-organisation grant left" ([log](../tests/runs/privacy-apps/2026-10-26-0251-after-2694084.log)) |
 | `sudo tests/org-privacy-switch.sh`, 02:57 | `e98cbb9` | 1 FAIL, a fault of the configure step: under `pipefail`, `occ list ... \| grep -q` failed now and then (grep stopped reading early, so occ died of SIGPIPE) and the plain run stopped with "occ nourax_api:org-privacy is missing". Fixed in `777293c` (the list is read whole first). Then three runs in a row, 02:58–02:59: all passed, 66 PASS lines each, the rendered admin form's checks among them |
 | `scripts/check-branding.sh` (owner's PC, as `qa-t6b-2`), 02:57, and `sudo scripts/check-branding.sh --server --only config,mail` | `2694084` | `RESULT PASS (0 hits)` both: pages 92, l10n 124, theming 92, share 18, dav 4, errors 21, config 1, mail 4 checked. (It looks at what normal people see; the admin page itself is checked by `org-privacy-switch.php` with the same rules.) |
+| `tests/org-privacy-route.php` (new), 03:28, against the deployed code | `89eac21` | **6 FAIL, the bug:** an admin's POST off without the token but with `OCS-APIRequest: true` (or `1`, or with the token plus the header) got `200` and reached the switch, and a GET with the header got the view. The switch was the test's stand-in, so nothing was switched; "nothing changed" and "privacy is on after the test" passed. The other 10 checks passed (the attributes, a normal person 403, an admin without the token 412, with the token through). |
+| `sudo tests/org-privacy-switch.sh`, 03:33 | `a76c7f7` | All passed (exit 0), `org-privacy-route.php` now 17 PASS: every header case 412 `csrf_check_failed`, none reached the switch. |
+| `sudo tests/org-privacy-audit.sh`, 03:34, read only | `a76c7f7` | The script itself, before any admin run: with `tests` as UID it read the occ row of 03:33 (`occ CLI 0 unchanged`, no address) and failed the admin-page checks, as it must; for `qa-t6b-admin` it found no row yet. |
+| `tests/org-privacy-page.sh normal`, 03:35 | `0a0a8d1` | All passed: as before, plus a POST without the token but with `OCS-APIRequest: true` 403 for a normal account. `qa-t6b-admin` was enabled (no group) for this run only and disabled again at 03:35. |
+| `sudo tests/privacy.sh`, 03:35–03:36, and `sudo tests/privacy-apps.sh`, 03:36–03:39 | `0a0a8d1` | Both passed (exit 0): 104 and 376 PASS, no FAIL and no LEAK line, "no cross-organisation grant left". |
+| `scripts/check-branding.sh` (owner's PC, as `qa-t6b-2`, `--only pages,l10n,theming,dav,errors`), 03:39 | `0a0a8d1` | `RESULT PASS (0 hits)`: pages 92, l10n 124, theming 92, dav 4, errors 21. |
 
 **Not run yet: the admin step and a real Off and On.** Adding `qa-t6b-admin` to the admin group
 and switching privacy off (even for a few seconds) were both refused by the permission check of
-the session that built the switch, so they wait for the owner's yes. Until then the switch's
-writes (the settings, and disabling and enabling `federation` and `circles`) are checked as dry
-runs and as on while on; the configure step it replaces made the same writes with occ on
-2026-10-25. `qa-t6b-admin` was never in the admin group; it is disabled.
+the session that built the switch, so they wait for the owner's yes; the fix round of 03:20–03:40
+did not ask again. Until then the switch's writes (the settings, and disabling and enabling
+`federation` and `circles`) are checked as dry runs and as on while on; the configure step it
+replaces made the same writes with occ on 2026-10-25. The admin's side of the route (412 without
+the token, also with the header; through with it) is checked in process by
+`tests/org-privacy-route.php`, with the server's own security check. `qa-t6b-admin` was never in
+the admin group; it is disabled.
 
 With the owner's yes, the run is one command on the owner's PC, from the repo at `origin/main`:
 
