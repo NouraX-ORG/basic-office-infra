@@ -665,6 +665,12 @@ the way back across organisations. Only the test's own QA objects are ever chang
 any other account (a demo account) would be logged `LEAK (not undone)` and left alone. The last
 check, "no cross-organisation grant left", reads the list again.
 
+Since commit `045d987`, every check that fails (after the setup) is followed at once by its own
+`LEAK` lines: each grant it left, taken back (`LEAK (undone): <the grant>`), or, when it stored no
+grant at all (a read, such as a name or a picture by id), `LEAK (undone): nothing to take back`.
+`LEAK (undone)` means that nothing of that leak is left on the server. So a run against code
+without the fixes names every leak, reads and writes alike, and leaves nothing behind it.
+
 The runs (UTC; the logs are in [`tests/runs/privacy-apps/`](../tests/runs/privacy-apps/)):
 
 | Run | Commit | Result |
@@ -676,6 +682,18 @@ The runs (UTC; the logs are in [`tests/runs/privacy-apps/`](../tests/runs/privac
 | After them, 23:04–23:07 | `0298b30` | 363 PASS, none failed |
 | The undo step's first run, 2026-10-26 00:34–00:37 | `d2ca73b` | 376 PASS, 33 FAIL, every one of them a grant that an earlier run had left, each followed by `LEAK (undone)` (below); none of the checks themselves failed; the last check, "no cross-organisation grant left", passed |
 | After it, 00:38–00:41 | `7df3498` | **374 PASS, none failed** ("all privacy-apps checks passed", exit 0); no grant found before, during or after the checks |
+| The LEAK lines after every failed check, 01:32–01:35 | `045d987` | 377 PASS, 1 FAIL, a fault of the test, not a leak: a board import keeps the export's `lastModified`, which the test sent as 0, and Deck's board list leaves out a board whose `lastModified` is 0, so the new check could not find the board that the import naming an id that does not exist had made (board 129; it has no share). The FAIL line is followed by its `LEAK (undone): nothing to take back` line. The same fault had made the test import a new "QA t6b import (same organisation)" board on every run (boards 97, 99, 109, 110, 113, 123–125 and 130). Fixed in `28abfb7`: the export says "now" |
+| After it, 01:37–01:40 | `28abfb7` | **378 PASS, none failed** (exit 0); no grant found before, during or after the checks. The profile API answered 400 for `demo-b01` and `demo-a01` and 404 for `demo-b99` and `demo-a99`, with no name (see [Known limits](#known-limits)) |
+
+**Not run yet: this version of the test against the code without the fixes.** That run would take
+the fixes off the live server for about five minutes (the changes of commits `11e251f`, `0298b30`
+and `d2ca73b` to `nextcloud-apps/nourax_api`, under the lock, then back), and in that time every
+leak marked "Was a leak" above would be open for every account on the server, not only the QA
+accounts. So it waits for the owner's yes. Until then the evidence is in two parts: the runs before
+the fixes name every leak (their FAIL lines: the read leaks, such as DAV addresses, avatars, the
+ONLYOFFICE names, status, out of office and the appointments page, and the write leaks), and the
+undo step's first run shows that every grant those runs left was taken back and that none is left.
+A read leak stores nothing, so there was nothing of it to take back.
 
 The runs before the fixes had no undo step yet, so what their leaks let through stayed until the
 undo step's first run took it back. All of it was between QA accounts; nothing of the demo
@@ -883,7 +901,7 @@ and writes it to the server file. Then copy the file to the PC again (above).
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
-| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`; the album "QA t6b privacy 2" and the folders `qa-t6b-acl-2` and `qa-t6b-acl-3` are from earlier runs and kept), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. What the runs before the fixes let through (all between QA accounts) was taken back by the test's undo step: see [The test](#the-test). Kept for the next run. |
+| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer", "QA t6b import (same organisation)" and "QA t6b import (no such account)" (boards 132 and 131, made once and found again since `28abfb7`; the earlier copies, boards 97, 99, 109, 110, 113, 123–125, 129 and 130, are kept), the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`; the album "QA t6b privacy 2" and the folders `qa-t6b-acl-2` and `qa-t6b-acl-3` are from earlier runs and kept), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. What the runs before the fixes let through (all between QA accounts) was taken back by the test's undo step: see [The test](#the-test). Kept for the next run. |
 | People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team
