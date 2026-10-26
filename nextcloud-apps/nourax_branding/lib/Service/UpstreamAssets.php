@@ -30,21 +30,130 @@ final class UpstreamAssets {
 
 	/**
 	 * The shipped backgrounds of the theming app without those that credit the upstream company
-	 * (Nextcloud 35: "Fluid" and "Globe", "… - Nextcloud GmbH", linking nextcloud.com/trademarks).
-	 * The picker of Appearance and accessibility shows that credit as the button's title.
+	 * (Nextcloud 35: "Fluid" and "Globe", "… - Nextcloud GmbH", linking nextcloud.com/trademarks;
+	 * the picker of Appearance and accessibility shows that credit as the button's title) and without
+	 * those named in $off (rules.json backgrounds_off: mostly in the upstream blue).
 	 *
 	 * @param array<string, mixed> $backgrounds file name => details, as BackgroundService::SHIPPED_BACKGROUNDS
+	 * @param list<string> $off file names to leave out
 	 * @return array<string, mixed>
 	 */
-	public static function filterBackgrounds(array $backgrounds): array {
-		return array_filter($backgrounds, static function ($details): bool {
+	public static function filterBackgrounds(array $backgrounds, array $off = []): array {
+		return array_filter($backgrounds, static function ($details, $file) use ($off): bool {
+			if (in_array((string)$file, $off, true)) {
+				return false;
+			}
 			if (!is_array($details)) {
 				return true;
 			}
 			$credit = (string)($details['attribution'] ?? '');
 			$url = (string)($details['attribution_url'] ?? '');
 			return stripos($credit, 'nextcloud') === false && !self::isUpstreamUrl($url);
-		});
+		}, ARRAY_FILTER_USE_BOTH);
+	}
+
+	/** True for a colour within $tolerance (distance in RGB) of an upstream blue, as the audit measures. */
+	public static function isUpstreamBlue(int $r, int $g, int $b, int $tolerance = 28): bool {
+		$t2 = $tolerance * $tolerance;
+		return $r ** 2 + ($g - 130) ** 2 + ($b - 201) ** 2 <= $t2 || $r ** 2 + ($g - 103) ** 2 + ($b - 158) ** 2 <= $t2;
+	}
+
+	/**
+	 * A letter avatar as Nextcloud draws one, letters in $fg on a tint of it ($bg), drawn in $toFg on
+	 * $toBg instead. Each pixel keeps its place between the two colours, so the letters' smooth edges
+	 * stay smooth, and its transparency. The PNG, or null when GD cannot read it.
+	 *
+	 * @param array{0: int, 1: int, 2: int} $fg
+	 * @param array{0: int, 1: int, 2: int} $bg
+	 * @param array{0: int, 1: int, 2: int} $toFg
+	 * @param array{0: int, 1: int, 2: int} $toBg
+	 */
+	public static function recolourAvatar(string $png, array $fg, array $bg, array $toFg, array $toBg): ?string {
+		if (!function_exists('imagecreatefromstring') || $png === '') {
+			return null;
+		}
+		$im = @imagecreatefromstring($png);
+		if ($im === false) {
+			return null;
+		}
+		imagepalettetotruecolor($im);
+		imagealphablending($im, false);
+		imagesavealpha($im, true);
+		$d = [$fg[0] - $bg[0], $fg[1] - $bg[1], $fg[2] - $bg[2]];
+		$dd = $d[0] ** 2 + $d[1] ** 2 + $d[2] ** 2;
+		if ($dd === 0) {
+			return null;
+		}
+		$map = [];
+		$w = imagesx($im);
+		$h = imagesy($im);
+		for ($y = 0; $y < $h; $y++) {
+			for ($x = 0; $x < $w; $x++) {
+				$c = imagecolorat($im, $x, $y);
+				if (!isset($map[$c])) {
+					$r = ($c >> 16) & 0xff;
+					$g = ($c >> 8) & 0xff;
+					$b = $c & 0xff;
+					$t = (($r - $bg[0]) * $d[0] + ($g - $bg[1]) * $d[1] + ($b - $bg[2]) * $d[2]) / $dd;
+					$t = max(0.0, min(1.0, $t));
+					$map[$c] = imagecolorallocatealpha($im,
+						(int)round($toBg[0] + $t * ($toFg[0] - $toBg[0])),
+						(int)round($toBg[1] + $t * ($toFg[1] - $toBg[1])),
+						(int)round($toBg[2] + $t * ($toFg[2] - $toBg[2])),
+						($c >> 24) & 0x7f);
+				}
+				imagesetpixel($im, $x, $y, $map[$c]);
+			}
+		}
+		ob_start();
+		imagepng($im);
+		$out = (string)ob_get_clean();
+		return $out !== '' ? $out : null;
+	}
+
+	/**
+	 * How much of a picture is in an upstream blue, the way the browser audit measures it
+	 * (branding/audit/scan-pictures.js): pixels within $tolerance (distance in RGB) of #0082C9 or
+	 * #00679E among the opaque ones. Needs GD; null when the file cannot be read.
+	 *
+	 * @return array{opaque: int, blue: int}|null
+	 */
+	public static function upstreamBlueShare(string $file, int $tolerance = 28): ?array {
+		if (!function_exists('imagecreatefromstring')) {
+			return null;
+		}
+		$data = @file_get_contents($file);
+		$im = is_string($data) && $data !== '' ? @imagecreatefromstring($data) : false;
+		if ($im === false) {
+			return null;
+		}
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$opaque = 0;
+		$blue = 0;
+		for ($y = 0; $y < $h; $y++) {
+			for ($x = 0; $x < $w; $x++) {
+				$c = imagecolorat($im, $x, $y);
+				if (imageistruecolor($im)) {
+					$a = ($c >> 24) & 0x7f;
+					$r = ($c >> 16) & 0xff;
+					$g = ($c >> 8) & 0xff;
+					$b = $c & 0xff;
+				} else {
+					$i = imagecolorsforindex($im, $c);
+					[$a, $r, $g, $b] = [$i['alpha'], $i['red'], $i['green'], $i['blue']];
+				}
+				// GD's alpha runs from 0 (opaque) to 127 (clear); the audit counts alpha 128 of 255 or more.
+				if ($a > 63) {
+					continue;
+				}
+				$opaque++;
+				if (self::isUpstreamBlue($r, $g, $b, $tolerance)) {
+					$blue++;
+				}
+			}
+		}
+		return ['opaque' => $opaque, 'blue' => $blue];
 	}
 
 	/**

@@ -73,6 +73,11 @@ class SweepRunner {
 		return new L10nSweeper(self::readJson($this->sweepDir() . '/rules.json'), self::readJson($this->sweepDir() . '/en-overrides.json'));
 	}
 
+	/** @return array<string, mixed> sweep/rules.json, the rules the sweep, the guard and the audit share */
+	public function rules(): array {
+		return self::readJson($this->sweepDir() . '/rules.json');
+	}
+
 	/** Changes when the rules, the curated texts or the sweep itself change. */
 	public function rulesDigest(): string {
 		$dir = $this->sweepDir();

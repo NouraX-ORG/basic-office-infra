@@ -39,8 +39,9 @@ use Psr\Log\LoggerInterface;
  *   this app's help page (Controller\HelpController);
  * - /settings/download/reasons, the upstream's "Reasons to use Nextcloud" PDF, answers 404;
  * - Personal settings > Appearance and accessibility: the two backgrounds that credit the upstream
- *   company are left out of the picker (Service\UpstreamAssets::filterBackgrounds), and the theme
- *   previews are our own pictures (js/theme-previews.js, img/theme-previews);
+ *   company, and those mostly in the upstream blue (rules.json backgrounds_off), are left out of the
+ *   picker (Service\UpstreamAssets::filterBackgrounds), and the theme previews are our own pictures
+ *   (js/theme-previews.js, img/theme-previews);
  * - Personal settings > Sharing: when sharing with other servers is on (privacy between
  *   organisations off, scripts/configure.d/60-org-privacy.sh), the Federated Cloud section's
  *   "share it" buttons point at this app's help page instead of nextcloud.com/sharing.
@@ -131,8 +132,10 @@ final class UpstreamPagesMiddleware extends Middleware {
 			if (class_exists(self::BACKGROUNDS) && defined(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS')) {
 				$shipped = constant(self::BACKGROUNDS . '::SHIPPED_BACKGROUNDS');
 				if (is_array($shipped)) {
+					$off = $this->sweepRunner->rules()['backgrounds_off'] ?? [];
 					// Replaces what the theming app gave its page; the page is rendered after this.
-					$this->initialState->provideInitialState('theming', 'shippedBackgrounds', UpstreamAssets::filterBackgrounds($shipped));
+					$this->initialState->provideInitialState('theming', 'shippedBackgrounds',
+						UpstreamAssets::filterBackgrounds($shipped, is_array($off) ? array_map('strval', array_keys($off)) : []));
 				}
 			}
 		} elseif ($section === 'sharing') {

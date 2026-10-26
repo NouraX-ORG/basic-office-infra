@@ -145,7 +145,12 @@ docs/teams.md); the branding holds with it on or off.
   - the theming stylesheets (`/apps/theming/theme/<theme>.css`): the upstream blue (`#00679E`, also
     `#0082c9`) becomes the Nourax cobalt `#2563EB`; Nextcloud 35 uses it in the Assistant gradient;
   - Appearance and accessibility: the two backgrounds credited to "Nextcloud GmbH" (Fluid, Globe) are
-    left out of the picker; the others stay;
+    left out of the picker, and so are those mostly in the upstream blue, listed in `rules.json`
+    `backgrounds_off`: Clouds (55% of its pixels; the upstream's old default background), Underwater
+    ocean (32%), Waxing crescent moon (4.5%), and Globe and Fluid again (74%, 52%). The browser audit
+    found them; `tests/run.php` measures every shipped background the same way, so one a later version
+    adds fails the tests until it is listed. The other 16 stay. On 26 October nobody had chosen any
+    of these; a background someone chose before stays theirs;
   - Sharing (when federation is on): the "share it" buttons point at our help page;
   - `/settings/download/reasons`, the upstream's "Reasons to use Nextcloud" PDF, answers 404.
 - *Theme previews* (`js/theme-previews.js`, `img/theme-previews/`): Personal settings > Appearance and
@@ -163,6 +168,15 @@ docs/teams.md); the branding holds with it on or off.
   them (Pillow; `--font` is the theming app's `fonts/OpenDyslexic-Regular.otf`, SIL OFL 1.1); run it
   again after changing it and commit the pictures. The upstream files stay where they are and are
   never shown.
+- *Letter avatars* (`Middleware/AvatarColourMiddleware.php`): a person without a picture of their own
+  gets their initials in one colour on a light (dark theme: dark) tint of it. Nextcloud 35 picks the
+  colour from the display name out of 18, and one of the 18 is the upstream blue `#0082C9` itself, so
+  one name in 18 got it (on 26 October: 4 of 131 accounts, all QA accounts of other tasks). The app
+  redraws exactly those avatars in Nourax cobalt, letters, smooth edges and tint alike, where core
+  answers them (`/avatar/<user>/<size>`, `.../dark`, and the guest avatars); every other avatar, and
+  every picture people chose, goes out as core made it. A redrawn avatar is cached for a day. The
+  initials the browser draws itself (contacts, e-mail guests) get the same colour from
+  `branding/custom.css`.
 - *No NoBoard welcome board* (`Listener/NewAccountListener.php`): see the deck row below.
 - *Example contact* (`Service/ExampleContact.php`, `occ nourax_branding:example-contact`, run by
   `scripts/configure.d/20-branding.sh`): every new address book gets one example card, and NoContacts
@@ -214,7 +228,8 @@ address *starts with* an upstream website are hidden on every page, admin pages 
 the row or sentence around them where it would make no sense alone. Links that people write
 themselves in documents, comments and cards are left alone, and a file that is only named like an
 upstream address is never hidden. The CSS also hides three screen-reader-only spans on the Photos
-page that hold the source of its placeholder pictures, upstream copyright line included.
+page that hold the source of its placeholder pictures, upstream copyright line included, and draws
+the browser's letter avatars that would be in the upstream blue in cobalt (see *Letter avatars*).
 
 **What is left, on purpose:**
 

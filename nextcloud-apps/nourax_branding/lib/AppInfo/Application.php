@@ -17,6 +17,7 @@ use OCA\NouraxBranding\Listener\NavigationListener;
 use OCA\NouraxBranding\Listener\NewAccountListener;
 use OCA\NouraxBranding\Listener\PageScriptListener;
 use OCA\NouraxBranding\Listener\SabrePluginListener;
+use OCA\NouraxBranding\Middleware\AvatarColourMiddleware;
 use OCA\NouraxBranding\Middleware\EmptySettingsPageMiddleware;
 use OCA\NouraxBranding\Middleware\PageDirectionMiddleware;
 use OCA\NouraxBranding\Middleware\UpstreamPagesMiddleware;
@@ -49,6 +50,9 @@ class Application extends App implements IBootstrap {
 		// Upstream links, pictures and colours in the theming and settings apps' answers (manifests,
 		// theme stylesheets, /settings/help, the backgrounds picker). Global for the same reason.
 		$context->registerMiddleware(UpstreamPagesMiddleware::class, true);
+		// Letter avatars in the upstream blue (one name in 18) are drawn in the site colour. Global, so
+		// that it runs for core's avatar controllers.
+		$context->registerMiddleware(AvatarColourMiddleware::class, true);
 		// Signed-out pages in Arabic and the other right-to-left languages run right to left, as
 		// signed-in pages do. Global, so that it runs for core's login page and every app's public pages.
 		$context->registerMiddleware(PageDirectionMiddleware::class, true);

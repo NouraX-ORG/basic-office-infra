@@ -315,6 +315,72 @@ $shipped = [
 	'other.webp' => ['attribution' => 'Other (someone)', 'attribution_url' => 'https://github.com/nextcloud/server'],
 ];
 same(array_keys(UpstreamAssets::filterBackgrounds($shipped)), ['kamil-porembinski-clouds.jpg'], 'backgrounds: those crediting or linking the upstream are left out');
+$off = array_keys($rules['backgrounds_off'] ?? []);
+same(array_keys(UpstreamAssets::filterBackgrounds($shipped + ['ted-moravec-morning-fog.jpg' => ['attribution' => 'Morning fog (Ted Moravec, Public Domain)']], $off)),
+	['ted-moravec-morning-fog.jpg'], 'backgrounds: those in rules.json backgrounds_off are left out too');
+// Every shipped background of the installed theming app (its preview, the picture the picker shows)
+// with 0.5% or more of its pixels in an upstream blue must be in backgrounds_off: a later version may
+// add one. Measured as the browser audit does.
+$previewsDir = '/var/www/html/apps/theming/img/background/preview';
+if (is_dir($previewsDir) && function_exists('imagecreatefromstring')) {
+	$blueBackgrounds = [];
+	$unread = [];
+	foreach (glob($previewsDir . '/*') ?: [] as $file) {
+		$share = UpstreamAssets::upstreamBlueShare($file);
+		if ($share === null) {
+			$unread[] = basename($file);
+		} elseif ($share['opaque'] > 0 && $share['blue'] >= 16 && $share['blue'] / $share['opaque'] >= 0.005) {
+			$blueBackgrounds[basename($file)] = round(100 * $share['blue'] / $share['opaque'], 1);
+		}
+	}
+	$notOff = array_diff_key($blueBackgrounds, array_flip($off));
+	check($notOff === [] && $blueBackgrounds !== [], 'backgrounds: every shipped background mostly in an upstream blue (' . implode(', ', array_map(static fn ($f, $p) => "$f $p%", array_keys($blueBackgrounds), $blueBackgrounds)) . ') is in backgrounds_off',
+		'add to backgrounds_off: ' . json_encode($notOff));
+	check($unread === [], 'backgrounds: GD reads every shipped background preview', 'not read: ' . implode(', ', $unread));
+}
+$probe = sys_get_temp_dir() . '/nourax-branding-test-' . getmypid() . '.png';
+if (function_exists('imagecreatetruecolor')) {
+	$im = imagecreatetruecolor(10, 10);
+	imagefilledrectangle($im, 0, 0, 9, 9, imagecolorallocate($im, 0x25, 0x63, 0xEB));
+	imagefilledrectangle($im, 0, 0, 9, 1, imagecolorallocate($im, 0, 130, 200));
+	imagepng($im, $probe);
+	same(UpstreamAssets::upstreamBlueShare($probe), ['opaque' => 100, 'blue' => 20], 'blue share: the upstream blue counts, Nourax cobalt does not');
+	@unlink($probe);
+}
+
+// Letter avatars (Middleware\AvatarColourMiddleware): one of Nextcloud's 18 avatar colours is the
+// upstream blue itself; those avatars are redrawn in cobalt, smooth edges kept.
+same([UpstreamAssets::isUpstreamBlue(0, 130, 201), UpstreamAssets::isUpstreamBlue(0, 103, 158), UpstreamAssets::isUpstreamBlue(30, 120, 193), UpstreamAssets::isUpstreamBlue(37, 99, 235)],
+	[true, true, false, false], 'avatar colour: the upstream blues, not the palette\'s next colour or cobalt');
+if (function_exists('imagecreatetruecolor')) {
+	$fg = [0, 130, 201];
+	$bg = [229, 242, 250];
+	$im = imagecreatetruecolor(16, 16);
+	imagefilledrectangle($im, 0, 0, 15, 15, imagecolorallocate($im, ...$bg));
+	imagefilledrectangle($im, 4, 4, 11, 11, imagecolorallocate($im, ...$fg));
+	// A smooth edge: halfway between the letter and its tint.
+	imagefilledrectangle($im, 12, 4, 12, 11, imagecolorallocate($im, 115, 186, 226));
+	ob_start();
+	imagepng($im);
+	$png = (string)ob_get_clean();
+	$out = UpstreamAssets::recolourAvatar($png, $fg, $bg, [0x25, 0x63, 0xEB], [233, 239, 253]);
+	$re = is_string($out) ? imagecreatefromstring($out) : false;
+	$px = static function ($im, int $x, int $y): array {
+		$c = imagecolorat($im, $x, $y);
+		return [($c >> 16) & 0xff, ($c >> 8) & 0xff, $c & 0xff];
+	};
+	same($re === false ? null : [$px($re, 0, 0), $px($re, 6, 6), $px($re, 12, 6)], [[233, 239, 253], [37, 99, 235], [135, 169, 244]],
+		'avatar colour: tint, letter and edge redrawn in cobalt');
+	$left = $re === false ? -1 : 0;
+	for ($y = 0; $re !== false && $y < 16; $y++) {
+		for ($x = 0; $x < 16; $x++) {
+			[$r, $g, $b] = $px($re, $x, $y);
+			$left += UpstreamAssets::isUpstreamBlue($r, $g, $b) ? 1 : 0;
+		}
+	}
+	same($left, 0, 'avatar colour: no upstream blue left');
+	same(UpstreamAssets::recolourAvatar('not a picture', $fg, $bg, [0x25, 0x63, 0xEB], [233, 239, 253]), null, 'avatar colour: what is not a picture is left alone');
+}
 same(UpstreamAssets::isUpstreamUrl('https://docs.nextcloud.com/server/35/go.php?to=user'), true, 'upstream address: docs');
 same(UpstreamAssets::isUpstreamUrl('https://github.com/NextCloud'), true, 'upstream address: GitHub organisation, any case');
 same(UpstreamAssets::isUpstreamUrl('https://github.com/nextcloudfan/x'), false, 'upstream address: another GitHub account');
@@ -372,27 +438,12 @@ foreach (array_keys($previews) as $id) {
 		$previewProblems[] = "$id is not a 512x320 PNG";
 		continue;
 	}
-	if (!function_exists('imagecreatefrompng')) {
-		continue;
-	}
-	$im = imagecreatefrompng($file);
-	$near = 0;
-	for ($y = 0; $y < 320; $y++) {
-		for ($x = 0; $x < 512; $x++) {
-			$rgb = imagecolorat($im, $x, $y);
-			$r = ($rgb >> 16) & 0xff;
-			$g = ($rgb >> 8) & 0xff;
-			$b = $rgb & 0xff;
-			if ($r ** 2 + ($g - 130) ** 2 + ($b - 201) ** 2 <= 1600 || $r ** 2 + ($g - 103) ** 2 + ($b - 158) ** 2 <= 1600) {
-				$near++;
-			}
-		}
-	}
-	if ($near > 0) {
-		$previewProblems[] = "$id has $near pixels near an upstream blue";
+	$share = UpstreamAssets::upstreamBlueShare($file, 40);
+	if ($share !== null && $share['blue'] > 0) {
+		$previewProblems[] = "$id has {$share['blue']} pixels near an upstream blue";
 	}
 }
-check($previewProblems === [], 'theme previews: 512x320 PNGs' . (function_exists('imagecreatefrompng') ? ' without a pixel within 40 of an upstream blue' : ' (GD missing: colours not checked)'), implode('; ', $previewProblems));
+check($previewProblems === [], 'theme previews: 512x320 PNGs' . (function_exists('imagecreatefromstring') ? ' without a pixel within 40 of an upstream blue' : ' (GD missing: colours not checked)'), implode('; ', $previewProblems));
 
 // The example contact (Service\ExampleContact), on the upstream card's shape: folded photo, two empty
 // photos, the website without a scheme.

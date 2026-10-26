@@ -133,6 +133,19 @@ body:has(#content.app-nc_gantt) :is([style*="background: rgb(0, 130, 201)"], [st
 }
 
 /*
+ * Letter avatars the browser draws (the shared avatar component, for contacts, e-mail guests and
+ * anyone whose picture is not loaded): the initials and their tint take one of 18 colours from the
+ * name, and one of them is the upstream blue. Those are drawn in Nourax cobalt, as the nourax_branding
+ * app does for the letter avatars the server draws (Middleware/AvatarColourMiddleware.php).
+ */
+.avatardiv__initials[style*="rgb(0, 130, 201)"] {
+	color: #2563EB !important;
+}
+.avatardiv__initials-wrapper[style*="rgba(0, 130, 201,"] {
+	background-color: rgba(37, 99, 235, 0.1) !important;
+}
+
+/*
  * SVG gradients of the shared upstream components with a stop in the upstream blue, such as the
  * sparkle icon of Nourax AI (in its dialog and page, and in the Text and NoBoard editors' menus): the
  * stop is drawn in Nourax cobalt. A CSS rule wins over the stop-color attribute. Found by the browser

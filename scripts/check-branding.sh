@@ -620,6 +620,12 @@ def check_theme_previews(url, page, page_url, previews):
 	for tid, u in ours.items():
 		if isinstance(u, str) and u:
 			previews.setdefault(urljoin(page_url, u), tid)
+	# The background picker leaves out the backgrounds mostly in the upstream blue.
+	shipped = state(page, 'theming-shippedBackgrounds')
+	off = RULES.get('backgrounds_off') or {}
+	shown = [f for f in (shipped.keys() if isinstance(shipped, dict) else []) if f in off]
+	if shown:
+		rep.fail('pages', url, 'background picker', 'offers %s (rules.json backgrounds_off: in the upstream blue)' % ', '.join(sorted(shown)))
 
 
 # ---- HTTP through curl -------------------------------------------------------------------------

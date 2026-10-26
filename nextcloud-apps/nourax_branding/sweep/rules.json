@@ -68,6 +68,14 @@
 		"/apps/theming/img/opendyslexic.jpg"
 	],
 	"upstream_pictures_note": "Upstream pictures people must not see (theme previews with the upstream logo and blue header). The browser audit fetches these and upstream_files and fails on any picture drawn on a page with the same SHA-256.",
+	"backgrounds_off": {
+		"kamil-porembinski-clouds.jpg": "55% of its pixels in the upstream blue; the upstream's old default background",
+		"stefanus-martanto-setyo-husodo-underwater-ocean.jpg": "32% of its pixels in the upstream blue",
+		"nasa-waxing-crescent-moon.jpg": "4.5% of its pixels in the upstream blue",
+		"jenna-kim-the-globe.webp": "74% of its pixels in the upstream blue; also credited to the upstream company",
+		"jo-myoung-hee-fluid.webp": "52% of its pixels in the upstream blue; also credited to the upstream company, the upstream's default background"
+	},
+	"backgrounds_off_note": "Shipped backgrounds of the theming app left out of the picker of Appearance and accessibility (nourax_branding UpstreamPagesMiddleware), besides those credited to the upstream. Measured on their previews by the browser audit, 2026-10-26: 0.5% or more of the pixels within 28 (RGB) of an upstream blue. tests/run.php measures every shipped preview the same way and fails on one that is not listed here.",
 	"upstream_files": [
 		"/core/img/favicon.ico",
 		"/core/img/favicon.png",
