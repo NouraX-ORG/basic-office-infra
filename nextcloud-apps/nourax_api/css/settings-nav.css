@@ -1,0 +1,10 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * The "Nourax Workspace" entry of the settings menu (lib/Listener/SettingsStyleListener.php): its
+ * icon is a white mark on a cobalt tile, so the menu's dark-theme filter, which turns dark icons
+ * light, stays off it.
+ */
+img[src*="/nourax_api/img/nourax-workspace.svg"] {
+	filter: none !important;
+}

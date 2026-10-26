@@ -1,0 +1,168 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * "Privacy between organisations" on the admin page "Nourax Workspace"
+ * (templates/admin-privacy.php). Only the theme's own colours, so it follows light and dark.
+ */
+.nourax-privacy {
+	max-width: 900px;
+}
+
+.nourax-privacy h3 {
+	margin-top: 20px;
+	font-weight: bold;
+}
+
+.nourax-privacy__lead {
+	max-width: 70ch;
+}
+
+.nourax-privacy__now {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 16px 0 8px;
+}
+
+.nourax-privacy__pill {
+	display: inline-block;
+	padding: 2px 14px;
+	border: 2px solid var(--color-border-maxcontrast);
+	border-radius: var(--border-radius-pill, 999px);
+	font-weight: bold;
+}
+
+.nourax-privacy__pill--on {
+	border-color: var(--color-border-success, var(--color-success));
+	color: var(--color-success-text);
+}
+
+.nourax-privacy__pill--off {
+	border-color: var(--color-border-error, var(--color-error));
+	color: var(--color-error-text);
+}
+
+.nourax-privacy__pill--mixed {
+	border-color: var(--color-warning);
+	color: var(--color-warning-text);
+}
+
+.nourax-privacy__effects {
+	list-style: disc;
+	padding-inline-start: 22px;
+	max-width: 70ch;
+}
+
+.nourax-privacy__effects li {
+	margin: 4px 0;
+}
+
+.nourax-privacy__note {
+	color: var(--color-text-maxcontrast);
+	max-width: 70ch;
+}
+
+.nourax-privacy__warning {
+	max-width: 70ch;
+	padding: 8px 12px;
+	border-inline-start: 4px solid var(--color-error);
+	background-color: var(--color-background-hover);
+	border-radius: var(--border-radius);
+}
+
+.nourax-privacy__buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 16px 0 4px;
+}
+
+.nourax-privacy__message {
+	min-height: 1.5em;
+}
+
+.nourax-privacy__message--error {
+	color: var(--color-error-text);
+	font-weight: bold;
+}
+
+.nourax-privacy__details {
+	margin-top: 16px;
+}
+
+.nourax-privacy__details summary {
+	cursor: pointer;
+	font-weight: bold;
+}
+
+.nourax-privacy__table {
+	overflow-x: auto;
+	margin: 8px 0;
+}
+
+.nourax-privacy__table table {
+	border-collapse: collapse;
+}
+
+.nourax-privacy__table th,
+.nourax-privacy__table td {
+	padding: 4px 10px;
+	border-bottom: 1px solid var(--color-border);
+	text-align: start;
+	vertical-align: top;
+}
+
+.nourax-privacy__table code {
+	font-family: var(--font-face-monospace, monospace);
+	word-break: break-all;
+}
+
+.nourax-privacy__value--other code {
+	color: var(--color-warning-text);
+	font-weight: bold;
+}
+
+.nourax-privacy__history time {
+	font-variant-numeric: tabular-nums;
+	color: var(--color-text-maxcontrast);
+}
+
+.nourax-privacy__history li {
+	margin: 4px 0;
+}
+
+.nourax-privacy__dialog {
+	max-width: min(640px, 92vw);
+	padding: 20px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-main-background);
+	color: var(--color-main-text);
+	box-shadow: 0 0 40px var(--color-box-shadow);
+}
+
+.nourax-privacy__dialog::backdrop {
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.nourax-privacy__dialog h3 {
+	margin-top: 0;
+}
+
+.nourax-privacy__dialog-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.nourax-privacy__dialog .nourax-privacy__danger {
+	background-color: var(--color-error);
+	border-color: var(--color-error);
+	color: #fff;
+}
+
+.nourax-privacy__dialog .nourax-privacy__danger:hover,
+.nourax-privacy__dialog .nourax-privacy__danger:focus-visible {
+	background-color: var(--color-error-hover);
+}

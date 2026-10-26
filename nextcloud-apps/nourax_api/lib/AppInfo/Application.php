@@ -11,8 +11,10 @@ namespace OCA\NouraxApi\AppInfo;
 use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\NouraxApi\Listener\GroupDriftListener;
 use OCA\NouraxApi\Listener\SabrePluginAddListener;
+use OCA\NouraxApi\Listener\SettingsStyleListener;
 use OCA\NouraxApi\Middleware\OrgShareMiddleware;
 use OCP\AppFramework\App;
+use OCP\AppFramework\Http\Events\BeforeTemplateRenderedEvent;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
@@ -40,6 +42,8 @@ class Application extends App implements IBootstrap {
 		// NoGantt, file ownership transfers) and the ONLYOFFICE editor's names: registered for
 		// every app's controllers, it looks only at those actions (docs/teams.md).
 		$context->registerMiddleware(OrgShareMiddleware::class, true);
+		// The admin settings section "Nourax Workspace" keeps its icon's colours in the dark theme.
+		$context->registerEventListener(BeforeTemplateRenderedEvent::class, SettingsStyleListener::class);
 	}
 
 	public function boot(IBootContext $context): void {

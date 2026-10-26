@@ -483,6 +483,11 @@ organisation B's groups, the "Accounts" address book listed every account, and p
 answered); the search checks already passed. With privacy on, the full `tests/privacy.sh` passes:
 see [The test](#the-test) for the run of the reply to NoMail.
 
+Since 2026-10-26 an admin can switch it **on the admin page** too: Administration settings,
+section "Nourax Workspace", "Privacy between organisations: On / Off". The page, the command
+`occ nourax_api:org-privacy` and the configure step all switch the same list: see
+[The switch](#the-switch).
+
 ### What is limited, and how
 
 | What | With privacy on | Done by |
@@ -499,6 +504,7 @@ see [The test](#the-test) for the run of the reply to NoMail.
 | Shares with other servers, the public lookup server | Off | files_sharing `outgoing_server2server_share_enabled`, `incoming_server2server_share_enabled`, `outgoing_server2server_group_share_enabled`, `incoming_server2server_group_share_enabled`, `lookupServerEnabled`, `lookupServerUploadEnabled` = `no`. The server reads these keys in files_sharing only; the step stores `outgoing_server2server_share_enabled` and `incoming_server2server_share_enabled` = `no` under federatedfilesharing too, so a check of either app reads the same (nothing reads them there). |
 | Trusted servers | Off | app `federation` disabled (0 federated shares and 0 trusted servers on 2026-10-25) |
 | The Teams app (circles) | Off | app `circles` disabled: its member search lists every account on the server, disabled ones too, whatever the settings above say, and anyone may add any account to a team (tested 2026-10-25). Team folders, boards and the team address books do not use it. |
+| NoForms' "show to all accounts" and "all accounts may open it" | Off: a form reaches only the people, groups and teams it is shared with, and whoever has its public link | forms `allowPermitAll` and `allowShowToAll` = `false` (only while NoForms is enabled; `50-apps.sh` sets them too at every configure run while privacy is on) |
 | Search | Unchanged: the search box only finds one's own files and files shared with one, and one's own contacts and directories. Tested with a word only another organisation's file has. | — |
 
 The rule for calendars, address books, boards and the other apps is the server's own rule for
@@ -507,7 +513,9 @@ the two share a group other than `admin`; a group only when one is a member and 
 a Teams-app team or a person on another server never. The service account `nourax-teams` is never
 limited, so the admin API keeps sharing the team books, calendars and boards with their team
 groups, and it stays visible to everyone (it owns the team calendars and books).
-`occ nourax_api:status` shows `org_privacy` (`on` while sharing is limited to group members).
+`occ nourax_api:status` shows `org_privacy` (`on` while sharing is limited to group members),
+`org_privacy_step` (the stored switch) and `org_privacy_switch` (`on`, `off` or `mixed`: whether
+every setting and app above is where the switch puts it).
 None of this edits another app's files: an app update keeps it.
 
 ### Every place people meet, app by app
@@ -536,7 +544,7 @@ all of it; [The test](#the-test) has the runs.
 | NoBoard | Board imports (the import API and the upload) | Was a leak: the shares, card people, comment authors, card editors and attachment authors of an import were written as they are (the import API answered 200 with a `uidRelation` that named `qa-t6b-3`, and the upload 200 with a share to `qa-t6b-3`). Now an import that names someone of another organisation, or another organisation's group, gets 403 (the import API answers through `/index.php` in OCS version 1: HTTP 200 with status 403 and the message in the answer; the upload answers HTTP 403). Each field is read exactly as Deck 1.19.1 reads it (a share by `participant.primaryKey`, a card person by `participant.uid`, the export's owner becomes the importing person, comment authors never), so an export cannot say one thing to the check and another to Deck. An id that is no account here is skipped, by Deck and by the check alike (the board is made without it), so an import tells such an id from an account of another organisation: see [Known limits](#known-limits). |
 | NoBoard | Card people, @-mentions on cards | Only the board's people (Deck's own rule). |
 | NoBoard | Card comments that mention "@<id>" | Was a leak: Deck answered the mentioned person's name to everyone who reads the card. Now the id that was typed, in the JSON and the XML answers. The person is not notified (Deck notifies only the board's people). |
-| NoForms | Sharing a form, a new form owner | Was a leak: any account or group. Now 403. Within the organisation nothing changes: a new share answers 201 Created (NoForms' own answer for a share it made) and a new owner 200. The "all accounts" options stay off (`50-apps.sh`). |
+| NoForms | Sharing a form, a new form owner | Was a leak: any account or group. Now 403. Within the organisation nothing changes: a new share answers 201 Created (NoForms' own answer for a share it made) and a new owner 200. The "all accounts" options stay off (the switch, and `50-apps.sh`). |
 | NoGantt | Its own sharee search, people search and email match | Nobody of the other organisation (they use the server's search); the email match answers `not_found`. |
 | NoGantt | Sharing a project, a planning person (resource) | Was a leak (Task 1's lane G found it too): a project share with any account, and a resource for any account answered that person's name and could send them notifications. Now 403. |
 | ONLYOFFICE | The editor's people list (mentions, protected ranges), its names for account ids, mentions by email | The list holds the organisation's people only. Was a leak: the editor's name lookup answered any account's name. Now only names of people one shares a group with. A mention by email of someone of another organisation shares nothing and notifies nobody (ONLYOFFICE's own check). |
@@ -610,18 +618,87 @@ all of it; [The test](#the-test) has the runs.
   (`<backend>:<account id>.vcf`), for every account on the server, since the server does not
   filter removals. That is an account id only, no name or email address.
 
-### Switching it on, and back off
+### The switch
 
-Under the server-change lock, after the other tasks' sharing tests (it needs no restart):
+One list, three ways to switch it. The list of settings and apps (the table above, "Done by")
+lives only in `nextcloud-apps/nourax_api/lib/Service/OrgPrivacySwitch.php`:
+
+| Way | How | Who |
+|---|---|---|
+| The admin page | Administration settings → **Nourax Workspace** (`/settings/admin/nourax-workspace`) → "Privacy between organisations: On / Off" | A signed-in admin, from the owner's address (the settings pages are locked to it) |
+| occ | `occ nourax_api:org-privacy status\|on\|off [--dry-run] [--by=NAME]`, JSON out | Someone on the server |
+| The configure step | `scripts/configure.d/60-org-privacy.sh`: `ORG_PRIVACY=on` or `off` switches; a plain `scripts/configure.sh` run keeps it on once it is on (it runs `on`, which changes only what differs) and changes nothing while it is off; any other value of `ORG_PRIVACY` stops with an error. `ORG_PRIVACY_DRY_RUN=1` only logs. It calls the occ command (`--by=configure`). | Someone on the server, under the lock |
+
+What every way does:
+
+- **Only what differs** is written, so switching on while on changes nothing (`"result":
+  "unchanged"`). The sharing settings first, then the apps (`federation` and `circles`: disabled
+  when on; enabled again when off, the way `occ app:enable` and the Apps page do it, which also
+  sweeps their translations), then the stored state `nourax_api org_privacy_step`, which every
+  later configure run follows.
+- **Switching off** gives the server's own defaults back (the "off" column of
+  `occ nourax_api:org-privacy status`), enables both apps again, and gives NoForms its two "all
+  accounts" options back. Before writing anything it checks that both apps' code and installed
+  versions match; if not, nothing is changed and the answer says to run `occ app:enable` on the
+  server (`app_needs_upgrade`, HTTP 409).
+- **One switch at a time:** a second one meanwhile gets `busy` (HTTP 423, a lock of at most 120 s).
+- **Audit:** every on and off (not a dry run) writes a row to the nourax_api audit (route
+  `org-privacy`, read with `GET /v1/admin/audit`): who (the admin's account id, or occ's `--by`),
+  how (key id `admin-page`, or `occ` with method `CLI` and HTTP status 0), when, and the result
+  `switched_on`, `switched_off`, `unchanged`, `failed` or `app_needs_upgrade`. The page shows the
+  last five switches under "Recent changes".
+- **Status:** `occ nourax_api:org-privacy status` (and the page's table) lists every setting with
+  its on and off values and its value now, and the two apps. Its `state` is `on` when every
+  setting has its on value and both apps are off, `off` when all are at their off values and both
+  apps are enabled, and `mixed` otherwise (the page then says "Some settings differ").
+
+**The admin page** says in plain English what On changes and what Off means, shows the state now,
+the settings table and the recent changes, and asks before it switches: a confirmation that lists
+what On does, or, for Off, says that everyone on the server can find everyone again and that the
+federation and Teams (circles) apps come back. Then:
+
+- the page sends `POST /apps/nourax_api/admin/org-privacy` with `{"state":"on"}` or `"off"`
+  (`GET` of the same address answers the page's view as JSON);
+- **admins only**: anyone else gets 403 before the switch runs; the form is not one that can be
+  delegated to other groups;
+- **CSRF**: without the page's token the answer is 412 and nothing changes;
+- **password**: the server's own password confirmation (signing in counts for 30 minutes; after
+  that the page asks for the password first). So an app password, which never confirms a
+  password, cannot switch.
+
+Its icon in the settings menu is a white Nourax "N" on a cobalt tile; `css/settings-nav.css`
+(loaded on an admin's settings pages only) keeps the menu's dark-theme filter off it. The page's
+texts come from `OrgPrivacySwitch` and pass the branding rules (`tests/org-privacy-switch.php` and
+`tests/org-privacy-page.sh` scan them with `nourax_branding/sweep/rules.json`).
+
+**The address of the switch is not under the Cloudflare lock of the settings pages** (rule 1 of
+[cloudflare/waf-rule.md](../cloudflare/waf-rule.md) locks `/settings` and `/login`, not
+`/apps/nourax_api/admin/`). Without a signed-in admin session, the page's token and a fresh
+password confirmation it does nothing, and an admin session can only start at the locked sign-in
+page. Adding `/apps/nourax_api/admin` and `/index.php/apps/nourax_api/admin` to rule 1 would lock
+it to the owner's address as well; that is a Cloudflare change, so it waits for the owner's yes.
+
+Switching it on from the server, under the server-change lock, with the privacy test after it:
 
 ```
-ssh … 'cd /opt/nourax/basic-office-infra && sudo flock -w 1800 /run/nourax-deploy.lock bash -c "git pull -q --ff-only && ORG_PRIVACY=on bash -c \". scripts/lib.sh; load_env; . scripts/configure.d/60-org-privacy.sh\" && NOURAX_LOCK_HELD=1 tests/privacy.sh"'
+ssh … 'cd /opt/nourax/basic-office-infra && sudo flock -w 1800 /run/nourax-deploy.lock bash -c "git pull -q --ff-only && ORG_PRIVACY=on bash -c \". scripts/lib.sh; load_env; . scripts/configure.d/60-org-privacy.sh\"" && sudo tests/privacy.sh'
 ```
 
-It sets the settings above, disables `federation` and `circles` and stores the switch
-(`nourax_api org_privacy_step=on`), so every later `scripts/configure.sh` run keeps it on.
-**Undo** with `ORG_PRIVACY=off` in the same command (without the test): the server's defaults come
-back and both apps are enabled again.
+**Undo** with `ORG_PRIVACY=off` in the same command (without the test), with the admin page, or
+with `occ nourax_api:org-privacy off`: the server's defaults come back and both apps are enabled
+again. Nothing needs a restart: every setting is read on the next request.
+
+**Tests of the switch:**
+
+- `sudo tests/org-privacy-switch.sh` on the server (privacy on; it switches nothing off): runs
+  `tests/org-privacy-switch.php` in the app container (the list is exactly the old step's list
+  plus NoForms' two options, the status reads what the server reads, dry runs and the lock change
+  nothing, the page's texts), then the occ command (status, a dry run of off, on while on, the
+  audit row, wrong arguments), the configure step (a dry run of off, a plain run, a wrong value)
+  and the page's address through Cloudflare (401 without a session; 403 for a normal QA person's
+  app password, even with the header that passes the CSRF check).
+- `tests/org-privacy-page.sh normal|admin <creds-dir>` on the owner's PC: the real page and a real
+  Off and back On through it, as a temporary QA admin (see the runs below).
 
 ### The test
 

@@ -5,6 +5,9 @@ declare(strict_types=1);
 /**
  * One row per API call in nourax_api_audit: who (which key), what (method, route, target id),
  * the answer and how long it took. Never a request or response body, never a key.
+ * Also one row per switch of privacy between organisations (OrgPrivacySwitch, route
+ * "org-privacy"): key id "occ" (method CLI, HTTP status 0) or "admin-page", the target is who
+ * switched (the admin's account id, or occ's --by name), the result what it did.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -72,20 +75,49 @@ class AuditLog {
 		$rows = [];
 		$result = $qb->executeQuery();
 		while (($row = $result->fetchAssociative()) !== false) {
-			$rows[] = [
-				'id' => (int)$row['id'],
-				'at' => gmdate('c', (int)$row['at']),
-				'key_id' => (string)$row['key_id'],
-				'method' => (string)$row['method'],
-				'route' => (string)$row['route'],
-				'target' => $row['target'] === null ? null : (string)$row['target'],
-				'http_status' => (int)$row['http_status'],
-				'result' => $row['result'] === null ? null : (string)$row['result'],
-				'remote_ip' => (string)$row['remote_ip'],
-				'duration_ms' => (int)$row['duration_ms'],
-			];
+			$rows[] = self::row($row);
 		}
 		$result->closeCursor();
 		return $rows;
+	}
+
+	/**
+	 * The newest rows of one route first, optionally only those with one of $results (for the
+	 * privacy switch's "Recent changes" on the admin page).
+	 *
+	 * @param list<string> $results
+	 * @return list<array{id: int, at: string, key_id: string, method: string, route: string, target: ?string, http_status: int, result: ?string, remote_ip: string, duration_ms: int}>
+	 */
+	public function recentForRoute(string $route, int $limit, array $results = []): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')->from('nourax_api_audit')
+			->where($qb->expr()->eq('route', $qb->createNamedParameter($route)))
+			->orderBy('id', 'DESC')
+			->setMaxResults(max(1, $limit));
+		if ($results !== []) {
+			$qb->andWhere($qb->expr()->in('result', $qb->createNamedParameter($results, IQueryBuilder::PARAM_STR_ARRAY)));
+		}
+		$rows = [];
+		$result = $qb->executeQuery();
+		while (($row = $result->fetchAssociative()) !== false) {
+			$rows[] = self::row($row);
+		}
+		$result->closeCursor();
+		return $rows;
+	}
+
+	private static function row(array $row): array {
+		return [
+			'id' => (int)$row['id'],
+			'at' => gmdate('c', (int)$row['at']),
+			'key_id' => (string)$row['key_id'],
+			'method' => (string)$row['method'],
+			'route' => (string)$row['route'],
+			'target' => $row['target'] === null ? null : (string)$row['target'],
+			'http_status' => (int)$row['http_status'],
+			'result' => $row['result'] === null ? null : (string)$row['result'],
+			'remote_ip' => (string)$row['remote_ip'],
+			'duration_ms' => (int)$row['duration_ms'],
+		];
 	}
 }

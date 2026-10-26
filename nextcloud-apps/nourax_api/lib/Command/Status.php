@@ -5,8 +5,11 @@ declare(strict_types=1);
 /**
  * occ nourax_api:status - what the app knows, as JSON: whether the keys are set (never their
  * values), ClamAV, the sign-in provider, the scheduled delete of leavers (switch and last run),
- * the service account, the open drift rows, the table counts, and whether sharing is limited to
- * one's organisation (org_privacy, docs/teams.md).
+ * the service account, the open drift rows, the table counts, and privacy between organisations
+ * (docs/teams.md): org_privacy (whether sharing is limited to one's organisation now),
+ * org_privacy_step (the stored switch) and org_privacy_switch (on, off or mixed: whether every
+ * setting and app of the switch is where on or off puts it; occ nourax_api:org-privacy status
+ * lists them).
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -18,6 +21,7 @@ use OCA\NouraxApi\Http\ApiKeyAuth;
 use OCA\NouraxApi\Service\AdminStore;
 use OCA\NouraxApi\Service\HealthService;
 use OCA\NouraxApi\Service\OrgPrivacy;
+use OCA\NouraxApi\Service\OrgPrivacySwitch;
 use OCA\NouraxApi\Service\ServiceAccountService;
 use OCA\NouraxApi\Settings;
 use OCP\App\IAppManager;
@@ -39,6 +43,7 @@ class Status extends Command {
 		private IUserManager $userManager,
 		private AdminStore $store,
 		private OrgPrivacy $orgPrivacy,
+		private OrgPrivacySwitch $orgPrivacySwitch,
 	) {
 		parent::__construct();
 	}
@@ -50,6 +55,7 @@ class Status extends Command {
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$health = $this->health->report();
+		$privacy = $this->orgPrivacySwitch->status();
 		$counts = [];
 		foreach (self::TABLES as $table) {
 			$qb = $this->db->getQueryBuilder();
@@ -78,6 +84,8 @@ class Status extends Command {
 			// "on" while sharing is limited to group members, which is when calendar, address
 			// book and board shares are limited to one's organisation too.
 			'org_privacy' => $this->orgPrivacy->isOn() ? 'on' : 'off',
+			'org_privacy_step' => $privacy['step'] ?? 'unset',
+			'org_privacy_switch' => $privacy['state'],
 			'rows' => $counts,
 		];
 		$output->writeln((string)json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

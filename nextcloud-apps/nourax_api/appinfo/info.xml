@@ -2,14 +2,18 @@
 <!--
   - SPDX-License-Identifier: AGPL-3.0-or-later
   -
-  - Every background job and occ command is declared here from version 1.0.0 on, so later
-  - features only change code and never need a version bump and `occ upgrade`.
+  - The occ commands and the admin settings below are read from this file whenever they are
+  - used (cached by the file's time), and the routes from appinfo/routes.php, so adding one only
+  - changes code: no version bump and no `occ upgrade`. A new route is matched once the web server
+  - forgets its cached route list (an hour at most; a graceful Apache restart clears it). Background
+  - jobs are registered when the app is installed or upgraded, so all three are declared from
+  - version 1.0.0 on; a new job, table or column needs a version bump and `occ upgrade`.
 -->
 <info>
 	<id>nourax_api</id>
 	<name>Nourax API</name>
 	<summary>Server-to-server API for NoMail and the Nourax admin tools</summary>
-	<description>The NoMail API (health, accounts, virus scan) and the admin-only organisations and teams API of Nourax Workspace. It has no pages; every call needs a server key.</description>
+	<description>The NoMail API (health, accounts, virus scan) and the admin-only organisations and teams API of Nourax Workspace; every API call needs a server key. Its one page is the admin settings section "Nourax Workspace", with the switch for privacy between organisations.</description>
 	<version>1.0.0</version>
 	<licence>agpl</licence>
 	<author>Nourax</author>
@@ -29,5 +33,10 @@
 		<command>OCA\NouraxApi\Command\ServiceAccount</command>
 		<command>OCA\NouraxApi\Command\Status</command>
 		<command>OCA\NouraxApi\Command\Reconcile</command>
+		<command>OCA\NouraxApi\Command\OrgPrivacyCommand</command>
 	</commands>
+	<settings>
+		<admin>OCA\NouraxApi\AdminSettings\PrivacySettings</admin>
+		<admin-section>OCA\NouraxApi\AdminSettings\WorkspaceSection</admin-section>
+	</settings>
 </info>
