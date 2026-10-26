@@ -5,8 +5,8 @@
 // logo or blue without its address or alt text saying so, as the theme previews of the theming app
 // did. The file is one async function expression. run-audit.mjs calls it in the page's frame:
 //   await frame.evaluate(`(${src})(${JSON.stringify(urls)}, {})`)
-// For each address (same origin as the frame, or a data: address) it fetches the picture the way the
-// page does, with the page's cookies, and returns {url, status, type, bytes, sha256, svg, width,
+// For each address (same origin as the frame, or a data: address, which it reads itself) it fetches
+// the picture the way the page does, with the page's cookies, and returns {url, status, type, bytes, sha256, svg, width,
 // height, pixels, opaque, blue}: `sha256` of the bytes (run-audit.mjs compares it with the upstream
 // files in rules.json), and `blue`, the number of pixels within `tolerance` (distance in RGB) of an
 // upstream blue among the `opaque` ones (alpha 128 or more), on a copy at most `maxSide` pixels wide
@@ -38,25 +38,46 @@ async function nouraxScanPictures(urls, options) {
 		// An SVG without a size of its own is drawn at 256x256.
 		return { source: img, width: img.naturalWidth || 256, height: img.naturalHeight || 256, done: () => URL.revokeObjectURL(address) };
 	};
+	// A data: address is read here, not fetched: the pages' content security policy lets pictures
+	// use data: addresses but not fetch() (connect-src).
+	const dataUrl = (url) => {
+		const comma = url.indexOf(',');
+		if (comma < 0) throw new Error('not a data: address');
+		const meta = url.slice(5, comma);
+		const body = url.slice(comma + 1);
+		const type = meta.split(';')[0] || 'text/plain';
+		const bytes = /;base64$/i.test(meta)
+			? Uint8Array.from(atob(decodeURIComponent(body)), (c) => c.charCodeAt(0))
+			: new TextEncoder().encode(decodeURIComponent(body));
+		return { buf: bytes.buffer, type };
+	};
 	const out = [];
 	for (const url of urls) {
 		const r = { url };
 		try {
-			const stop = new AbortController();
-			const timer = setTimeout(() => stop.abort(), opts.timeout);
-			let resp;
-			try {
-				resp = await fetch(url, { credentials: 'same-origin', signal: stop.signal });
-			} finally {
-				clearTimeout(timer);
+			let buf;
+			if (url.startsWith('data:')) {
+				const d = dataUrl(url);
+				buf = d.buf;
+				r.status = 200;
+				r.type = d.type;
+			} else {
+				const stop = new AbortController();
+				const timer = setTimeout(() => stop.abort(), opts.timeout);
+				let resp;
+				try {
+					resp = await fetch(url, { credentials: 'same-origin', signal: stop.signal });
+				} finally {
+					clearTimeout(timer);
+				}
+				r.status = resp.status;
+				if (!resp.ok) {
+					out.push(r);
+					continue;
+				}
+				buf = await resp.arrayBuffer();
+				r.type = resp.headers.get('content-type') || '';
 			}
-			r.status = resp.status;
-			if (!resp.ok) {
-				out.push(r);
-				continue;
-			}
-			const buf = await resp.arrayBuffer();
-			r.type = resp.headers.get('content-type') || '';
 			r.bytes = buf.byteLength;
 			r.sha256 = hex(await crypto.subtle.digest('SHA-256', buf));
 			const head = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 1024)));

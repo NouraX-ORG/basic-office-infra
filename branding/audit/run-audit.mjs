@@ -500,7 +500,11 @@ async function checkPictures(frame, cx, where, res) {
 		} catch (e) {
 			problem(cx, 'pictures', e);
 		}
-		for (const m of measured) PICTURES.set(m.url, { ...m, first: `${cx.lang}/${cx.theme || '-'}/${cx.page}`, drawn: [] });
+		for (const m of measured) {
+			PICTURES.set(m.url, { ...m, first: `${cx.lang}/${cx.theme || '-'}/${cx.page}`, drawn: [] });
+			// A picture the check could not look inside is not known to be clean.
+			if (m.error || (m.status && m.status !== 200 && m.status !== 201)) problem(cx, 'picture ' + pictureLabel(m.url), m.error || `HTTP ${m.status}`);
+		}
 	}
 	for (const p of pictures) {
 		const m = PICTURES.get(p.url);
