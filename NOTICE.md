@@ -37,6 +37,8 @@ this repository.
 | OpenAI and LocalAI integration (`integration_openai`) 5.0 | The Assistant's AI provider, pointed at the Nourax AI relay; **modified**: one line changed so it sends the account id to the relay on every request (`scripts/configure.d/50-assistant.sh`, docs/assistant.md) | AGPL-3.0-or-later | https://github.com/nextcloud/integration_openai |
 | Python 3.13 (official `python` image, Alpine) | Runs the Nourax AI relay (compose service `ai-relay`, `ai-relay/relay.py`, standard library only) | PSF-2.0 (Python); image parts under their own licences | https://github.com/python/cpython |
 | Playwright (`playwright-core`) 1.64.0 | Drives Google Chrome for the browser audit of the branding (`branding/audit/`); a test tool on the admin's PC, not part of the site | Apache-2.0 | https://github.com/microsoft/playwright |
+| Geist font (Latin) | The site's typeface, embedded in the theme CSS (`branding/fonts/`, licence text in `branding/fonts/OFL-Geist.txt`) | SIL OFL 1.1 | https://github.com/vercel/geist-font |
+| Pillow 12.2.0 | Draws our theme previews (`branding/theme-previews/make-previews.py`); a tool on the admin's PC, not part of the site | MIT-CMU | https://github.com/python-pillow/Pillow |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 

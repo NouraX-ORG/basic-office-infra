@@ -339,7 +339,8 @@ sudo flock -w 1800 /run/nourax-deploy.lock bash -c 'git pull -q --ff-only && scr
   `occ nourax_branding:sweep`: `--report` also lists, per app, the notes, every translation that leaves
   the name out or spells it in a way the rules do not know, and every spelling `near_name` found
   ("guessed spelling"); `--dry-run` writes nothing; `--app ID` (more than once if needed) sweeps only
-  those apps.
+  those apps; `--if-needed` sweeps only what changed since the last sweep (what the background job
+  does); `--bump` raises the theming cache buster even when no file changed.
 - `sudo scripts/configure.sh` runs every branding step (`scripts/configure.d/20-branding.sh`), the
   sweep included.
 
@@ -408,10 +409,11 @@ OC_PASS="$(cat /etc/nourax/qa/qa-tN-1.pass)" docker compose exec -T -e OC_PASS -
 ```
 
 The last line that command prints is the app password, so it goes straight into a 0600 file (set
-`umask 077` first). Make the netrc line from that file without showing it. Task 3's accounts `qa-t3-1` and `qa-t3-2` were
-disabled at its end (26 October); a disabled account cannot sign in, so use your own task's QA
-account, or switch one on for the check only (`occ user:enable qa-t3-1`, then
-`occ user:disable qa-t3-1`), as Task 5 did with `qa-t5-4`.
+`umask 077` first). Make the netrc line from that file without showing it. All 17 of Task 3's
+accounts (`qa-t3-1` to `qa-t3-91`) were disabled at its end (26 October); a disabled account cannot
+sign in, so use your own task's QA account, or switch one on for the check only
+(`occ user:enable qa-t3-1`, then `occ user:disable qa-t3-1`), as Task 3's last run and Task 5 (with
+`qa-t5-4`) did.
 
 **What it checks** (every area but `css` by default):
 
@@ -439,13 +441,19 @@ A hit is fixed where it comes from: a spelling in `sweep/rules.json` or a senten
 `sweep/en-overrides.json` and a sweep, a link in `branding/custom.css`, a page in the theme or in the
 nourax_branding app. `allow` in `rules.json` is only for licence text that a licence requires.
 
-**At the end of Task 3** (26 October, `main` at `b4826ec`, right after `sudo scripts/configure.sh`;
-the commit that added this paragraph changes only this page):
+**At the end of Task 3** (26 October 03:42 UTC, `main` at `f4d4088`, `qa-t3-1` switched on for the
+check only and off again straight after; the commit that added this paragraph changes only docs,
+README.md and NOTICE.md). The first run, at `b4826ec` right after `sudo scripts/configure.sh`, gave the
+same counts.
 
 | Where | Result |
 |---|---|
-| The owner's PC, from a fresh copy of `origin/main`: `scripts/check-branding.sh qa-t3-1.netrc --langs en_GB,en,de,ar` | pages 92, l10n 124, theming 92, share 18, dav 4, errors 21 checked: 0 FAIL, 0 SKIP. *RESULT PASS (0 hits)*, exit 0, 30 seconds |
-| The server: `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` | pages 44 checked (37 SKIP, the pages only the owner's address may open), l10n 8713, theming 73, share 18, dav 4, errors 18 (4 SKIP), config 1, mail 4: 0 FAIL. *RESULT PASS (0 hits)*, exit 0, 31 seconds |
+| The owner's PC, from a fresh copy of `origin/main`: `scripts/check-branding.sh qa-t3-1.netrc --langs en_GB,en,de,ar` | pages 92, l10n 124, theming 92, share 18, dav 4, errors 21 checked: 0 FAIL, 0 SKIP. *RESULT PASS (0 hits)*, exit 0, 34 seconds |
+| The server: `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t3-1.netrc --server` | pages 44 checked (37 SKIP, the pages only the owner's address may open), l10n 8713, theming 73, share 18, dav 4, errors 18 (4 SKIP), config 1, mail 4: 0 FAIL. *RESULT PASS (0 hits)*, exit 0, 34 seconds |
+
+A fresh account (`qa-t3-91`, made at 03:25) gave the same PASS from the owner's PC, and a browser
+audit as that account (en_GB, de, ar; light and dark; signed in and signed out) ended *RESULT PASS*:
+56 page scans, 66 pictures looked inside, 0 findings, 0 problems.
 
 ## Browser audit
 
@@ -575,7 +583,9 @@ signed-out pages and the extra passes; its folder is kept with its screenshots.
 
 Every app that is switched on was checked for the upstream name and links in its texts (en_GB
 translations), its shipped scripts and templates, its app-menu entry and its Personal settings.
-Checked on 2026-10-25 against Nextcloud 35.0.2.
+Checked on 2026-10-25 against Nextcloud 35.0.2; the apps Task 5 switched on later (NoNotes, NoForms,
+Nourax AI, search inside files, retention, automatic tagging, suspicious login and the audit log) on
+2026-10-26, from their installed files on the server.
 
 Each app gets one of three answers:
 
@@ -602,6 +612,10 @@ After adding or updating an app, run `scripts/check-branding.sh` and add or chan
 the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_announcements`,
 `survey_client`, `support`, `updatenotification`, `dashboard`, `weather_status`, `app_api`).
 
+`circles` (Teams) and `federation` are off too, since 25 October, but not because of the branding:
+privacy between organisations switches them off (`scripts/configure.d/60-org-privacy.sh`,
+docs/teams.md). Their rows below are for when it is off again; switching an app on sweeps it at once.
+
 ### Kept, with a fix
 
 "Always on" means Nextcloud does not let the app be switched off.
@@ -615,7 +629,7 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 | `settings` | 2.0.0 | 40 texts with the upstream name, the Help page, the developer notice with social links, the "Reasons" PDF button, links to docs.nextcloud.com. | Always on. Text sweep, plus links and assets: our notice in place of the developer notice, `/settings/help` goes to our help page, the PDF answers 404, help links open our help page. |
 | `theming` | 3.0.0 | Accessibility paragraph links; two backgrounds in the picker credited to "Nextcloud GmbH"; the theme previews of Appearance and accessibility (the upstream logo, and a header in the upstream blue); "Adjust the Nextcloud theme"; the upstream blue in the Assistant gradient; app summaries such as "A Calendar app for Nextcloud" in the app manifests. | Always on. Links and assets (CSS, the two backgrounds left out, our own theme previews, blue and manifests fixed where they are made), text sweep. |
 | `dav` | 2.0.0 | The page shown when `/remote.php/dav` is opened in a browser; the sample calendar event; the example contact's website (`www.nextcloud.com`); some error texts. | Always on. Links and assets (our own WebDAV page text, the Nourax example contact), text sweep. |
-| `circles` (Teams) | 35.0.0 | 8 texts, for example "Nextcloud Account". | Text sweep. |
+| `circles` (Teams) | 35.0.0 | 8 texts, for example "Nextcloud Account". | Text sweep. Off while privacy between organisations is on (above). |
 | `calendar` (NoCalendar) | 6.6.3 | 4 texts, mostly the app description. | Text sweep. |
 | `contacts` (NoContacts) | 8.9.2 | 4 texts, mostly the app description. | Text sweep. |
 | `text` | 9.0.1 | "Nextcloud Text", "Nextcloud Assistant". | Text sweep ("Nourax AI" for the Assistant). |
@@ -625,6 +639,9 @@ the Dashboard, Weather status and External Apps (`firstrunwizard`, `nextcloud_an
 | `activity` | 8.0.0 | The app description; Activity texts and e-mails are checked with the e-mail templates. | Text sweep. |
 | `workflowengine` (Flow) | 3.0.0 | People see Personal settings > Flow. The upstream developer link and the app store button show to admins only. | Always on. Text sweep (description). |
 | `groupfolders` (Team folders) | 23.0.1 | 5 texts, on the admin page and in descriptions. | Text sweep. |
+| `assistant` (Nourax AI) | 4.0.0 | 22 texts: "Nextcloud Assistant", "Close Nextcloud Assistant", example prompts such as "Generate a slide deck about the features of Nextcloud", and other apps named "Nextcloud Files", "Nextcloud Calendar" and so on. Its "No provider found" box links docs.nextcloud.com, but only for admins, as does its admin page. | Text sweep ("Nourax AI", the names of *Naming rules*). What the chat says about itself is set by `scripts/configure.d/50-assistant.sh` (docs/assistant.md). The sparkle icon's gradient is drawn in cobalt by `branding/custom.css` (*Browser audit*). |
+| `notes` (NoNotes) | 6.1.0 | 6 texts, for example "Nextcloud Notes", "Error from Nextcloud server: {msg}" and the app description with a link to nextcloud.com. "Mobile apps" store badges for the upstream phone apps (one link names the upstream project); the marker of a note in a shared folder in the upstream blue. A page for copies installed from a development source links apps.nextcloud.com; ours comes from the app store, so it never shows. | Text sweep. `branding/custom.css` and `scripts/configure.d/50-apps.sh` hide the badges, their settings section and its menu entry, and draw the marker in cobalt. |
+| `forms` (NoForms) | 5.4.1 | "Nextcloud Forms" and the app description. | Text sweep. |
 | `files_lock`, `files_pdfviewer`, `viewer`, `cloud_federation_api`, `provisioning_api`, `password_policy` | 35.0.1, 8.0.0, 8.0.0, 2.0.0, 2.0.0, 7.0.0 | One description or admin text each. | Text sweep. `viewer`, `cloud_federation_api` and `provisioning_api` are always on. |
 
 Admin pages only (people never see them; admin pages are not part of the user check):
@@ -638,6 +655,11 @@ Admin pages only (people never see them; admin pages are not part of the user ch
 | `webhook_listeners` | 2.0.0 | "Nextcloud Webhook Support" and other descriptions. | Text sweep. |
 | `files_antivirus` | 6.5.0 | "An antivirus app for Nextcloud" (description). | Text sweep. |
 | `theming_customcss` | 1.22.0 | "Adjust the Nextcloud theme with custom CSS" (description). | Text sweep. |
+| `integration_openai` | 5.0.0 | 2 admin texts and the app description, with links to apps.nextcloud.com, docs.nextcloud.com and nextcloud.com/blog. People see no AI settings: the Personal settings section "Assistant" is hidden (docs/assistant.md). | Text sweep; links hidden by CSS. |
+| `fulltextsearch`, `files_fulltextsearch`, `fulltextsearch_elasticsearch` | 35.0.1, 35.0.0, 35.0.1 | 4 texts of `fulltextsearch` (its descriptions and the admin page's note "… within your Nextcloud") and a link to its wiki on github.com/nextcloud on that page. The results show in the normal search box, which names no upstream. | Text sweep; links hidden by CSS. |
+| `files_retention`, `files_automatedtagging` | 6.0.0, 6.0.1 | The app descriptions ("An app for Nextcloud …"). Their rules are made under Administration > Flow. | Text sweep. |
+| `suspicious_login` | 13.0.0 | The app description. The notification and e-mail people get name no upstream (docs/apps.md). | Text sweep. |
+| `admin_audit` | 2.0.0 | The app description. It has no screen: it writes `audit.log` on the server. | Text sweep. |
 
 ### Kept, nothing to fix
 
@@ -648,7 +670,7 @@ code comments, and links in command-line tools are not shown to people.
 |---|---|---|
 | `files` (NoDrive) | 3.0.0 | Always on. |
 | `photos` | 8.0.0 | |
-| `comments`, `contactsinteraction`, `federation`, `files_downloadlimit`, `files_reminders`, `files_trashbin`, `files_versions` | 2.0.0, 2.0.0, 2.0.0, 5.3.0, 2.0.0, 2.0.0, 2.0.0 | |
+| `comments`, `contactsinteraction`, `federation`, `files_downloadlimit`, `files_reminders`, `files_trashbin`, `files_versions` | 2.0.0, 2.0.0, 2.0.0, 5.3.0, 2.0.0, 2.0.0, 2.0.0 | `federation` is off while privacy between organisations is on. |
 | `oauth2`, `profile`, `sharing` | 2.0.0, 2.0.0, 1.0.4 | Always on. |
 | `recommendations`, `related_resources`, `sharebymail`, `systemtags`, `user_status` | 8.0.0, 6.0.0, 2.0.0, 2.0.0, 2.0.0 | |
 | `twofactor_backupcodes`, `twofactor_totp` | 2.0.0, 17.1.0 | `twofactor_backupcodes` is always on. |
