@@ -15,8 +15,10 @@
 #   on and changes nothing, ORG_PRIVACY=maybe stops with an error and changes nothing;
 # - the admin page's route through Cloudflare: no session -> 401, a normal QA person's app
 #   password (qa-t6b-2) -> 403 for both the GET and the POST, even with the OCS header that
-#   passes the CSRF check. (The page itself, a real switch and the CSRF refusal are checked from
-#   the owner's PC by tests/org-privacy-page.sh: the settings pages are open only there.)
+#   passes the CSRF check; or, once the address is locked to the owner's address in Cloudflare's
+#   rule 1, Cloudflare's block for all of them. (The page itself, a real switch and the CSRF
+#   refusal are checked from the owner's PC by tests/org-privacy-page.sh: the settings pages are
+#   open only there.)
 #
 # It takes the server-change lock. It changes nothing but audit rows (on, already on). Keys and
 # passwords are never printed. Exit 0 when every check passes.
@@ -101,18 +103,37 @@ check "step, ORG_PRIVACY=maybe: stops with the error" "1 yes" "$code $(grep -q "
 check "step runs changed nothing" "$before" "$(same_values)"
 
 log "--- the admin page's route, through Cloudflare"
-check "GET without a session -> 401" 401 "$(curl -sS -H 'Accept: application/json' -o "$T_OUT/r" -w '%{http_code}' "$ROUTE")"
-check "POST without a session -> 401" 401 "$(curl -sS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
-	--data-binary '{"state":"off"}' -o "$T_OUT/r" -w '%{http_code}' "$ROUTE")"
+# The server is not the owner's address: once the address is added to Cloudflare's rule 1 (the
+# owner's yes, docs/teams.md#the-switch), every request from here gets Cloudflare's block page
+# (403) and never reaches the app. Before that, the app answers.
+answer() { # expected-app-status
+	local code
+	code="$(curl -sS -o "$T_OUT/r" -w '%{http_code}' "${@:2}" "$ROUTE")"
+	if [ "$code" = 403 ] && grep -qi 'cloudflare' "$T_OUT/r"; then echo "blocked by Cloudflare"; else echo "$code"; fi
+}
 NETRC="$(qa_netrc "$QA_NORMAL")"
 [ -s "$NETRC" ] || die "$NETRC is missing (tests/privacy-apps.sh makes it)"
 check "$QA_NORMAL is no admin" no "$(occ user:info "$QA_NORMAL" --output=json </dev/null | jq -r 'if (.groups | index("admin")) then "yes" else "no" end')"
-check "GET as $QA_NORMAL (app password) -> 403" 403 "$(curl -sS --netrc-file "$NETRC" -H 'Accept: application/json' \
-	-H 'OCS-APIRequest: true' -o "$T_OUT/r" -w '%{http_code}' "$ROUTE")"
-check "POST off as $QA_NORMAL (app password, OCS header) -> 403" 403 "$(curl -sS -X POST --netrc-file "$NETRC" \
-	-H 'Accept: application/json' -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
-	--data-binary '{"state":"off"}' -o "$T_OUT/r" -w '%{http_code}' "$ROUTE")"
-log "  the answer: $(head -c 200 "$T_OUT/r")"
+first="$(answer 401 -H 'Accept: application/json')"
+if [ "$first" = "blocked by Cloudflare" ]; then
+	log "  the address is locked to the owner's address (Cloudflare rule 1)"
+	check "GET without a session -> blocked" "blocked by Cloudflare" "$first"
+	check "POST without a session -> blocked" "blocked by Cloudflare" "$(answer 401 -X POST -H 'Accept: application/json' \
+		-H 'Content-Type: application/json' --data-binary '{"state":"off"}')"
+	check "POST off as $QA_NORMAL (app password, OCS header) -> blocked" "blocked by Cloudflare" "$(answer 403 -X POST \
+		--netrc-file "$NETRC" -H 'Accept: application/json' -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
+		--data-binary '{"state":"off"}')"
+else
+	check "GET without a session -> 401" 401 "$first"
+	check "POST without a session -> 401" 401 "$(answer 401 -X POST -H 'Accept: application/json' \
+		-H 'Content-Type: application/json' --data-binary '{"state":"off"}')"
+	check "GET as $QA_NORMAL (app password) -> 403" 403 "$(answer 403 --netrc-file "$NETRC" -H 'Accept: application/json' \
+		-H 'OCS-APIRequest: true')"
+	check "POST off as $QA_NORMAL (app password, OCS header) -> 403" 403 "$(answer 403 -X POST --netrc-file "$NETRC" \
+		-H 'Accept: application/json' -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
+		--data-binary '{"state":"off"}')"
+	log "  the answer: $(head -c 200 "$T_OUT/r")"
+fi
 check "after the refused POST: still on, nothing changed" "$before" "$(same_values)"
 
 finish org-privacy-switch

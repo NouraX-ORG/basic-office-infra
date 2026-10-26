@@ -707,6 +707,7 @@ again. Nothing needs a restart: every setting is read on the next request.
 | `sudo tests/org-privacy-switch.sh`, 02:44 | `2694084` | All passed (exit 0): the PHP file's checks, status on with 21 settings and both apps off, a dry run of off listing 18 changes (15 settings, 2 apps, the step) and changing nothing, on while on `unchanged` with its audit row, the configure step's dry run, plain run and wrong value, and 401 / 403 / 403 for the page's address without a session and as `qa-t6b-2`. (The run at 02:43, commit `db1aef6`, had one FAIL, a fault of the test: a check printed jq's own "true" next to its "yes"; fixed in `2694084`.) |
 | `tests/org-privacy-page.sh normal`, 02:47 | `2694084` | All passed: `qa-t6b-admin`, a normal account, signs in (with its new TOTP), the admin page answers 403, the switch's GET and POST with the CSRF token 403 ("Logged in account must be an admin"), signed out. The first run (02:45) set up its TOTP and then could not sign out (the script read a "Log out" link it could not use; it now uses the logout address with the page's token); its session was ended on the server (`occ user:auth-tokens:delete`), as was the half-signed-in one of the run at 02:46, which did not yet answer the TOTP question. |
 | `sudo tests/privacy.sh`, 02:50–02:51, and `sudo tests/privacy-apps.sh`, 02:51–02:54 | `2694084` | Both passed (exit 0); `privacy-apps.sh` 376 PASS, no FAIL, no LEAK line, "no cross-organisation grant left" ([log](../tests/runs/privacy-apps/2026-10-26-0251-after-2694084.log)) |
+| `sudo tests/org-privacy-switch.sh`, 02:57 | `e98cbb9` | 1 FAIL, a fault of the configure step: under `pipefail`, `occ list ... \| grep -q` failed now and then (grep stopped reading early, so occ died of SIGPIPE) and the plain run stopped with "occ nourax_api:org-privacy is missing". Fixed in `777293c` (the list is read whole first). Then three runs in a row, 02:58–02:59: all passed, 66 PASS lines each, the rendered admin form's checks among them |
 | `scripts/check-branding.sh` (owner's PC, as `qa-t6b-2`), 02:57, and `sudo scripts/check-branding.sh --server --only config,mail` | `2694084` | `RESULT PASS (0 hits)` both: pages 92, l10n 124, theming 92, share 18, dav 4, errors 21, config 1, mail 4 checked. (It looks at what normal people see; the admin page itself is checked by `org-privacy-switch.php` with the same rules.) |
 
 **Not run yet: the admin step and a real Off and On.** Adding `qa-t6b-admin` to the admin group
@@ -715,6 +716,16 @@ the session that built the switch, so they wait for the owner's yes. Until then 
 writes (the settings, and disabling and enabling `federation` and `circles`) are checked as dry
 runs and as on while on; the configure step it replaces made the same writes with occ on
 2026-10-25. `qa-t6b-admin` was never in the admin group; it is disabled.
+
+With the owner's yes, the run is three commands. `tests/org-privacy-admin-window.sh` holds the
+server-change lock for the whole window (10 minutes at most) and, at its end, switches privacy on
+(whatever the PC test did), takes `qa-t6b-admin` out of the admin group and disables it again:
+
+```
+ssh … 'cd /opt/nourax/basic-office-infra && sudo tests/org-privacy-admin-window.sh start'
+tests/org-privacy-page.sh admin <creds-dir>     # on the owner's PC; creds: qa-t6b-admin.pass and .totp from /etc/nourax/qa
+ssh … 'cd /opt/nourax/basic-office-infra && sudo tests/org-privacy-admin-window.sh stop && sudo tests/privacy.sh && sudo tests/privacy-apps.sh'
+```
 
 ### The test
 
