@@ -61,7 +61,7 @@ log "--- dry run of off, and on while on"
 before="$(same_values)"
 privacy off --dry-run --by=tests > "$T_OUT/dry.json"
 check "off --dry-run: would switch off" "would_switch_off true" "$(jq -r '"\(.result) \(.dry_run)"' "$T_OUT/dry.json")"
-check "off --dry-run: lists both apps and the step" yes "$(yes_no jq -e '(.changed | index("app federation enabled")) and (.changed | index("app circles enabled")) and (.changed | index("nourax_api org_privacy_step = off"))' "$T_OUT/dry.json")"
+check "off --dry-run: lists both apps and the step" yes "$(jq -e '(.changed | index("app federation enabled")) and (.changed | index("app circles enabled")) and (.changed | index("nourax_api org_privacy_step = off"))' "$T_OUT/dry.json" >/dev/null && echo yes || echo no)"
 # Every setting whose two values differ (15 while NoForms is enabled), both apps and the step.
 check "off --dry-run: each differing setting, 2 apps and the step" \
 	"$(jq '[.items[] | select(.now != "not_used" and .on != .off)] | length + 3' "$T_OUT/status.json")" \

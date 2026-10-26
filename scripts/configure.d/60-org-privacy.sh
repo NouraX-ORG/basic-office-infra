@@ -42,17 +42,19 @@ if [ -n "$org_privacy_want" ]; then
 	occ list nourax_api --raw 2>/dev/null </dev/null | grep -q '^nourax_api:org-privacy ' ||
 		die "occ nourax_api:org-privacy is missing - is the nourax_api app enabled? (60-nomail-api.sh)"
 	org_privacy_args=("$org_privacy_want" --by=configure)
+	org_privacy_mark=""
 	if [ "${ORG_PRIVACY_DRY_RUN:-0}" = 1 ]; then
 		org_privacy_args+=(--dry-run)
+		org_privacy_mark="(dry run) "
 	fi
 	if ! org_privacy_out="$(occ nourax_api:org-privacy "${org_privacy_args[@]}" </dev/null)"; then
 		die "org privacy: switching $org_privacy_want failed: $(jq -r '"\(.error): \(.message)"' <<<"$org_privacy_out" 2>/dev/null || echo "$org_privacy_out")"
 	fi
 	while IFS= read -r org_privacy_line; do
-		log "  ${org_privacy_line}"
+		log "  ${org_privacy_mark}${org_privacy_line}"
 	done < <(jq -r '.changed[]' <<<"$org_privacy_out")
 	log "  org privacy: $(jq -r '"\(.state) (\(.result))"' <<<"$org_privacy_out"); nourax_api: $(occ nourax_api:status </dev/null | jq -r .org_privacy)"
-	unset org_privacy_args org_privacy_out org_privacy_line
+	unset org_privacy_args org_privacy_mark org_privacy_out org_privacy_line
 else
 	log "  org privacy is not switched on - see the top of $(basename "${BASH_SOURCE[0]}") to switch it on"
 fi
