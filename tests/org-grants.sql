@@ -148,6 +148,19 @@ where r.principaluri like 'principals/users/%'
 		or (d.principaluri like 'principals/groups/%' and pg_temp.tested(pg_temp.undav(r.principaluri))
 			and not pg_temp.member(pg_temp.undav(r.principaluri), pg_temp.undav(d.principaluri))));
 
+-- NoCalendar delegates (permissions 1: calendar-proxy-read; 3: calendar-proxy-write): someone who
+-- may read (or change) all of a person's calendars. Undone by the person who named them: the
+-- group's members written again without them.
+select 1, 'cal-proxy', pg_temp.qa(pg_temp.undav(p.owner_id)),
+	case when p.permissions = 1 then 'calendar-proxy-read' else 'calendar-proxy-write' end, p.permissions, '-',
+	pg_temp.undav(p.proxy_id),
+	format('%s names %s as a calendar delegate (%s)', pg_temp.undav(p.owner_id), pg_temp.undav(p.proxy_id),
+		case when p.permissions = 1 then 'read' else 'read and write' end)
+from oc_dav_cal_proxy p
+where p.owner_id like 'principals/users/%' and p.proxy_id like 'principals/users/%'
+	and (pg_temp.tested(pg_temp.undav(p.owner_id)) or pg_temp.tested(pg_temp.undav(p.proxy_id)))
+	and not pg_temp.meets(pg_temp.undav(p.owner_id), pg_temp.undav(p.proxy_id));
+
 -- Out of office: the replacement named while away.
 select 1, 'replacement', pg_temp.qa(a.user_id), a.id, '-', '-', a.replacement_user_id,
 	format('%s names %s as replacement while away', a.user_id, a.replacement_user_id)

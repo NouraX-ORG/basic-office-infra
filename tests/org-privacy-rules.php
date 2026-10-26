@@ -188,7 +188,15 @@ expect('import: a card\'s last editor qa-t6-3 refused', $on->checkDeckImport($a1
 expect('import: an attachment by qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([], $card(['attachments' => [['type' => 'file', 'data' => 'a.txt', 'contentBase64' => 'YQ==', 'createdBy' => 'qa-t6-3']]]))) === $person);
 expect('import: an attachment Deck skips (no content) is not checked', $on->checkDeckImport($a1, null, $import([], $card(['attachments' => [['type' => 'file', 'data' => 'a.txt', 'createdBy' => 'qa-t6-3']]]))) === null);
 expect('import: a share type that is not a number refused', $on->checkDeckImport($a1, null, $import([['type' => 'abc', 'participant' => 'qa-t6-2']])) === $person);
-expect('import: a share without a type is skipped, as by Deck', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-3']])) === null);
+// Deck saves a share without a type (missing or null) with its participant as it is, unmapped.
+expect('import: a share without a type naming qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-3']])) === $person);
+expect('import: a share with a null type naming qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([['type' => null, 'participant' => ['primaryKey' => 'qa-t6-3']]])) === $person);
+expect('import: a share with a null type naming org B refused', $on->checkDeckImport($a1, null, $import([['type' => null, 'participant' => 'org:qa-t6-org-b']])) === $group);
+expect('import: a share with a type Deck has no name for (3) naming qa-t6-3 refused', $on->checkDeckImport($a1, null, $import([['type' => 3, 'participant' => 'qa-t6-3']])) === $person);
+expect('import: a share without a type naming qa-t6-2 or org A allowed', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-2'], ['type' => null, 'participant' => 'org:qa-t6-org-a']])) === null);
+expect('import: a share without a type naming no account is skipped, as by Deck', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-nobody']])) === null);
+expect('import: a share without a type naming the export\'s owner is checked as it is (not mapped)', $on->checkDeckImport($a1, null, $import([['participant' => 'qa-t6-3']], ['owner' => 'qa-t6-3'])) === $person);
+expect('import: a share type false refused', $on->checkDeckImport($a1, null, $import([['type' => false, 'participant' => 'qa-t6-2']])) === $person);
 expect('import: same-organisation people everywhere allowed', $on->checkDeckImport($a1, null, $import($aclOf(0, 'qa-t6-2'), $card(['lastEditor' => 'qa-t6-2', 'assignedUsers' => [['participant' => ['uid' => 'qa-t6-2', 'type' => 0]]], 'comments' => [['id' => 1, 'actorId' => 'qa-t6-2']]]))) === null);
 
 // --- The DAV plugin, on a small DAV server with one shareable collection, as if privacy were on --
@@ -286,6 +294,59 @@ expect('team folder rule for qa-t6-3: 403 for that property, not saved', ($resul
 expect('team folder rule for org B: 403 for that property, not saved', ($result[$rules] ?? null) === 403 && !$saved);
 [$result, $saved] = propPatchWith($people, [$rules => [$rule('user', 'qa-t6-2'), $rule('group', 'org:qa-t6-org-a')]]);
 expect('team folder rules for qa-t6-2 and org A: saved by the app (200)', ($result[$rules] ?? null) === 200 && $saved);
+
+// --- Calendar delegates (OrgPeoplePlugin): a new member of one's calendar-proxy-read or -write
+// group outside the organisation, or an id that does not exist, gets 403 for that property. On a
+// small DAV server at the dav app's address, with a stand-in proxy group of qa-t6-1 that already
+// names qa-t6-3 (an old delegate, never checked again).
+$proxyGroup = new class extends DavNode implements \Sabre\DAVACL\IPrincipal {
+	public function getName() {
+		return 'calendar-proxy-read';
+	}
+	public function getAlternateUriSet() {
+		return [];
+	}
+	public function getPrincipalUrl() {
+		return 'principals/users/qa-t6-1/calendar-proxy-read';
+	}
+	public function getGroupMemberSet() {
+		return ['principals/users/qa-t6-3'];
+	}
+	public function getGroupMembership() {
+		return [];
+	}
+	public function setGroupMemberSet(array $groupMembers) {
+	}
+	public function getDisplayName() {
+		return 'calendar-proxy-read';
+	}
+};
+$delegation = new OrgPeoplePlugin();
+$delegationServer = new DavServer(new SimpleCollection('root', [new SimpleCollection('principals', [
+	new SimpleCollection('users', [new SimpleCollection('qa-t6-1', [$proxyGroup])])])]));
+$delegationServer->setBaseUri('/remote.php/dav/');
+$delegationServer->addPlugin($delegation);
+/** The result code the plugin sets for the member set (403), or null when it leaves it to the server. */
+$delegate = function (string $group, ?array $hrefs) use ($delegation): ?int {
+	$patch = new PropPatch(['{DAV:}group-member-set' => $hrefs === null ? null : new \Sabre\DAV\Xml\Property\Href($hrefs)]);
+	$delegation->propPatch('principals/users/qa-t6-1/' . $group, $patch);
+	return $patch->getResult()['{DAV:}group-member-set'] ?? null;
+};
+$member = fn (string $id): string => '/remote.php/dav/principals/users/' . $id . '/';
+expect('delegate (read): qa-t6-3 is an old member, qa-t6-2 is new: allowed', $delegate('calendar-proxy-read', [$member('qa-t6-3'), $member('qa-t6-2')]) === null);
+expect('delegate (read): a new id that does not exist: 403', $delegate('calendar-proxy-read', [$member('qa-t6-3'), $member('qa-t6-nobody')]) === 403);
+expect('delegate (write): qa-t6-3 (org B): 403', $delegate('calendar-proxy-write', [$member('qa-t6-3')]) === 403);
+expect('delegate (write): QA-T6-3 (capitals): 403', $delegate('calendar-proxy-write', [$member('QA-T6-3')]) === 403);
+expect('delegate (write): qa%2Dt6%2D3 (url-encoded): 403', $delegate('calendar-proxy-write', ['/remote.php/dav/principals/users/qa%2Dt6%2D3']) === 403);
+expect('delegate (write): qa-t6-3 on another host\'s address (the server reads the path): 403', $delegate('calendar-proxy-write', ['https://elsewhere.invalid/remote.php/dav/principals/users/qa-t6-3/']) === 403);
+expect('delegate (write): qa-t6-2 and org B together: 403', $delegate('calendar-proxy-write', [$member('qa-t6-2'), $member('qa-t6-3')]) === 403);
+expect('delegate (write): qa-t6-2 (org A): allowed', $delegate('calendar-proxy-write', [$member('qa-t6-2')]) === null);
+expect('delegate (write): removing every delegate is allowed', $delegate('calendar-proxy-write', null) === null && $delegate('calendar-proxy-write', []) === null);
+expect('delegate: a group, or an address outside the server, is left to the server (it refuses them)',
+	$delegate('calendar-proxy-write', ['/remote.php/dav/principals/groups/org%3Aqa-t6-org-b/', '/elsewhere/principals/users/qa-t6-3']) === null);
+$patch = new PropPatch(['{DAV:}group-member-set' => new \Sabre\DAV\Xml\Property\Href([$member('qa-t6-3')])]);
+$delegation->propPatch('principals/users/qa-t6-1', $patch);
+expect('delegate: the member set of another address is not a delegation (left to the server)', ($patch->getResult()['{DAV:}group-member-set'] ?? null) === null);
 
 // --- The Deck middleware, as if privacy were on ------------------------------------------------
 $deckController = Server::get(IAppManager::class)->isEnabledForAnyone('deck')

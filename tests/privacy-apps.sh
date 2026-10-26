@@ -24,7 +24,8 @@
 # a task list (calendar), and a folder qa-t6b-acl in the team folder; plus "QA t6b transfer" board
 # and form passed to qa-t6b-2 and back. qa-t6b-2 and qa-t6b-3 keep a status message and an out of
 # office for today and tomorrow (set again each run), qa-t6b-4 an out of office with qa-t6b-2 as
-# its replacement. The Text session on the probe file is closed at the end.
+# its replacement, and qa-t6b-2 as its calendar delegate (read). The Text session on the probe file
+# is closed at the end.
 #
 # Leaks are undone. tests/org-grants.sql lists every grant of the test accounts that crosses
 # organisations, as the apps store it. It is read once before the write checks (for anything an
@@ -240,6 +241,15 @@ PY
 set_rules_of() { # uid folder-url rules
 	xml "$1" PROPPATCH "$2" 0 "<?xml version=\"1.0\"?><d:propertyupdate xmlns:d=\"DAV:\" xmlns:nc=\"http://nextcloud.org/ns\"><d:set><d:prop><nc:acl-list>$3</nc:acl-list></d:prop></d:set></d:propertyupdate>"
 }
+# NoCalendar delegates: the members of one's calendar-proxy-read (or -write) group.
+delegate_href() { printf '<d:href>/remote.php/dav/principals/users/%s/</d:href>' "$1"; }
+delegates_of() { # uid group -> the group's members, as <d:href> elements
+	xml "$1" PROPFIND "$DAV_BASE/principals/users/$1/$2/" 0 '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:group-member-set/></d:prop></d:propfind>' >/dev/null
+	{ grep -o '<d:group-member-set>.*</d:group-member-set>' "$T_OUT/r" | grep -o '<d:href>[^<]*</d:href>' | tr -d '\n'; } || true
+}
+set_delegates_of() { # uid group hrefs (the server replaces the group's whole list with it)
+	xml "$1" PROPPATCH "$DAV_BASE/principals/users/$1/$2/" 0 "<?xml version=\"1.0\"?><d:propertyupdate xmlns:d=\"DAV:\"><d:set><d:prop><d:group-member-set>$3</d:group-member-set></d:prop></d:set></d:propertyupdate>"
+}
 # "yes" for a PROPPATCH answer that changed what was asked: 207, and no property refused.
 propstat_ok() { [ "$1" = 207 ] && ! grep -q 'HTTP/1.1 [45]' "$T_OUT/r" && echo yes || echo "no ($1)"; }
 # "yes" for a PROPPATCH refused the WebDAV way: 207 with a 403 propstat, and nothing accepted.
@@ -275,6 +285,9 @@ undo_grant() { # kind undo-by a b c who
 	dav-share)
 		case "$b" in calendar) url="$DAV_BASE/calendars/$by/$c/" ;; *) url="$DAV_BASE/addressbooks/users/$by/$c/" ;; esac
 		[ "$(xml "$by" POST "$url" 0 "<?xml version=\"1.0\" encoding=\"utf-8\"?><o:share xmlns:d=\"DAV:\" xmlns:o=\"http://owncloud.org/ns\"><o:remove><d:href>principal:$who</d:href></o:remove></o:share>")" = 200 ] ;;
+	cal-proxy) # the group's members written again without the delegate ($b: 1 read, 3 read and write)
+		[[ "$a" =~ ^calendar-proxy-(read|write)$ ]] && [[ "$b" =~ ^[13]$ ]] && [[ "$who" =~ ^[A-Za-z0-9@._-]+$ ]] || return 1
+		[ "$(propstat_ok "$(set_delegates_of "$by" "$a" "$(psql_nc -c "select coalesce(string_agg('<d:href>/remote.php/dav/' || proxy_id || '/</d:href>', '' order by id), '') from oc_dav_cal_proxy where owner_id = 'principals/users/$by' and permissions = $b and proxy_id <> 'principals/users/$who'" </dev/null)")")" = yes ] ;;
 	replacement) # set again as it is, without the replacement
 		[ "$(json "$by" POST "$OCS/apps/dav/api/v1/outOfOffice/$by" "$(psql_nc -c "select json_build_object('firstDay', first_day, 'lastDay', last_day, 'status', status, 'message', message) from oc_dav_absence where id = $a" </dev/null)")" = 200 ] ;;
 	notification) [[ "$(call "$by" DELETE "$OCS/apps/notifications/api/v2/notifications/$a")" =~ ^(200|404)$ ]] ;;
@@ -724,6 +737,13 @@ checkw "board import with a card for $QA3 (org B) -> OCS 403" yes \
 	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{assignedUsers: [{participant: {primaryKey: $u, uid: $u, type: 0}}]}')")")")"
 checkw "board import with a comment by $QA3 (org B) -> OCS 403" yes \
 	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(card_import "$(jq -cn --arg u "$QA3" '{comments: [{id: 1, actorType: "users", actorId: $u, message: "QA t6b", creationDateTime: "2026-10-25T12:00:00+00:00"}]}')")")")"
+# A share without a type: Deck saves its participant as it is (a QA probe on 2026-10-26 stored a
+# board share with qa-t6b-3 this way, before the fix).
+checkw "board import shared with $QA3 with a null type -> OCS 403" yes "$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json null "$QA3")")")"
+checkw "board import shared with $QA3 without a type -> OCS 403" yes \
+	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json 0 "$QA3" | jq -c '.data.boards[0].acl[0] |= del(.type)')")")"
+checkw "board import shared with org:$ORG_B with a null type -> OCS 403" yes \
+	"$(ocs1_refused "$(json "$QA1" POST "$DECK/boards/import" "$(import_json null "org:$ORG_B")")")"
 check "board imports: $QA3 got no board from those tries" "$before" "$(imports "$QA3")"
 # An id that is no account here is skipped, by Deck and by the check alike: the board is made
 # without that share. So an import tells an account of another organisation (403, above) from an
@@ -812,6 +832,27 @@ for href in "principal:principals/users/$QA3" "mailto:$QA3@example.invalid" "pri
 	checkw "task list shared with \"$href\" -> 403" 403 "$(dav_share "$href")"
 done
 check "task list shared with $QA2 (org A) -> 200" 200 "$(dav_share "principal:principals/users/$QA2")"
+# Calendar delegates may read (or read and change) all of one's calendars. A new one outside the
+# organisation is refused the WebDAV way for one property (207 with a 403 propstat), and the
+# group's members stay as they were. (Found by the QA round on 2026-10-26; fixed then.)
+for group in calendar-proxy-read calendar-proxy-write; do
+	current="$(delegates_of "$QA1" "$group")"
+	for try in "$QA3|$QA3 (org B)" "${QA3^^}|${QA3^^} (the id in capitals)" "$NOBODY|an id that does not exist"; do
+		IFS='|' read -r who label <<<"$try"
+		checkw "calendar delegate ($group): $label -> 207 with a 403 propstat" yes \
+			"$(propstat_refused "$(set_delegates_of "$QA1" "$group" "$current$(delegate_href "$who")")")"
+	done
+	check "the $group delegates are as before those tries" "$current" "$(delegates_of "$QA1" "$group")"
+done
+current="$(delegates_of "$QA1" calendar-proxy-read)"
+if [[ "$current" != *"/principals/users/$QA2/"* ]]; then
+	check "calendar delegate (read): $QA2 (org A) -> 207, accepted" yes \
+		"$(propstat_ok "$(set_delegates_of "$QA1" calendar-proxy-read "$current$(delegate_href "$QA2")")")"
+fi
+check "$QA2 is a calendar delegate (read) of $QA1 (same organisation)" yes \
+	"$([[ "$(delegates_of "$QA1" calendar-proxy-read)" == *"/principals/users/$QA2/"* ]] && echo yes || echo no)"
+check "$QA3 cannot open $QA1's calendars (403 or 404)" yes \
+	"$(code="$(call "$QA3" PROPFIND "$DAV_BASE/calendars/$QA1/" -H 'Depth: 1')"; [[ "$code" =~ ^40[34]$ ]] && echo yes || echo "no ($code)")"
 # An invitation to someone of another organisation is an email invitation (to their address),
 # never a delivery to their calendar.
 EVENTS="$DAV_BASE/calendars/$QA1/qa-t6b-events/"

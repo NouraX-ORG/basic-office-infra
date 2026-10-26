@@ -127,6 +127,10 @@ class OrgPrivacy {
 	 * Every account must be oneself or share a group, every group must be one's own, and no Teams-app
 	 * team or other server. An account that does not exist here is skipped by Deck and here alike.
 	 * A share whose type is not a number (Deck would cast it, "abc" to a person share) is refused.
+	 * A share without a type (missing or null), or with a number Deck has no name for, is checked
+	 * as a person and as a group: Deck saves its participant as it is, unmapped (it maps only a
+	 * person share), and leaves the missing type to the database (a live import with "type": null
+	 * stored a board share with qa-t6b-3 on 2026-10-26).
 	 *
 	 * @param mixed $config the import config (decoded JSON objects), or null for the web upload
 	 * @param mixed $data the export (decoded JSON objects), or null when it is not a Deck JSON export
@@ -178,20 +182,25 @@ class OrgPrivacy {
 		$asIs = fn (mixed $id): ?string => is_string($id) && $id !== '' ? $this->checkPerson($importer, $id) : null;
 
 		foreach ((array)($board->acl ?? []) as $acl) {
-			if (!is_object($acl) || !isset($acl->type)) {
-				// Without a type Deck cannot save the share.
+			if (!is_object($acl)) {
 				continue;
 			}
-			if (!is_numeric($acl->type)) {
+			// DeckJsonService::getAclList: Acl::setType($aclData->type), then the participant
+			// (participant.primaryKey, or participant itself), mapped only for a person share.
+			$type = $acl->type ?? null;
+			if ($type !== null && !is_numeric($type)) {
 				return self::REFUSED_PERSON;
 			}
 			$participant = $acl->participant ?? null;
 			$id = is_object($participant) ? ($participant->primaryKey ?? null) : $participant;
-			$refusal = match ((int)$acl->type) {
+			$refusal = match ($type === null ? null : (int)$type) {
 				self::DECK_USER => $member($id),
 				self::DECK_GROUP => is_scalar($id) ? $this->checkGroup($importer, (string)$id) : null,
 				self::DECK_REMOTE, self::DECK_CIRCLE => $this->checkOther($importer),
-				default => null,
+				// No type, or a number Deck has no name for: the participant is saved as it is.
+				default => is_scalar($id) && (string)$id !== ''
+					? ($this->checkPerson($importer, (string)$id) ?? $this->checkGroup($importer, (string)$id))
+					: null,
 			};
 			if ($refusal !== null) {
 				return $refusal;

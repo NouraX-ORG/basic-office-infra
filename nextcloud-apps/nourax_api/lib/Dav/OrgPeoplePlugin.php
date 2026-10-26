@@ -27,6 +27,11 @@ declare(strict_types=1);
  * - **Avatars.** avatars/<uid>/<size>.png answers any account's picture, drawn from its name
  *   when none was uploaded. For an account outside the organisation it answers 404, as for an
  *   account that does not exist (the server's /avatar/<uid>/<size> is OrgShareMiddleware's).
+ * - **Calendar delegation.** A PROPPATCH of {DAV:}group-member-set on one's own
+ *   principals/users/<uid>/calendar-proxy-read (or -write) names delegates who may then read (or
+ *   read and change) all of one's calendars (the dav app's PrincipalProxyTrait checks only that
+ *   the account exists). A new delegate outside the organisation, or an id that does not exist,
+ *   gets 403 for that property (in a 207 answer) and nothing is changed.
  *
  * Only while sharing is limited to group members (the org privacy step is on), and only for a
  * signed-in person: the server's own work (no session) and the service account are not limited.
@@ -48,6 +53,8 @@ use Sabre\DAV\PropPatch;
 use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\DAV\Xml\Property\Complex;
+use Sabre\DAV\Xml\Property\Href;
+use Sabre\DAVACL\IPrincipal;
 use Sabre\HTTP\RequestInterface;
 
 class OrgPeoplePlugin extends ServerPlugin {
@@ -55,7 +62,7 @@ class OrgPeoplePlugin extends ServerPlugin {
 
 	/** After every plugin that fills a principal's properties (they run at 100-150). */
 	private const PROPFIND_PRIORITY = 1000;
-	/** Before Photos' and the team folders' own PROPPATCH handlers (default priority 100). */
+	/** Before Photos', the team folders' and the ACL plugin's own PROPPATCH handlers (default priority 100). */
 	private const PROPPATCH_PRIORITY = 50;
 	/** Before the server looks up the node (default priority 100). */
 	private const BEFORE_METHOD_PRIORITY = 50;
@@ -64,6 +71,10 @@ class OrgPeoplePlugin extends ServerPlugin {
 	private const RESOURCETYPE = '{DAV:}resourcetype';
 	private const ALBUM_COLLABORATORS = '{http://nextcloud.org/ns}collaborators';
 	private const TEAM_FOLDER_RULES = '{http://nextcloud.org/ns}acl-list';
+	/** A calendar-proxy group's members (Sabre's DAVACL Plugin::propPatch, an Href list). */
+	private const DELEGATES = '{DAV:}group-member-set';
+	private const DELEGATE_GROUPS = ['calendar-proxy-read', 'calendar-proxy-write'];
+	private const USERS = 'principals/users';
 	/** A comment's mentions (OCA\DAV\Comments\CommentNode::PROPERTY_NAME_MENTION*). */
 	private const COMMENT_MENTIONS = '{http://owncloud.org/ns}mentions';
 	private const COMMENT_MENTION = '{http://owncloud.org/ns}mention';
@@ -164,18 +175,20 @@ class OrgPeoplePlugin extends ServerPlugin {
 	}
 
 	/**
-	 * A new album collaborator or team folder rule outside the person's organisation: that property
-	 * is answered 403 Forbidden, the way WebDAV refuses one property (RFC 4918 9.2: a 207
-	 * multi-status answer with a 403 propstat). Photos' and the team folders' own handlers run after
-	 * this one and skip a property that already has a result (Sabre's PropPatch::handle), and a
-	 * PROPPATCH with a failed property changes nothing at all: every other property in it is
-	 * answered 424 Failed Dependency.
+	 * A new album collaborator, team folder rule or calendar delegate outside the person's
+	 * organisation: that property is answered 403 Forbidden, the way WebDAV refuses one property
+	 * (RFC 4918 9.2: a 207 multi-status answer with a 403 propstat). Photos', the team folders' and
+	 * the ACL plugin's own handlers run after this one and skip a property that already has a
+	 * result (Sabre's PropPatch::handle), and a PROPPATCH with a failed property changes nothing at
+	 * all: every other property in it is answered 424 Failed Dependency.
 	 */
 	public function propPatch(string $path, PropPatch $propPatch): void {
 		$mutations = $propPatch->getMutations();
 		$collaborators = $mutations[self::ALBUM_COLLABORATORS] ?? null;
 		$rules = $mutations[self::TEAM_FOLDER_RULES] ?? null;
-		if ($collaborators === null && !is_array($rules)) {
+		// A removal of every delegate is null: nothing to check.
+		$delegates = $mutations[self::DELEGATES] ?? null;
+		if ($collaborators === null && !is_array($rules) && $delegates === null) {
 			return;
 		}
 		[$privacy, $user] = $this->context();
@@ -188,6 +201,55 @@ class OrgPeoplePlugin extends ServerPlugin {
 		if (is_array($rules) && $this->checkRules($privacy, $user, $path, $rules) !== null) {
 			$propPatch->setResultCode(self::TEAM_FOLDER_RULES, 403);
 		}
+		if ($delegates !== null && $this->checkDelegates($privacy, $user, $path, $delegates) !== null) {
+			$propPatch->setResultCode(self::DELEGATES, 403);
+		}
+	}
+
+	/**
+	 * Calendar delegates: the members of principals/users/<uid>/calendar-proxy-read or -write, read
+	 * as Sabre's ACL plugin and the dav app's PrincipalProxyTrait::setGroupMemberSet read them (each
+	 * href through Server::calculateUri, then principals/users/<name>, the name url-decoded). The
+	 * request sends the group's whole list; only the members it does not have yet are checked, so
+	 * an old delegate (someone who has since left) never blocks the person's other changes. Any
+	 * other href is left to the server, which refuses it.
+	 */
+	private function checkDelegates(OrgPrivacy $privacy, IUser $user, string $path, mixed $value): ?string {
+		$parts = explode('/', trim($path, '/'));
+		if (count($parts) !== 4 || $parts[0] . '/' . $parts[1] !== self::USERS
+			|| !in_array($parts[3], self::DELEGATE_GROUPS, true) || !($value instanceof Href) || $this->server === null) {
+			return null;
+		}
+		$known = [];
+		try {
+			$node = $this->server->tree->getNodeForPath($path);
+			foreach ($node instanceof IPrincipal ? $node->getGroupMemberSet() : [] as $member) {
+				$known[trim((string)$member, '/')] = true;
+			}
+		} catch (\Throwable) {
+			// The server gives its own answer for a group that is not there.
+		}
+		foreach ($value->getHrefs() as $href) {
+			try {
+				$member = $this->server->calculateUri($href);
+			} catch (\Throwable) {
+				// Outside the server's address: the ACL plugin refuses it itself.
+				continue;
+			}
+			if (isset($known[$member])) {
+				continue;
+			}
+			[$prefix, $name] = \Sabre\Uri\split($member);
+			if ($prefix !== self::USERS || $name === null || $name === '') {
+				continue;
+			}
+			$refusal = $privacy->checkReach($user, urldecode($name))
+				?? ($name !== urldecode($name) ? $privacy->checkReach($user, $name) : null);
+			if ($refusal !== null) {
+				return $refusal;
+			}
+		}
+		return null;
 	}
 
 	/** Photos sends the whole list as JSON; only the collaborators it does not have yet are checked. */
