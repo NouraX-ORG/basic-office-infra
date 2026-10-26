@@ -18,11 +18,12 @@ declare(strict_types=1);
  *   id is shown instead of the name.
  * - **Photos albums.** A PROPPATCH of an album's {http://nextcloud.org/ns}collaborators adds any
  *   account or group (Photos' AlbumMapper checks only that it exists). A new collaborator outside
- *   the organisation gets 403 and nothing is changed. Public links stay possible.
+ *   the organisation gets 403 for that property (in a 207 answer) and nothing is changed. Public
+ *   links stay possible.
  * - **Team folder rules.** A PROPPATCH of {http://nextcloud.org/ns}acl-list (a team lead's
  *   advanced permissions) takes a rule for any account or group, and the folder then shows that
  *   person's name. A rule for someone outside the organisation, or for a group the lead is not
- *   in, gets 403.
+ *   in, gets 403 for that property (in a 207 answer) and nothing is changed.
  * - **Avatars.** avatars/<uid>/<size>.png answers any account's picture, drawn from its name
  *   when none was uploaded. For an account outside the organisation it answers 404, as for an
  *   account that does not exist (the server's /avatar/<uid>/<size> is OrgShareMiddleware's).
@@ -40,7 +41,6 @@ use OCP\IUser;
 use OCP\IUserManager;
 use OCP\IUserSession;
 use OCP\Server as ServerContainer;
-use Sabre\DAV\Exception\Forbidden;
 use Sabre\DAV\Exception\NotFound;
 use Sabre\DAV\INode;
 use Sabre\DAV\PropFind;
@@ -164,8 +164,12 @@ class OrgPeoplePlugin extends ServerPlugin {
 	}
 
 	/**
-	 * @throws Forbidden when a new album collaborator or team folder rule is outside the person's
-	 *                   organisation
+	 * A new album collaborator or team folder rule outside the person's organisation: that property
+	 * is answered 403 Forbidden, the way WebDAV refuses one property (RFC 4918 9.2: a 207
+	 * multi-status answer with a 403 propstat). Photos' and the team folders' own handlers run after
+	 * this one and skip a property that already has a result (Sabre's PropPatch::handle), and a
+	 * PROPPATCH with a failed property changes nothing at all: every other property in it is
+	 * answered 424 Failed Dependency.
 	 */
 	public function propPatch(string $path, PropPatch $propPatch): void {
 		$mutations = $propPatch->getMutations();
@@ -178,15 +182,11 @@ class OrgPeoplePlugin extends ServerPlugin {
 		if ($user === null) {
 			return;
 		}
-		$refusal = null;
-		if ($collaborators !== null) {
-			$refusal = $this->checkCollaborators($privacy, $user, $path, $collaborators);
+		if ($collaborators !== null && $this->checkCollaborators($privacy, $user, $path, $collaborators) !== null) {
+			$propPatch->setResultCode(self::ALBUM_COLLABORATORS, 403);
 		}
-		if ($refusal === null && is_array($rules)) {
-			$refusal = $this->checkRules($privacy, $user, $path, $rules);
-		}
-		if ($refusal !== null) {
-			throw new Forbidden($refusal);
+		if (is_array($rules) && $this->checkRules($privacy, $user, $path, $rules) !== null) {
+			$propPatch->setResultCode(self::TEAM_FOLDER_RULES, 403);
 		}
 	}
 

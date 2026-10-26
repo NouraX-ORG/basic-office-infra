@@ -21,6 +21,7 @@ use OC\AppFramework\DependencyInjection\DIContainer;
 use OC\AppFramework\Http\Request;
 use OCA\DAV\DAV\Sharing\IShareable;
 use OCA\DAV\DAV\Sharing\Xml\ShareRequest;
+use OCA\NouraxApi\Dav\OrgPeoplePlugin;
 use OCA\NouraxApi\Dav\OrgSharePlugin;
 use OCA\NouraxApi\Middleware\OrgShareMiddleware;
 use OCA\NouraxApi\Service\MentionNames;
@@ -38,6 +39,7 @@ use OCP\Server;
 use OCP\Share\IManager as IShareManager;
 use Sabre\DAV\Exception\Forbidden;
 use Sabre\DAV\Node as DavNode;
+use Sabre\DAV\PropPatch;
 use Sabre\DAV\Server as DavServer;
 use Sabre\DAV\SimpleCollection;
 use Sabre\HTTP\Request as DavRequest;
@@ -104,28 +106,41 @@ expect('other organisation group refused', $on->checkGroup($a1, 'org:qa-t6-org-b
 expect('the admin group refused (excluded)', $on->checkGroup($a1, 'admin') === $group);
 expect('the service account shares with any team', $on->checkGroup($teams, 'team:qa-t6-team-b1') === null);
 
-// CalDAV and CardDAV share targets
+// CalDAV and CardDAV share targets, read as the server's sharing backend reads them
 $hrefs = [
 	'principal:principals/users/qa-t6-2' => null,
+	'principal:principals/users/qa-t6-2/' => null,
+	'principal:principals/users/qa%2Dt6%2D2' => null,
 	'principal:principals/users/qa-t6-3' => $person,
 	'principal:principals/users/qa-t6-3/' => $person,
 	'principal:principals/users/qa%2Dt6%2D3' => $person,
-	// Without "principal:" the server shares with nobody; refused here all the same.
+	'principal:principals/users/QA-T6-3' => $person,
+	// An id that does not exist gets the same answer as another organisation's account.
+	'principal:principals/users/qa-t6-nobody' => $person,
+	// Targets the server shares with nobody (an address written another way, a mailto: address,
+	// anything else) get the same answer too, whoever they name.
+	'principal:principals//users/qa-t6-3/' => $person,
+	'principal:/principals/users/qa-t6-2' => $person,
 	'/principals/users/qa-t6-3' => $person,
+	'/remote.php/dav/principals/users/qa-t6-2/' => $person,
 	'mailto:qa-t6-3@example.invalid' => $person,
-	'MAILTO:qa-t6-2@example.invalid' => null,
-	'mailto:nobody@example.invalid' => null,
+	'MAILTO:qa-t6-2@example.invalid' => $person,
+	'mailto:nobody@example.invalid' => $person,
+	'principal:principals/system/system' => $person,
+	'principal:principals/users/qa-t6-2/calendar-proxy-write' => $person,
+	'not a principal' => $person,
+	'' => $person,
 	'principal:principals/groups/org%3Aqa-t6-org-b' => $group,
 	'principal:principals/groups/org:qa-t6-org-b' => $group,
 	'principal:principals/groups/org%3Aqa-t6-org-a' => null,
+	'principal:principals/groups/org%3Aqa-t6-no-such-org' => $group,
 	'principal:principals/circles/abc' => $other,
 	'principal:principals/remote-users/cWEtdDYtM0BleGFtcGxlLmludmFsaWQ=' => $other,
-	'principal:principals/system/system' => null,
-	'not a principal' => null,
 ];
 foreach ($hrefs as $href => $want) {
-	expect('dav ' . $href . ' -> ' . ($want ?? 'allowed'), $on->checkDavHref($a1, $href) === $want);
+	expect('dav "' . $href . '" -> ' . ($want ?? 'allowed'), $on->checkDavHref($a1, (string)$href) === $want);
 }
+expect('dav: the service account is never limited', $on->checkDavHref($teams, 'mailto:nobody@example.invalid') === null);
 
 // Deck board shares (type 0 user, 1 group, 6 remote, 7 circle)
 expect('deck: user of org A allowed', $on->checkDeckAcl($a1, 0, 'qa-t6-2') === null);
@@ -219,6 +234,58 @@ expect('dav plugin: share with org B group refused', davShare($plugin, 'principa
 expect('dav plugin: share with qa-t6-2 passes, body kept for the sharing plugin', davShare($plugin, 'principal:principals/users/qa-t6-2') === 'passed');
 expect('dav plugin: not XML is left alone', davShare($plugin, 'principal:principals/users/qa-t6-3', 'text/plain') === 'passed');
 expect('dav plugin: nothing was shared by the plugin itself', $shareable->updates === 0);
+
+// --- Album collaborators and team folder rules (OrgPeoplePlugin): a refused property is answered
+// 403 inside a 207 answer, the app's own handler (registered after it, as Photos' and the team
+// folders' are) never runs, and nothing in that PROPPATCH is saved.
+$people = new OrgPeoplePlugin();
+/** @return array{0: array<string, int>, 1: bool} the result codes, and whether the app's handler saved */
+function propPatchWith(OrgPeoplePlugin $people, array $mutations): array {
+	$patch = new PropPatch($mutations);
+	$people->propPatch('photos/qa-t6-1/albums/qa', $patch);
+	$saved = false;
+	$patch->handle(array_keys($mutations), function (array $values) use (&$saved): array {
+		$saved = true;
+		return array_fill_keys(array_keys($values), 200);
+	});
+	$patch->commit();
+	return [$patch->getResult(), $saved];
+}
+$collaborators = '{http://nextcloud.org/ns}collaborators';
+$rules = '{http://nextcloud.org/ns}acl-list';
+$album = fn (string $id, int $type): array => [$collaborators => (string)json_encode([['id' => $id, 'type' => $type]])];
+/** A team folder rule as the team folders app parses it (only its user mapping is read). */
+$rule = fn (string $type, string $id): object => new class($type, $id) {
+	public function __construct(private string $type, private string $id) {
+	}
+	public function getUserMapping(): object {
+		return new class($this->type, $this->id) {
+			public function __construct(private string $type, private string $id) {
+			}
+			public function getType(): string {
+				return $this->type;
+			}
+			public function getId(): string {
+				return $this->id;
+			}
+		};
+	}
+};
+[$result, $saved] = propPatchWith($people, $album('qa-t6-3', 0));
+expect('album collaborator qa-t6-3: 403 for that property, not saved', ($result[$collaborators] ?? null) === 403 && !$saved);
+[$result, $saved] = propPatchWith($people, $album('org:qa-t6-org-b', 1));
+expect('album collaborator org B: 403 for that property, not saved', ($result[$collaborators] ?? null) === 403 && !$saved);
+[$result, $saved] = propPatchWith($people, $album('qa-t6-2', 0));
+expect('album collaborator qa-t6-2: saved by the app (200)', ($result[$collaborators] ?? null) === 200 && $saved);
+[$result, $saved] = propPatchWith($people, $album('qa-t6-3', 0) + ['{DAV:}displayname' => 'x']);
+expect('a refused collaborator with another property: 403, the other 424, nothing saved',
+	($result[$collaborators] ?? null) === 403 && ($result['{DAV:}displayname'] ?? null) === 424 && !$saved);
+[$result, $saved] = propPatchWith($people, [$rules => [$rule('user', 'qa-t6-3')]]);
+expect('team folder rule for qa-t6-3: 403 for that property, not saved', ($result[$rules] ?? null) === 403 && !$saved);
+[$result, $saved] = propPatchWith($people, [$rules => [$rule('group', 'org:qa-t6-org-b')]]);
+expect('team folder rule for org B: 403 for that property, not saved', ($result[$rules] ?? null) === 403 && !$saved);
+[$result, $saved] = propPatchWith($people, [$rules => [$rule('user', 'qa-t6-2'), $rule('group', 'org:qa-t6-org-a')]]);
+expect('team folder rules for qa-t6-2 and org A: saved by the app (200)', ($result[$rules] ?? null) === 200 && $saved);
 
 // --- The Deck middleware, as if privacy were on ------------------------------------------------
 $deckController = Server::get(IAppManager::class)->isEnabledForAnyone('deck')

@@ -247,40 +247,47 @@ class OrgPrivacy {
 	}
 
 	/**
-	 * A CalDAV or CardDAV share target, as the sharing request names it:
-	 * principal:principals/users/<uid>, principal:principals/groups/<gid>, mailto:<address>,
-	 * principal:principals/circles/... or principal:principals/remote-users/...
+	 * A CalDAV or CardDAV share target, as the sharing request names it. It is read exactly as the
+	 * dav server's sharing backend reads it (OCA\DAV\DAV\Sharing\Backend::updateShares, through
+	 * Principal::findByUri and RemoteUserPrincipalBackend::findByUri of server 35): only
+	 * "principal:" followed by principals/users/<uid>, principals/groups/<gid>,
+	 * principals/circles/<id> or principals/remote-users/<id>, split with Sabre\Uri\split (a trailing
+	 * slash is allowed, an extra or leading one is not) and the name url-decoded. A mailto: target
+	 * or any other text shares with nobody there.
 	 *
-	 * @return ?string why $sharer may not share with it, or null when allowed (or not a target the
-	 *                 server would accept anyway)
+	 * While privacy is on, a target is allowed only when it is a person who shares a group with the
+	 * sharer (or the sharer), or a group the sharer is in. Everything else gets a refusal: another
+	 * organisation, an account or group that does not exist, a team, another server, and every
+	 * target the server would not share with anyway. So the answer is the same 403 for all of them,
+	 * and never tells whether an id exists.
+	 *
+	 * @return ?string why $sharer may not share with it, or null when allowed
 	 */
 	public function checkDavHref(IUser $sharer, string $href): ?string {
-		if (!$this->isOn()) {
+		if (!$this->isOn() || $this->exempt($sharer)) {
 			return null;
 		}
-		$href = trim($href);
-		if (strncasecmp($href, 'mailto:', 7) === 0) {
-			// The dav server shares with the one account that has this address, if there is one.
-			$users = $this->userManager->getByEmail(substr($href, 7));
-			return count($users) === 1 ? $this->checkPerson($sharer, $users[0]->getUID()) : null;
+		if (!str_starts_with($href, 'principal:')) {
+			return self::REFUSED_PERSON;
 		}
-		if (str_starts_with($href, 'principal:')) {
-			$href = substr($href, strlen('principal:'));
-		}
-		// Split the way the dav server's principal backend does (Sabre\Uri\split: extra and
-		// trailing slashes are allowed), so a target is read here exactly as it will be shared.
-		[$prefix, $name] = \Sabre\Uri\split(ltrim($href, '/'));
-		if ($prefix === null || $name === null || $name === '') {
-			return null;
+		[$prefix, $name] = \Sabre\Uri\split(substr($href, strlen('principal:')));
+		if ($name === null || $name === '') {
+			return self::REFUSED_PERSON;
 		}
 		// The dav server reads the name url-decoded (and tries it as it is for groups).
 		$decoded = urldecode($name);
 		return match ($prefix) {
-			'principals/users' => $this->checkPerson($sharer, $decoded),
-			'principals/groups' => $this->checkGroup($sharer, $this->groupManager->groupExists($decoded) ? $decoded : $name),
+			'principals/users' => $this->checkReach($sharer, $decoded),
+			'principals/groups' => $this->checkDavGroup($sharer, $decoded, $name),
 			'principals/circles', 'principals/remote-users' => $this->checkOther($sharer),
-			default => null,
+			default => self::REFUSED_PERSON,
 		};
+	}
+
+	/** A group share target: a group the sharer is in; one that does not exist is refused too. */
+	private function checkDavGroup(IUser $sharer, string $decoded, string $name): ?string {
+		$gid = $this->groupManager->groupExists($decoded) ? $decoded : $name;
+		return $this->groupManager->groupExists($gid) ? $this->checkGroup($sharer, $gid) : self::REFUSED_GROUP;
 	}
 
 	/**

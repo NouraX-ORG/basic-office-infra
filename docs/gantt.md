@@ -30,11 +30,29 @@ hidden.
   are in. Shares are for signed-in accounts only; leaving the group or team removes access at once.
 - **Admins see every project.** Members of the `admin` group get full rights on all projects. This
   is built into the app and cannot be switched off.
-- **Group shares follow the server's sharing rules**: group sharing must be allowed, and if
+- **Group shares follow the server's sharing rules**: group sharing must be allowed, and while
   "only share with members of your own groups" is on, a person can only share with groups they are
-  in. Today both rules are at the server defaults (group sharing on, "only own groups" off, account
-  search open). These settings belong to the whole server, so this task did not change them.
-  Sharing with a single person is not limited to one's own groups by the app.
+  in. These settings belong to the whole server; they are part of privacy between organisations
+  (below).
+- **Privacy between organisations is on** (since 2026-10-25 10:08; [docs/teams.md](teams.md#privacy-between-organisations)).
+  The server's sharing rules are then "only own groups" and account search limited to one's own
+  groups. For NoGantt this means:
+  - **Finding people.** NoGantt's people searches (the share dialog's sharee search, the resource
+    people search and the email match of an import) use the server's search, so they find only
+    people who share an organisation or team group with the person searching; the email match of
+    anyone else answers `not_found`.
+  - **Sharing a project.** NoGantt itself checks only that an account exists. nourax_api's
+    `OrgShareMiddleware` checks every new project share (`POST .../projects/{id}/shares`): a person
+    of another organisation, an id that does not exist, a group one is not in, and a team of the
+    Teams app all get **403** "Sharing is only allowed with people of your organisation." (for a
+    group: "... with your own organisation and teams."), and nothing is shared. Sharing with a
+    person or group of one's own organisation works as before (201).
+  - **Planning people (resources).** A resource that stands for an account (`POST /resources`,
+    `PUT /resources/{id}` with a `uid`) gets the same 403 for an account of another organisation, so
+    it never shows that person's name or sends them notifications.
+  - If privacy is switched off again ([docs/teams.md](teams.md#switching-it-on-and-back-off)),
+    everyone on the server can find and share with everyone again, in NoGantt as everywhere else.
+  `tests/privacy-apps.sh` checks all of this as the demo and QA accounts.
 - **No public project links.** The project, its tasks and its files are never reachable without
   signing in.
 - **Calendar subscription links are the one exception.** They work without signing in, so that

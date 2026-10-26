@@ -10,7 +10,9 @@ declare(strict_types=1);
  * as principal:principals/users/<uid>, and any group named as principal:principals/groups/<gid>,
  * even when sharing is limited to group members. This plugin reads the document first and answers
  * 403 when one of the new sharees is outside the person's organisation (OrgPrivacy), so nothing is
- * shared. Removing a share (<oc:remove>) is always allowed.
+ * shared. A new sharee the server would not share with anyway (an id that does not exist, a
+ * mailto: address, an address written another way) gets the same 403, so the answer never tells
+ * whether an account exists. Removing a share (<oc:remove>) is always allowed.
  *
  * - Only while sharing is limited to group members (the org privacy step is on); otherwise it does
  *   nothing.

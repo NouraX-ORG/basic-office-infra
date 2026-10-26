@@ -1,0 +1,375 @@
+cb8dcb7
+[2026-10-25 22:56:55] waiting for /run/nourax-deploy.lock
+[2026-10-25 22:59:59] base URL: https://drive.nourax.org
+[2026-10-25 23:00:04] PASS PUT org qa-t6b-org-a -> 200
+[2026-10-25 23:00:04] PASS PUT org qa-t6b-org-a: no failed step
+[2026-10-25 23:00:05] PASS PUT org qa-t6b-org-b -> 200
+[2026-10-25 23:00:05] PASS PUT org qa-t6b-org-b: no failed step
+[2026-10-25 23:00:08] PASS PUT team qa-t6b-org-a/qa-t6b-team-a1 -> 200
+[2026-10-25 23:00:08] PASS PUT team qa-t6b-org-a/qa-t6b-team-a1: no failed step
+[2026-10-25 23:00:09] PASS PUT team qa-t6b-org-b/qa-t6b-team-b1 -> 200
+[2026-10-25 23:00:09] PASS PUT team qa-t6b-org-b/qa-t6b-team-b1: no failed step
+[2026-10-25 23:00:13] PASS PUT person qa-t6b-4 -> 200
+[2026-10-25 23:00:13] PASS PUT person qa-t6b-4: no failed step
+[2026-10-25 23:00:13] PASS qa-t6b-4 signs in (PROPFIND 207)
+[2026-10-25 23:00:17] PASS PUT person qa-t6b-2 -> 200
+[2026-10-25 23:00:17] PASS PUT person qa-t6b-2: no failed step
+[2026-10-25 23:00:18] PASS qa-t6b-2 signs in (PROPFIND 207)
+[2026-10-25 23:00:22] PASS PUT person qa-t6b-3 -> 200
+[2026-10-25 23:00:22] PASS PUT person qa-t6b-3: no failed step
+[2026-10-25 23:00:23] PASS qa-t6b-3 signs in (PROPFIND 207)
+[2026-10-25 23:00:24] PASS team A1 has a team folder, and qa-t6b-4 leads it
+[2026-10-25 23:00:26] PASS qa-t6b-4 saves qa-t6b-privacy/probe.txt (201 or 204)
+[2026-10-25 23:00:27] PASS qa-t6b-4 saves qa-t6b-privacy/transfer-me.txt (201 or 204)
+[2026-10-25 23:00:28] PASS the probe file and the Sales plan have file ids
+[2026-10-25 23:00:29] PASS demo-a06 (two teams) is offered both teams and the organisation
+[2026-10-25 23:00:29] PASS demo-a01 (one team) is offered Sales and the organisation only
+[2026-10-25 23:00:30] PASS demo-b06 (two teams) is offered both teams and the organisation
+[2026-10-25 23:00:33] PASS demo-a06 has both team folders, calendars, boards and books
+[2026-10-25 23:00:37] PASS demo-a01 has Sales only (not Engineering)
+[2026-10-25 23:00:40] PASS demo-b06 has both team folders, calendars, boards and books
+[2026-10-25 23:00:41] PASS demo-a06 finds demo-a01 (Sales) and demo-a12 (Engineering)
+[2026-10-25 23:00:41] PASS demo-a01 sharees (file) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:42] PASS demo-a01 sharees (calendar) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:42] PASS demo-a01 sharees (deck) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:42] PASS demo-a01 sharees (principals) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:43] PASS demo-a01 sharees (file) "Karim": nobody of the other organisation
+[2026-10-25 23:00:43] PASS demo-a01 sharees (calendar) "Karim": nobody of the other organisation
+[2026-10-25 23:00:44] PASS demo-a01 sharees (deck) "Karim": nobody of the other organisation
+[2026-10-25 23:00:44] PASS demo-a01 sharees (principals) "Karim": nobody of the other organisation
+[2026-10-25 23:00:44] PASS demo-a01 sharees (file) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:45] PASS demo-a01 sharees (calendar) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:45] PASS demo-a01 sharees (deck) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:45] PASS demo-a01 sharees (principals) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:46] PASS demo-a01 sharees (file) "demo-b01@demo-beta.invalid": nobody of the other organisation
+[2026-10-25 23:00:46] PASS demo-a01 sharees (calendar) "demo-b01@demo-beta.invalid": nobody of the other organisation
+[2026-10-25 23:00:47] PASS demo-a01 sharees (deck) "demo-b01@demo-beta.invalid": nobody of the other organisation
+[2026-10-25 23:00:47] PASS demo-a01 sharees (principals) "demo-b01@demo-beta.invalid": nobody of the other organisation
+[2026-10-25 23:00:47] PASS demo-a01 sharees (file) "Karim (Marketing)": nobody of the other organisation
+[2026-10-25 23:00:48] PASS demo-a01 sharees (calendar) "Karim (Marketing)": nobody of the other organisation
+[2026-10-25 23:00:48] PASS demo-a01 sharees (deck) "Karim (Marketing)": nobody of the other organisation
+[2026-10-25 23:00:49] PASS demo-a01 sharees (principals) "Karim (Marketing)": nobody of the other organisation
+[2026-10-25 23:00:49] PASS demo-a01 sharees (file) "team:demo-beta": nobody of the other organisation
+[2026-10-25 23:00:49] PASS demo-a01 sharees (calendar) "team:demo-beta": nobody of the other organisation
+[2026-10-25 23:00:50] PASS demo-a01 sharees (deck) "team:demo-beta": nobody of the other organisation
+[2026-10-25 23:00:50] PASS demo-a01 sharees (principals) "team:demo-beta": nobody of the other organisation
+[2026-10-25 23:00:50] PASS demo-a01 sharees "demo-a02" finds demo-a02 (same organisation)
+[2026-10-25 23:00:51] PASS demo-a01 sharees_recommended: nobody of the other organisation
+[2026-10-25 23:00:51] PASS demo-a01 autocomplete (files) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:51] PASS demo-a01 autocomplete (files) "Karim": nobody of the other organisation
+[2026-10-25 23:00:52] PASS demo-a01 autocomplete (files) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:52] PASS demo-a01 autocomplete (comments) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:52] PASS demo-a01 autocomplete (comments) "Karim": nobody of the other organisation
+[2026-10-25 23:00:53] PASS demo-a01 autocomplete (comments) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:53] PASS demo-a01 autocomplete (deck-card) "demo-b": nobody of the other organisation
+[2026-10-25 23:00:54] PASS demo-a01 autocomplete (deck-card) "Karim": nobody of the other organisation
+[2026-10-25 23:00:54] PASS demo-a01 autocomplete (deck-card) "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:54] PASS demo-a01 contacts menu "demo-b": nobody of the other organisation
+[2026-10-25 23:00:55] PASS demo-a01 contacts menu "Karim": nobody of the other organisation
+[2026-10-25 23:00:55] PASS demo-a01 contacts menu "demo-b01": nobody of the other organisation
+[2026-10-25 23:00:55] PASS demo-a01 contacts menu "": nobody of the other organisation
+[2026-10-25 23:00:56] PASS demo-a01 contacts menu: demo-b01's card by id -> 404
+[2026-10-25 23:00:56] PASS demo-a01 hovercard of demo-b01 -> 404
+[2026-10-25 23:00:56] PASS demo-a01 hovercard of demo-a02 -> 200 (same organisation)
+[2026-10-25 23:00:57] PASS demo-a01 online statuses: nobody of the other organisation
+tests/privacy-apps.sh: line 291: warning: command substitution: ignored null byte in input
+[2026-10-25 23:00:57] FAIL demo-a01 avatar of demo-b01 -> 404 [], as for an account that does not exist: expected '404 []', got '200 <a PNG picture (1236 bytes), left out of this copy>'
+[2026-10-25 23:00:57] FAIL demo-a01 dark avatar of demo-b01 -> 404: expected '404', got '200'
+[2026-10-25 23:00:58] FAIL demo-a01 avatar of demo-b01 with guestFallback: the guest picture of the id: expected 'yes', got 'no (200)'
+[2026-10-25 23:00:59] FAIL demo-a01 DAV avatar of demo-b01 -> 404: expected '404', got '200'
+[2026-10-25 23:01:00] PASS demo-a01 avatar and DAV avatar of demo-a02 -> 200 (same organisation)
+[2026-10-25 23:01:00] FAIL demo-a01 appointments page of demo-b01: no name: expected '', got 'Karim (Marketing)'
+[2026-10-25 23:01:00] FAIL appointments page of demo-b01, not signed in: no name: expected '', got 'Karim (Marketing)'
+[2026-10-25 23:01:01] PASS demo-a01 appointments page of demo-a02: the name (same organisation)
+[2026-10-25 23:01:01] PASS demo-a01 account API for demo-b01 is refused (404)
+[2026-10-25 23:01:02] PASS demo-a01 calendar attendees "demo-b": nobody of the other organisation
+[2026-10-25 23:01:02] PASS demo-a01 calendar attendees "Karim": nobody of the other organisation
+[2026-10-25 23:01:03] PASS demo-a01 calendar attendees "demo-b01@demo-beta.invalid": nobody of the other organisation
+[2026-10-25 23:01:03] PASS demo-a01 calendar attendees "Ben" finds Ben (Sales) (same organisation)
+[2026-10-25 23:01:03] PASS demo-a01 calendar photo of demo-b01@demo-beta.invalid: none
+[2026-10-25 23:01:04] PASS demo-a01 calendar contact group members: nobody of the other organisation
+[2026-10-25 23:01:04] PASS demo-a01 principal search "Karim": nobody
+[2026-10-25 23:01:05] PASS demo-a01 principal search "demo-b01@demo-beta.invalid": nobody
+[2026-10-25 23:01:06] PASS demo-a01 free/busy of demo-b01@demo-beta.invalid: not found, no times
+[2026-10-25 23:01:07] PASS demo-a01 reads demo-b01's address: no name, email address or groups
+[2026-10-25 23:01:07] PASS demo-a01 reads demo-a02's address: the name (same organisation)
+[2026-10-25 23:01:07] PASS demo-a01 reads the other organisation's group address: no name
+[2026-10-25 23:01:08] PASS demo-a01 reads its own organisation's group address: the name
+[2026-10-25 23:01:08] PASS demo-a01 expand-property of demo-b01: no names
+[2026-10-25 23:01:08] PASS demo-a01 reads the team calendars' owner (the service account): its name
+[2026-10-25 23:01:09] PASS demo-a01 address books: own organisation's only, no system book
+[2026-10-25 23:01:09] PASS demo-a01 directory: 12 cards, all of its own organisation
+[2026-10-25 23:01:09] PASS demo-a01 ONLYOFFICE people list (mention): own organisation only
+[2026-10-25 23:01:10] PASS demo-a01 ONLYOFFICE people list (protect): own organisation only
+[2026-10-25 23:01:10] FAIL demo-a01 ONLYOFFICE names for [demo-b01, demo-a02]: only Ben (Sales): expected 'yes yes', got 'no: demo-b01 yes'
+[2026-10-25 23:01:11] PASS demo-a01 team folder people search "demo": nobody of the other organisation
+[2026-10-25 23:01:12] PASS demo-a01 team folder people search "Karim": nobody of the other organisation
+[2026-10-25 23:01:13] PASS demo-a01 team folder people search "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:14] PASS demo-a01 activity: nobody of the other organisation
+[2026-10-25 23:01:14] search providers: appstore fulltextsearch notes files systemtags comments search-deck-card-board search-deck-comment contacts calendar tasks nc_gantt forms settings 
+[2026-10-25 23:01:15] PASS demo-a01 search appstore "Karim": nobody of the other organisation
+[2026-10-25 23:01:15] PASS demo-a01 search appstore "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:15] PASS demo-a01 search appstore "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:16] PASS demo-a01 search fulltextsearch "Karim": nobody of the other organisation
+[2026-10-25 23:01:16] PASS demo-a01 search fulltextsearch "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:16] PASS demo-a01 search fulltextsearch "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:17] PASS demo-a01 search notes "Karim": nobody of the other organisation
+[2026-10-25 23:01:17] PASS demo-a01 search notes "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:17] PASS demo-a01 search notes "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:18] PASS demo-a01 search files "Karim": nobody of the other organisation
+[2026-10-25 23:01:18] PASS demo-a01 search files "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:18] PASS demo-a01 search files "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:19] PASS demo-a01 search systemtags "Karim": nobody of the other organisation
+[2026-10-25 23:01:19] PASS demo-a01 search systemtags "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:19] PASS demo-a01 search systemtags "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:19] PASS demo-a01 search comments "Karim": nobody of the other organisation
+[2026-10-25 23:01:20] PASS demo-a01 search comments "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:20] PASS demo-a01 search comments "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:20] PASS demo-a01 search search-deck-card-board "Karim": nobody of the other organisation
+[2026-10-25 23:01:21] PASS demo-a01 search search-deck-card-board "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:21] PASS demo-a01 search search-deck-card-board "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:21] PASS demo-a01 search search-deck-comment "Karim": nobody of the other organisation
+[2026-10-25 23:01:22] PASS demo-a01 search search-deck-comment "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:22] PASS demo-a01 search search-deck-comment "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:23] PASS demo-a01 search contacts "Karim": nobody of the other organisation
+[2026-10-25 23:01:23] PASS demo-a01 search contacts "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:23] PASS demo-a01 search contacts "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:24] PASS demo-a01 search calendar "Karim": nobody of the other organisation
+[2026-10-25 23:01:24] PASS demo-a01 search calendar "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:24] PASS demo-a01 search calendar "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:25] PASS demo-a01 search tasks "Karim": nobody of the other organisation
+[2026-10-25 23:01:25] PASS demo-a01 search tasks "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:25] PASS demo-a01 search tasks "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:26] PASS demo-a01 search nc_gantt "Karim": nobody of the other organisation
+[2026-10-25 23:01:26] PASS demo-a01 search nc_gantt "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:26] PASS demo-a01 search nc_gantt "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:27] PASS demo-a01 search forms "Karim": nobody of the other organisation
+[2026-10-25 23:01:27] PASS demo-a01 search forms "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:28] PASS demo-a01 search forms "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:28] PASS demo-a01 search settings "Karim": nobody of the other organisation
+[2026-10-25 23:01:29] PASS demo-a01 search settings "demo-b01": nobody of the other organisation
+[2026-10-25 23:01:29] PASS demo-a01 search settings "demo-beta": nobody of the other organisation
+[2026-10-25 23:01:29] PASS demo-a01 NoGantt sharees "demo-b": nobody
+[2026-10-25 23:01:30] PASS demo-a01 NoGantt people search "demo-b": nobody
+[2026-10-25 23:01:30] PASS demo-a01 NoGantt sharees "Karim": nobody
+[2026-10-25 23:01:30] PASS demo-a01 NoGantt people search "Karim": nobody
+[2026-10-25 23:01:31] PASS demo-a01 NoGantt sharees "demo-b01": nobody
+[2026-10-25 23:01:31] PASS demo-a01 NoGantt people search "demo-b01": nobody
+[2026-10-25 23:01:31] PASS demo-a01 NoGantt email match demo-b01@demo-beta.invalid: not_found
+[2026-10-25 23:01:32] PASS demo-a01 NoGantt email match demo-a02 (same organisation): found
+[2026-10-25 23:01:32] PASS demo-b01 sharees (file) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:32] PASS demo-b01 sharees (calendar) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:33] PASS demo-b01 sharees (deck) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:33] PASS demo-b01 sharees (principals) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:34] PASS demo-b01 sharees (file) "Amina": nobody of the other organisation
+[2026-10-25 23:01:34] PASS demo-b01 sharees (calendar) "Amina": nobody of the other organisation
+[2026-10-25 23:01:34] PASS demo-b01 sharees (deck) "Amina": nobody of the other organisation
+[2026-10-25 23:01:35] PASS demo-b01 sharees (principals) "Amina": nobody of the other organisation
+[2026-10-25 23:01:35] PASS demo-b01 sharees (file) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:35] PASS demo-b01 sharees (calendar) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:36] PASS demo-b01 sharees (deck) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:36] PASS demo-b01 sharees (principals) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:36] PASS demo-b01 sharees (file) "demo-a01@demo-alpha.invalid": nobody of the other organisation
+[2026-10-25 23:01:37] PASS demo-b01 sharees (calendar) "demo-a01@demo-alpha.invalid": nobody of the other organisation
+[2026-10-25 23:01:37] PASS demo-b01 sharees (deck) "demo-a01@demo-alpha.invalid": nobody of the other organisation
+[2026-10-25 23:01:37] PASS demo-b01 sharees (principals) "demo-a01@demo-alpha.invalid": nobody of the other organisation
+[2026-10-25 23:01:38] PASS demo-b01 sharees (file) "Amina (Sales)": nobody of the other organisation
+[2026-10-25 23:01:38] PASS demo-b01 sharees (calendar) "Amina (Sales)": nobody of the other organisation
+[2026-10-25 23:01:38] PASS demo-b01 sharees (deck) "Amina (Sales)": nobody of the other organisation
+[2026-10-25 23:01:39] PASS demo-b01 sharees (principals) "Amina (Sales)": nobody of the other organisation
+[2026-10-25 23:01:39] PASS demo-b01 sharees (file) "team:demo-alpha": nobody of the other organisation
+[2026-10-25 23:01:40] PASS demo-b01 sharees (calendar) "team:demo-alpha": nobody of the other organisation
+[2026-10-25 23:01:40] PASS demo-b01 sharees (deck) "team:demo-alpha": nobody of the other organisation
+[2026-10-25 23:01:40] PASS demo-b01 sharees (principals) "team:demo-alpha": nobody of the other organisation
+[2026-10-25 23:01:41] PASS demo-b01 sharees "demo-b02" finds demo-b02 (same organisation)
+[2026-10-25 23:01:41] PASS demo-b01 sharees_recommended: nobody of the other organisation
+[2026-10-25 23:01:41] PASS demo-b01 autocomplete (files) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:42] PASS demo-b01 autocomplete (files) "Amina": nobody of the other organisation
+[2026-10-25 23:01:42] PASS demo-b01 autocomplete (files) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:42] PASS demo-b01 autocomplete (comments) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:43] PASS demo-b01 autocomplete (comments) "Amina": nobody of the other organisation
+[2026-10-25 23:01:43] PASS demo-b01 autocomplete (comments) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:43] PASS demo-b01 autocomplete (deck-card) "demo-a": nobody of the other organisation
+[2026-10-25 23:01:44] PASS demo-b01 autocomplete (deck-card) "Amina": nobody of the other organisation
+[2026-10-25 23:01:44] PASS demo-b01 autocomplete (deck-card) "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:44] PASS demo-b01 contacts menu "demo-a": nobody of the other organisation
+[2026-10-25 23:01:45] PASS demo-b01 contacts menu "Amina": nobody of the other organisation
+[2026-10-25 23:01:45] PASS demo-b01 contacts menu "demo-a01": nobody of the other organisation
+[2026-10-25 23:01:45] PASS demo-b01 contacts menu "": nobody of the other organisation
+[2026-10-25 23:01:46] PASS demo-b01 contacts menu: demo-a01's card by id -> 404
+[2026-10-25 23:01:46] PASS demo-b01 hovercard of demo-a01 -> 404
+[2026-10-25 23:01:46] PASS demo-b01 hovercard of demo-b02 -> 200 (same organisation)
+[2026-10-25 23:01:47] PASS demo-b01 online statuses: nobody of the other organisation
+tests/privacy-apps.sh: line 291: warning: command substitution: ignored null byte in input
+[2026-10-25 23:01:48] FAIL demo-b01 avatar of demo-a01 -> 404 [], as for an account that does not exist: expected '404 []', got '200 <a PNG picture (1294 bytes), left out of this copy>'
+[2026-10-25 23:01:50] FAIL demo-b01 dark avatar of demo-a01 -> 404: expected '404', got '200'
+[2026-10-25 23:01:50] FAIL demo-b01 avatar of demo-a01 with guestFallback: the guest picture of the id: expected 'yes', got 'no (200)'
+[2026-10-25 23:01:51] FAIL demo-b01 DAV avatar of demo-a01 -> 404: expected '404', got '200'
+[2026-10-25 23:01:52] PASS demo-b01 avatar and DAV avatar of demo-b02 -> 200 (same organisation)
+[2026-10-25 23:01:53] FAIL demo-b01 appointments page of demo-a01: no name: expected '', got 'Amina (Sales)'
+[2026-10-25 23:01:53] FAIL appointments page of demo-a01, not signed in: no name: expected '', got 'Amina (Sales)'
+[2026-10-25 23:01:53] PASS demo-b01 appointments page of demo-b02: the name (same organisation)
+[2026-10-25 23:01:54] PASS demo-b01 account API for demo-a01 is refused (404)
+[2026-10-25 23:01:54] PASS demo-b01 calendar attendees "demo-a": nobody of the other organisation
+[2026-10-25 23:01:54] PASS demo-b01 calendar attendees "Amina": nobody of the other organisation
+[2026-10-25 23:01:55] PASS demo-b01 calendar attendees "demo-a01@demo-alpha.invalid": nobody of the other organisation
+[2026-10-25 23:01:55] PASS demo-b01 calendar attendees "Lena" finds Lena (Marketing) (same organisation)
+[2026-10-25 23:01:55] PASS demo-b01 calendar photo of demo-a01@demo-alpha.invalid: none
+[2026-10-25 23:01:56] PASS demo-b01 calendar contact group members: nobody of the other organisation
+[2026-10-25 23:01:56] PASS demo-b01 principal search "Amina": nobody
+[2026-10-25 23:01:56] PASS demo-b01 principal search "demo-a01@demo-alpha.invalid": nobody
+[2026-10-25 23:01:58] PASS demo-b01 free/busy of demo-a01@demo-alpha.invalid: not found, no times
+[2026-10-25 23:01:58] PASS demo-b01 reads demo-a01's address: no name, email address or groups
+[2026-10-25 23:01:58] PASS demo-b01 reads demo-b02's address: the name (same organisation)
+[2026-10-25 23:01:59] PASS demo-b01 reads the other organisation's group address: no name
+[2026-10-25 23:01:59] PASS demo-b01 reads its own organisation's group address: the name
+[2026-10-25 23:01:59] PASS demo-b01 expand-property of demo-a01: no names
+[2026-10-25 23:02:00] PASS demo-b01 reads the team calendars' owner (the service account): its name
+[2026-10-25 23:02:00] PASS demo-b01 address books: own organisation's only, no system book
+[2026-10-25 23:02:00] PASS demo-b01 directory: 12 cards, all of its own organisation
+[2026-10-25 23:02:01] FAIL demo-b01 ONLYOFFICE names for [demo-a01, demo-b02]: only Lena (Marketing): expected 'yes yes', got 'no: demo-a01 yes'
+[2026-10-25 23:02:02] PASS demo-b01 team folder people search "demo": nobody of the other organisation
+[2026-10-25 23:02:02] PASS demo-b01 team folder people search "Amina": nobody of the other organisation
+[2026-10-25 23:02:02] PASS demo-b01 team folder people search "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:03] PASS demo-b01 activity: nobody of the other organisation
+[2026-10-25 23:02:04] PASS demo-b01 search appstore "Amina": nobody of the other organisation
+[2026-10-25 23:02:04] PASS demo-b01 search appstore "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:04] PASS demo-b01 search appstore "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:05] PASS demo-b01 search fulltextsearch "Amina": nobody of the other organisation
+[2026-10-25 23:02:05] PASS demo-b01 search fulltextsearch "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:05] PASS demo-b01 search fulltextsearch "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:06] PASS demo-b01 search notes "Amina": nobody of the other organisation
+[2026-10-25 23:02:06] PASS demo-b01 search notes "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:06] PASS demo-b01 search notes "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:07] PASS demo-b01 search files "Amina": nobody of the other organisation
+[2026-10-25 23:02:07] PASS demo-b01 search files "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:07] PASS demo-b01 search files "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:08] PASS demo-b01 search systemtags "Amina": nobody of the other organisation
+[2026-10-25 23:02:08] PASS demo-b01 search systemtags "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:08] PASS demo-b01 search systemtags "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:09] PASS demo-b01 search comments "Amina": nobody of the other organisation
+[2026-10-25 23:02:09] PASS demo-b01 search comments "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:09] PASS demo-b01 search comments "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:10] PASS demo-b01 search search-deck-card-board "Amina": nobody of the other organisation
+[2026-10-25 23:02:10] PASS demo-b01 search search-deck-card-board "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:11] PASS demo-b01 search search-deck-card-board "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:11] PASS demo-b01 search search-deck-comment "Amina": nobody of the other organisation
+[2026-10-25 23:02:11] PASS demo-b01 search search-deck-comment "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:12] PASS demo-b01 search search-deck-comment "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:12] PASS demo-b01 search contacts "Amina": nobody of the other organisation
+[2026-10-25 23:02:13] PASS demo-b01 search contacts "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:13] PASS demo-b01 search contacts "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:14] PASS demo-b01 search calendar "Amina": nobody of the other organisation
+[2026-10-25 23:02:14] PASS demo-b01 search calendar "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:15] PASS demo-b01 search calendar "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:15] PASS demo-b01 search tasks "Amina": nobody of the other organisation
+[2026-10-25 23:02:16] PASS demo-b01 search tasks "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:16] PASS demo-b01 search tasks "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:16] PASS demo-b01 search nc_gantt "Amina": nobody of the other organisation
+[2026-10-25 23:02:17] PASS demo-b01 search nc_gantt "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:17] PASS demo-b01 search nc_gantt "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:18] PASS demo-b01 search forms "Amina": nobody of the other organisation
+[2026-10-25 23:02:18] PASS demo-b01 search forms "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:18] PASS demo-b01 search forms "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:19] PASS demo-b01 search settings "Amina": nobody of the other organisation
+[2026-10-25 23:02:19] PASS demo-b01 search settings "demo-a01": nobody of the other organisation
+[2026-10-25 23:02:20] PASS demo-b01 search settings "demo-alpha": nobody of the other organisation
+[2026-10-25 23:02:20] PASS demo-b01 NoGantt sharees "demo-a": nobody
+[2026-10-25 23:02:20] PASS demo-b01 NoGantt people search "demo-a": nobody
+[2026-10-25 23:02:21] PASS demo-b01 NoGantt sharees "Amina": nobody
+[2026-10-25 23:02:21] PASS demo-b01 NoGantt people search "Amina": nobody
+[2026-10-25 23:02:21] PASS demo-b01 NoGantt sharees "demo-a01": nobody
+[2026-10-25 23:02:22] PASS demo-b01 NoGantt people search "demo-a01": nobody
+[2026-10-25 23:02:22] PASS demo-b01 NoGantt email match demo-a01@demo-alpha.invalid: not_found
+[2026-10-25 23:02:22] PASS demo-b01 NoGantt email match demo-b02 (same organisation): found
+[2026-10-25 23:02:24] PASS the NoGantt project is there
+[2026-10-25 23:02:24] PASS NoGantt share with qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:24] PASS NoGantt: the refusal says why
+[2026-10-25 23:02:24] PASS NoGantt: not shared with qa-t6b-3 by that try
+[2026-10-25 23:02:25] PASS NoGantt share with an id that does not exist -> 403 (the same answer)
+[2026-10-25 23:02:25] PASS NoGantt share with the group org:qa-t6b-org-b is refused
+[2026-10-25 23:02:25] PASS NoGantt share with qa-t6b-2 (org A) -> 200 or 201
+[2026-10-25 23:02:25] PASS qa-t6b-3 does not see the project
+[2026-10-25 23:02:26] PASS NoGantt resource for qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:26] PASS NoGantt resource: no name of qa-t6b-3 in the answer
+[2026-10-25 23:02:26] PASS NoGantt resource for an id that does not exist -> 403
+[2026-10-25 23:02:27] PASS NoGantt resource for qa-t6b-2 is there
+[2026-10-25 23:02:27] PASS NoGantt resource changed to qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:27] PASS NoGantt: no resource stands for qa-t6b-3 after those tries
+[2026-10-25 23:02:28] PASS the NoForms form is there
+[2026-10-25 23:02:29] PASS NoForms share with qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:29] PASS NoForms share with an id that does not exist -> 403 (the same answer)
+[2026-10-25 23:02:29] PASS NoForms share with the group org:qa-t6b-org-b -> 403
+[2026-10-25 23:02:30] PASS NoForms: not shared with org B by those tries
+[2026-10-25 23:02:30] PASS NoForms owner -> qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:31] PASS NoForms owner -> an id that does not exist -> 403
+[2026-10-25 23:02:31] PASS NoForms: qa-t6b-4 still owns the form
+[2026-10-25 23:02:32] PASS NoForms owner -> qa-t6b-2 (org A) -> 200
+[2026-10-25 23:02:32] PASS NoForms: qa-t6b-2 gives it back -> 200
+[2026-10-25 23:02:34] PASS NoForms: no form for everyone on the server
+[2026-10-25 23:02:34] PASS qa-t6b-3's shared forms: neither of qa-t6b-4's
+[2026-10-25 23:02:35] PASS the board is there
+[2026-10-25 23:02:35] PASS board owner -> qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:35] PASS board owner -> an id that does not exist -> 403
+[2026-10-25 23:02:35] PASS qa-t6b-4 still owns the board
+[2026-10-25 23:02:36] PASS board owner -> qa-t6b-2 (org A) -> 200
+[2026-10-25 23:02:36] PASS board: qa-t6b-2 gives it back -> 200
+[2026-10-25 23:02:37] PASS card people: qa-t6b-3 (org B) is refused
+[2026-10-25 23:02:38] PASS board import shared with qa-t6b-3 (org B) -> OCS 403
+[2026-10-25 23:02:38] PASS board import shared with the group org:qa-t6b-org-b -> OCS 403
+[2026-10-25 23:02:38] PASS board import mapping an account to qa-t6b-3 (uidRelation) -> OCS 403
+[2026-10-25 23:02:38] PASS board upload (the web import) shared with qa-t6b-3 -> 403
+[2026-10-25 23:02:39] PASS board import with a card for qa-t6b-3 (org B) -> OCS 403
+[2026-10-25 23:02:39] PASS board import with a comment by qa-t6b-3 (org B) -> OCS 403
+[2026-10-25 23:02:39] PASS board imports: qa-t6b-3 got no board from those tries
+[2026-10-25 23:02:40] PASS board import shared with qa-t6b-2 (org A) -> 200, OCS 100
+[2026-10-25 23:02:40] PASS file ownership transfer to qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:41] PASS file ownership transfer to an id that does not exist -> 403
+[2026-10-25 23:02:41] PASS qa-t6b-3 got no transfer request from those tries
+[2026-10-25 23:02:43] PASS qa-t6b-4 has the album "QA t6b privacy 2" (201 new, 405 there)
+[2026-10-25 23:02:43] PASS album shared with qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:43] PASS album shared with the group org:qa-t6b-org-b -> 403
+[2026-10-25 23:02:43] PASS the album's collaborators are as before those tries
+[2026-10-25 23:02:45] team folder rules are tried on qa-t6b-acl-3
+[2026-10-25 23:02:46] PASS team folder rule for qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:46] PASS team folder rule for the group org:qa-t6b-org-b -> 403
+[2026-10-25 23:02:46] PASS the folder's rules are as before those tries
+[2026-10-25 23:02:47] PASS qa-t6b-4 has a task list (201 new, 405 there)
+[2026-10-25 23:02:47] PASS task list shared with qa-t6b-3 (org B) -> 403
+[2026-10-25 23:02:48] PASS task list shared with qa-t6b-3 by email -> 403
+[2026-10-25 23:02:49] PASS task list shared with qa-t6b-2 (org A) -> 200
+[2026-10-25 23:02:49] PASS qa-t6b-4 has a calendar (201 new, 405 there)
+[2026-10-25 23:02:49] PASS qa-t6b-4 saves an event that invites qa-t6b-3 (201 or 204)
+[2026-10-25 23:02:50] PASS qa-t6b-3's calendar inbox has no invitation from qa-t6b-4
+[2026-10-25 23:02:50] PASS the comment shows no name for @qa-t6b-3
+[2026-10-25 23:02:51] qa-t6b-4's own activity names @qa-t6b-3 by name: yes (an id the author typed; see Known limits)
+[2026-10-25 23:02:51] PASS qa-t6b-3 got no mention notification
+[2026-10-25 23:02:52] PASS ONLYOFFICE mention of qa-t6b-3: no notification
+[2026-10-25 23:02:52] PASS ONLYOFFICE mention of qa-t6b-3: the file is not shared with qa-t6b-3
+[2026-10-25 23:02:52] PASS qa-t6b-3's notes: none of org A's
+[2026-10-25 23:02:53] PASS qa-t6b-3 sets a status message (200)
+[2026-10-25 23:02:53] PASS qa-t6b-2 sets a status message (200)
+[2026-10-25 23:02:53] FAIL qa-t6b-4 reads qa-t6b-3's status -> 404, no message: expected '404 yes', got '200 no: status probe'
+[2026-10-25 23:02:54] PASS qa-t6b-4 reads qa-t6b-2's status -> 200 (same organisation)
+[2026-10-25 23:02:54] PASS qa-t6b-3 sets an out of office (200)
+[2026-10-25 23:02:54] PASS qa-t6b-2 sets an out of office (200)
+[2026-10-25 23:02:54] FAIL qa-t6b-4 reads qa-t6b-3's out of office (qa-t6b-3) -> 404, no message: expected '404 yes', got '200 no: away probe'
+[2026-10-25 23:02:55] FAIL qa-t6b-4 reads qa-t6b-3's out of office (qa-t6b-3/now) -> 404, no message: expected '404 yes', got '200 no: away probe'
+[2026-10-25 23:02:55] PASS qa-t6b-4 reads qa-t6b-2's out of office -> 200 (same organisation)
+[2026-10-25 23:02:55] FAIL qa-t6b-4 names qa-t6b-3 (org B) as its replacement -> 403, no name: expected '403 yes', got '200 no: QA t6b 3'
+[2026-10-25 23:02:56] FAIL qa-t6b-4 names an id that does not exist as its replacement -> 403: expected '403', got '404'
+[2026-10-25 23:02:56] PASS qa-t6b-4 names qa-t6b-2 (org A) as its replacement -> 200
+[2026-10-25 23:02:57] PASS qa-t6b-4 comments "@qa-t6b-3" on its card -> 200
+[2026-10-25 23:02:57] PASS qa-t6b-4 comments "@qa-t6b-2" on its card -> 200
+[2026-10-25 23:02:58] FAIL card comments: @qa-t6b-3 shows the id, not the name: expected 'qa-t6b-3 yes', got 'QA t6b 3 no: QA t6b 3'
+[2026-10-25 23:02:58] PASS card comments: @qa-t6b-2 shows the name (same organisation)
+[2026-10-25 23:02:58] FAIL card comments (XML): @qa-t6b-3 shows the id, not the name: expected 'yes yes', got 'no no: QA t6b 3'
+[2026-10-25 23:02:59] FAIL qa-t6b-3 got no NoBoard notification: expected '0', got '2'
+[2026-10-25 23:03:00] PASS qa-t6b-4 opens its probe file in Text (200, a session)
+[2026-10-25 23:03:00] PASS Text mention list "qa-t6b": nobody of org B
+[2026-10-25 23:03:00] PASS Text mention list "qa-t6b-3": nobody of org B
+[2026-10-25 23:03:01] PASS Text mention list "QA t6b 3": nobody of org B
+[2026-10-25 23:03:01] PASS Text mention list "qa-t6b-2" finds qa-t6b-2 (same organisation)
+[2026-10-25 23:03:02] PASS Text mention of qa-t6b-3: no notification
+[2026-10-25 23:03:02] ERROR: 22 check(s) failed
+exit 1
