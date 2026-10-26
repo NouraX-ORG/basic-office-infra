@@ -66,6 +66,7 @@ Details: [docs/architecture.md](docs/architecture.md).
 | `scripts/check-branding.sh`, `branding/audit/` | The branding guard, which reads what the server sends and fails on any upstream name, link, logo or blue (every task runs it at its end), and the browser audit, which checks what a person sees in Google Chrome ([docs/branding.md](docs/branding.md#running-the-guard)) |
 | `office-ai/` | `nourax-office-ai`, the Cloudflare Worker that relays the editors' AI requests to NIG ([docs/office-ai.md](docs/office-ai.md)) |
 | `ai-relay/` | The Nourax AI relay for the Assistant (compose service `ai-relay`, Python standard library) and the AI task worker (`ai-worker`), with tests against a stand-in for NIG ([docs/assistant.md](docs/assistant.md)) |
+| `mcp/` | `nourax-workspace-mcp`, the Cloudflare Worker that lets AI assistants (Claude, ChatGPT, ONLYOFFICE Desktop) work in NoDrive, documents, NoCalendar, NoTasks, NoContacts, NoBoard, NoGantt and NoMail as the person, over MCP ([docs/mcp.md](docs/mcp.md)) |
 | `config/onlyoffice/` | The editors' Nourax AI settings |
 | `config/clamav/` | The virus scanner's settings (clamd, freshclam) and the stored-file scan timer ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#virus-scanner)) |
 | `config/elasticsearch/` | Search inside files: the index template, the search account's role, the indexing loop of the `jobs` service, and the memory report `memory-report.sh` ([docs/search-and-antivirus.md](docs/search-and-antivirus.md#search-inside-files)) |

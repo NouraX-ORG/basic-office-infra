@@ -39,6 +39,15 @@ this repository.
 | Playwright (`playwright-core`) 1.64.0 | Drives Google Chrome for the browser audit of the branding (`branding/audit/`); a test tool on the admin's PC, not part of the site | Apache-2.0 | https://github.com/microsoft/playwright |
 | Geist font (Latin) | The site's typeface, embedded in the theme CSS (`branding/fonts/`, licence text in `branding/fonts/OFL-Geist.txt`) | SIL OFL 1.1 | https://github.com/vercel/geist-font |
 | Pillow 12.2.0 | Draws our theme previews (`branding/theme-previews/make-previews.py`); a tool on the admin's PC, not part of the site | MIT-CMU | https://github.com/python-pillow/Pillow |
+| @cloudflare/workers-oauth-provider 1.2.4 | OAuth 2.1 server of the MCP Worker (`mcp/`), bundled | MIT | https://github.com/cloudflare/workers-oauth-provider |
+| @modelcontextprotocol/server and core 2.3.1 | MCP protocol of the MCP Worker, bundled | Apache-2.0 | https://github.com/modelcontextprotocol/typescript-sdk |
+| zod 4.6.7 | Input and output schemas of the MCP Worker, bundled | MIT | https://github.com/colinhacks/zod |
+| jose 6.2.12 | Token checks in the MCP Worker, bundled | MIT | https://github.com/panva/jose |
+| fflate 0.8.3 | Zip reading and writing (Office files) in the MCP Worker, bundled | MIT | https://github.com/101arrowz/fflate |
+| saxes 6.0.0, with xmlchars 2.2.0 | XML parsing in the MCP Worker, bundled | ISC (saxes), MIT (xmlchars) | https://github.com/lddubeau/saxes |
+| ical.js 2.2.1 | Calendar and task data in the MCP Worker, bundled | MPL-2.0 | https://github.com/kewisch/ical.js |
+| timezones-ical-library 2.3.2 | Time-zone definitions for calendar events in the MCP Worker, bundled | Apache-2.0 | https://github.com/add2cal/timezones-ical-library |
+| unpdf 1.8.1, which includes PDF.js 6.1.200 | PDF text reading in the MCP Worker, bundled | MIT (unpdf), Apache-2.0 (PDF.js) | https://github.com/unjs/unpdf |
 
 ONLYOFFICE Docs is shown under its own name in the editors, as its licence asks.
 

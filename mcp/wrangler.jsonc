@@ -1,0 +1,127 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Nourax Workspace MCP server (design: mcp/DESIGN.md). Deploy only with `npm run deploy`,
+  // which runs scripts/predeploy.mjs first.
+  "name": "nourax-workspace-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  // No compatibility flags: global_fetch_strictly_public stays OFF on purpose (DESIGN 0.5 and 8.6).
+  // Same-zone calls to drive.nourax.org then reach the origin directly and keep the client's IP.
+  "workers_dev": false,
+  "preview_urls": false,
+  // No "routes": the custom domain mcp.nourax.org is the owner's decision (DESIGN 20, item 1).
+  "limits": { "cpu_ms": 30000, "subrequests": 1000 },
+  "observability": {
+    "enabled": true,
+    // Keeps OAuth codes and states out of any log line.
+    "redact_query_string": true,
+    // Invocation logs would record full URLs and most headers; our own JSON lines replace them.
+    "logs": { "enabled": true, "invocation_logs": false, "head_sampling_rate": 1 },
+    // Fetch spans would record DAV paths, which contain file names.
+    "traces": { "enabled": false }
+  },
+  // Dev-only code is stripped from this build (DESIGN 16.2). `define` is not inherited by env.dev.
+  // minify lets esbuild drop the dead `if (__NX_DEV_AUTH__)` branches and the dev-only module.
+  "define": { "__NX_DEV_AUTH__": "false" },
+  "minify": true,
+  // preview_id is the dev namespace, so `wrangler dev --remote` never touches production data.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "a075612697ec49d6a0513ce3d8764876", "preview_id": "dbb1c57f6ca247ff9eec0b7e9d545201" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "VAULT", "class_name": "Vault" },
+      { "name": "CONNECT", "class_name": "ConnectFlow" },
+      // One object: exact daily caps on sign-ins started and client registrations (DESIGN 14).
+      { "name": "QUOTA", "class_name": "Quota" }
+    ]
+  },
+  // Inherited by env.dev (wrangler's config reader); v2 adds the Quota class (fix round 2).
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Vault", "ConnectFlow"] },
+    { "tag": "v2", "new_sqlite_classes": ["Quota"] }
+  ],
+  "ratelimits": [
+    { "name": "RL_PAGES", "namespace_id": "7101", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_REGISTER", "namespace_id": "7102", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_TOKEN", "namespace_id": "7103", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_MCP", "namespace_id": "7104", "simple": { "limit": 180, "period": 60 } },
+    // Per IP before any token check (/mcp, /oauth/token). Generous: AI apps call from shared IPs.
+    { "name": "RL_IP", "namespace_id": "7105", "simple": { "limit": 1200, "period": 60 } },
+    // /authorize, GET and POST, per IP (IPv6 by /64): each new sign-in writes to KV.
+    { "name": "RL_AUTHZ", "namespace_id": "7106", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+  "vars": {
+    "NX_ENV": "production",
+    "PUBLIC_ORIGIN": "https://mcp.nourax.org",
+    "DRIVE_ORIGIN": "https://drive.nourax.org",
+    "NC_OIDC_PROVIDER_ID": "1",
+    "SUPABASE_URL": "https://tbwrezvhgoryzycjerrl.supabase.co",
+    // Empty = Drive-only mode. The owner sets it after registering the client (DESIGN 20, item 3).
+    "SUPABASE_OAUTH_CLIENT_ID": "",
+    // Empty = mail tools hidden (DESIGN 20, item 4).
+    "NOMAIL_TOOLS_URL": "",
+    // Admin-group accounts are refused unless listed here (space-separated uids).
+    "ALLOW_ADMIN_UIDS": "",
+    // Space-separated. An entry ending in * is a prefix; "loopback" allows http://localhost,
+    // http://127.0.0.1 and http://[::1] on any port and path (RFC 8252).
+    "ALLOWED_REDIRECTS": "https://claude.ai/api/mcp/auth_callback https://claude.com/api/mcp/auth_callback https://chatgpt.com/connector_platform_oauth_redirect https://chatgpt.com/connector/oauth/* loopback",
+    // "internal" lists calendar_add_attendees; "off" hides it.
+    "CALENDAR_ATTENDEES": "internal",
+    // "off" hides the docs_* tools and office/PDF reading.
+    "HEAVY_TOOLS": "on",
+    // "true" once NoMail signs out with scope 'local' (DESIGN 7.2).
+    "STRICT_UPSTREAM_SESSION": "false",
+    "MAX_LINK_DAYS": "90",
+    "DEFAULT_TIME_ZONE": "UTC"
+  },
+  // Secrets (set with `wrangler secret put`, never committed):
+  //   NX_SECRET                     master for HKDF subkeys (vault pepper, consent memory, logs, cookies)
+  //   NX_REVOKE_SECRET              revoke-wraps only (DESIGN 9.2)
+  //   SUPABASE_OAUTH_CLIENT_SECRET  upstream confidential client (owner, DESIGN 20 item 3)
+  //   NOMAIL_TOOLS_KEY              contract v1 X-Nourax-Tools-Key (owner, DESIGN 20 item 4)
+  "env": {
+    "dev": {
+      // A separate name, so an accidental `--env dev` deploy is a different Worker with no route.
+      "name": "nourax-workspace-mcp-dev",
+      "workers_dev": false,
+      "preview_urls": false,
+      "define": { "__NX_DEV_AUTH__": "true" },
+      "minify": false,
+      // Its own namespace (nourax-workspace-mcp-dev-OAUTH_KV): dev clients, grants and tokens never
+      // reach production KV, even with --remote. predeploy refuses equal ids.
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "dbb1c57f6ca247ff9eec0b7e9d545201", "preview_id": "dbb1c57f6ca247ff9eec0b7e9d545201" }],
+      "durable_objects": {
+        "bindings": [
+          { "name": "VAULT", "class_name": "Vault" },
+          { "name": "CONNECT", "class_name": "ConnectFlow" },
+          { "name": "QUOTA", "class_name": "Quota" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "RL_PAGES", "namespace_id": "7101", "simple": { "limit": 60, "period": 60 } },
+        { "name": "RL_REGISTER", "namespace_id": "7102", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RL_TOKEN", "namespace_id": "7103", "simple": { "limit": 60, "period": 60 } },
+        { "name": "RL_MCP", "namespace_id": "7104", "simple": { "limit": 180, "period": 60 } },
+        { "name": "RL_IP", "namespace_id": "7105", "simple": { "limit": 1200, "period": 60 } },
+        { "name": "RL_AUTHZ", "namespace_id": "7106", "simple": { "limit": 10, "period": 60 } }
+      ],
+      "triggers": { "crons": [] },
+      "vars": {
+        "NX_ENV": "dev",
+        "PUBLIC_ORIGIN": "http://localhost:8787",
+        "DRIVE_ORIGIN": "https://drive.nourax.org",
+        "NC_OIDC_PROVIDER_ID": "1",
+        "SUPABASE_URL": "https://tbwrezvhgoryzycjerrl.supabase.co",
+        "SUPABASE_OAUTH_CLIENT_ID": "",
+        "NOMAIL_TOOLS_URL": "",
+        "ALLOW_ADMIN_UIDS": "",
+        "ALLOWED_REDIRECTS": "https://claude.ai/api/mcp/auth_callback https://claude.com/api/mcp/auth_callback https://chatgpt.com/connector_platform_oauth_redirect https://chatgpt.com/connector/oauth/* loopback",
+        "CALENDAR_ATTENDEES": "internal",
+        "HEAVY_TOOLS": "on",
+        "STRICT_UPSTREAM_SESSION": "false",
+        "MAX_LINK_DAYS": "90",
+        "DEFAULT_TIME_ZONE": "UTC"
+      }
+    }
+  }
+}
