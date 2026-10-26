@@ -7,7 +7,7 @@ declare(strict_types=1);
  * container as www-data. It switches nothing:
  *   sudo docker compose exec -T -u www-data app php < tests/org-privacy-switch.php
  * tests/org-privacy-switch.sh runs it, also without -u www-data: started as root, it first becomes
- * the owner of config.php (www-data), as occ asks.
+ * the owner of config.php (www-data), as the server's own occ file does.
  *
  * - The list is exactly the one scripts/configure.d/60-org-privacy.sh had on 2026-10-25 (copied
  *   below, so a change to the list must change this test too), plus the two NoForms options that
@@ -48,8 +48,9 @@ use OCP\Settings\IDelegatedSettings;
 use OCP\Settings\IManager as ISettingsManager;
 
 // Piped in as root (docker compose exec without -u www-data): become the owner of config.php
-// first, as occ asks, so nothing the server writes belongs to root. Nothing may be printed before
-// the server has read its config: it takes any earlier output for "leading content" in config.php.
+// first, as the server's own occ file does (35.0.2), so nothing is written as root. Nothing may
+// be printed before the server has read its config: it takes any earlier output for "leading
+// content" in config.php.
 $startedAsRoot = null;
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
 	$owner = fileowner('/var/www/html/config/config.php');

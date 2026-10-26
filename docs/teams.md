@@ -642,9 +642,10 @@ What every way does:
   versions match; if not, nothing is changed and the answer says to run `occ app:enable` on the
   server (`app_needs_upgrade`, HTTP 409).
 - **One switch at a time:** a second one meanwhile gets `busy` (HTTP 423, a lock of at most 120 s).
-- **Audit:** every on and off (not a dry run) writes a row to the nourax_api audit (route
-  `org-privacy`, read with `GET /v1/admin/audit`): who (the admin's account id, or occ's `--by`),
-  how (key id `admin-page`, or `occ` with method `CLI` and HTTP status 0), when, and the result
+- **Audit:** every on and off (not a dry run) writes a row to the nourax_api audit (read with
+  `GET /v1/admin/audit`): who (the admin's account id, or occ's `--by`), how (key id `admin-page`
+  with route `settings/org-privacy`, the switch's address; or `occ` with route `org-privacy`,
+  method `CLI` and HTTP status 0), when, and the result
   `switched_on`, `switched_off`, `unchanged`, `failed` or `app_needs_upgrade`. The page shows the
   last five switches under "Recent changes".
 - **Status:** `occ nourax_api:org-privacy status` (and the page's table) lists every setting with
@@ -657,8 +658,9 @@ the settings table and the recent changes, and asks before it switches: a confir
 what On does, or, for Off, says that everyone on the server can find everyone again and that the
 federation and Teams (circles) apps come back. Then:
 
-- the page sends `POST /apps/nourax_api/admin/org-privacy` with `{"state":"on"}` or `"off"`
-  (`GET` of the same address answers the page's view as JSON);
+- the page sends `POST /apps/nourax_api/settings/org-privacy` with `{"state":"on"}` or `"off"`
+  (`GET` of the same address answers the page's view as JSON). It reads the address from the
+  page's initial state (the server's link to the route), so it follows the route by itself;
 - **admins only**: anyone else gets 403 before the switch runs; the form is not one that can be
   delegated to other groups;
 - **CSRF**: without the page's token the answer is 412 and nothing changes. The server's own CSRF
@@ -678,11 +680,22 @@ texts come from `OrgPrivacySwitch` and pass the branding rules (`tests/org-priva
 `tests/org-privacy-page.sh` scan them with `nourax_branding/sweep/rules.json`).
 
 **The address of the switch is not under the Cloudflare lock of the settings pages** (rule 1 of
-[cloudflare/waf-rule.md](../cloudflare/waf-rule.md) locks `/settings` and `/login`, not
-`/apps/nourax_api/admin/`). Without a signed-in admin session, the page's token and a fresh
-password confirmation it does nothing, and an admin session can only start at the locked sign-in
-page. Adding `/apps/nourax_api/admin` and `/index.php/apps/nourax_api/admin` to rule 1 would lock
-it to the owner's address as well; that is a Cloudflare change, so it waits for the owner's yes.
+[cloudflare/waf-rule.md](../cloudflare/waf-rule.md) locks paths that start with `/settings` and
+`/login`, not `/apps/nourax_api/settings/`). Without a signed-in admin session, the page's token
+and a fresh password confirmation it does nothing, and an admin session can only start at the
+locked sign-in page. Adding `/apps/nourax_api/settings` and `/index.php/apps/nourax_api/settings`
+to rule 1 would lock it to the owner's address as well; that is a Cloudflare change, so it waits
+for the owner's yes.
+
+**The page's script and styles are cached for a long time** (`Cache-Control: max-age=15778463`,
+about six months, also at Cloudflare's edge), under the page's `?v=<app version hash>-<theming
+cache buster>` (`?v=47cd76e4-464` on 2026-10-26). nourax_api keeps version 1.0.0, so a later change
+to `js/`, `css/` or `img/` reaches browsers only when that `?v=` changes: raise the theming cache
+buster (`scripts/branding-sweep.sh --bump`, Task 3's) after such a change. To compare a served
+file with the repo, ask for it with the page's `?v=`: the address without a query may be an older
+copy at the edge (on 2026-10-26 04:22 the query-less `js/admin-privacy.js` was the copy from
+before `c28642d`, which differs only in one comment line; the four files at `?v=47cd76e4-464` were
+the same as the repo).
 
 Switching it on from the server, under the server-change lock, with the privacy test after it:
 
@@ -696,37 +709,57 @@ again. Nothing needs a restart: every setting is read on the next request.
 
 **Tests of the switch:**
 
-- `sudo tests/org-privacy-switch.sh` on the server (privacy on; it switches nothing off): runs
-  `tests/org-privacy-switch.php` in the app container (the list is exactly the old step's list
-  plus NoForms' two options, the status reads what the server reads, dry runs and the lock change
-  nothing, the page's texts), then the occ command (status, a dry run of off, on while on, the
+- `sudo tests/org-privacy-switch.sh` on the server, or `sudo tests/privacy-switch.sh` (the name
+  of Task 6b's plan; it runs the same test). Privacy on; it switches nothing off; it takes the
+  server-change lock itself, so never run it inside `flock` (or set `NOURAX_LOCK_HELD=1` when you
+  hold the lock). It runs `tests/org-privacy-switch.php` in the app container (the list is
+  exactly the old step's list plus NoForms' two options, the status reads what the server reads,
+  dry runs and the lock change nothing, the page's texts and address, the two audit routes), as
+  www-data and once more piped in as root without `-u www-data` (the test then first becomes
+  www-data, the owner of config.php, as the server's own `occ` file does), then the occ command (status, a dry run of off, on while on, the
   audit row, wrong arguments), the configure step (a dry run of off, a plain run, a wrong value)
   and the page's address through Cloudflare (401 without a session; 403 for a normal QA person's
-  app password, even with the header that passes the CSRF check). It also runs
-  `tests/org-privacy-route.php`: the server's installed security check, then the controller, on
+  app password, even with the header that passes the CSRF check; and 404 for the old address).
+  It also runs `tests/org-privacy-route.php`: the server's router (GET and POST
+  `/apps/nourax_api/settings/org-privacy` reach the controller's `status` and `setState`, the
+  page's link is that address, the old `/apps/nourax_api/admin/org-privacy` matches no route),
+  the server's installed security check, then the controller, on
   real requests, with a stand-in switch that only notes its calls (its lock refuses, so nothing
   can switch) and without any admin account (the check object's own "is an admin" answer is set
   for the test): a normal person with the token 403; an admin without the token 412; an admin
   without the token but with `OCS-APIRequest: true` (or `1`), and with the token plus that header,
   412 `csrf_check_failed`, for the POST and the GET, and none of these reach the switch; an admin
-  with the token gets through, and the switch gets one call (off, key id `admin-page`, POST, the
-  client's address); every setting, the apps, the step and the audit rows are the same after.
+  with the token gets through, and the switch gets one call (off, key id `admin-page`, POST, route
+  `settings/org-privacy`, the client's address); every setting, the apps, the step and the audit
+  rows are the same after.
 - `tests/org-privacy-page.sh normal|admin <creds-dir>` on the owner's PC: the real page and a real
   Off and back On through it, as a temporary QA admin (see the runs below). The admin step also
   sends the POST and the GET without the token but with `OCS-APIRequest: true` (412
   `csrf_check_failed`, still on), and fails when privacy was off for 20 s or more.
 - `sudo tests/org-privacy-audit.sh SINCE [UID]` on the server: the audit rows of that Off and On,
   read through the signed admin API as NoMail would: exactly `switched_off` then `switched_on`
-  since SINCE, both key id `admin-page`, POST, 200, by `qa-t6b-admin`, with their times and the
+  since SINCE, both key id `admin-page`, POST, route `settings/org-privacy`, 200, by
+  `qa-t6b-admin`, with their times and the
   client's own address (not empty, private, local or the tunnel's), less than 20 s apart.
   `tests/org-privacy-admin-window.sh` runs it at the end of its window.
+- `tests/org-privacy-admin-run.sh --check` on the owner's PC, read only and without a yes: every
+  prerequisite of the admin run (ssh, both checkouts at `origin/main`, python, the sign-in page
+  answering here, the switch's route live, and on the server
+  `sudo tests/org-privacy-admin-window.sh check`: privacy on, `qa-t6b-admin` disabled and not in
+  `admin`, `admin` holding only `nodrive`, the account's login files there, no window open).
 - `tests/org-privacy-admin-run.sh --owner-yes` on the owner's PC: the whole admin run in one
-  command, only with the owner's yes (below).
+  command, only with the owner's yes (below). It runs the checks of `--check` first and stops
+  before changing anything when one fails.
 
-The names, exactly: the switch's address is `/apps/nourax_api/admin/org-privacy` (there is no
-`/apps/nourax_api/settings/org-privacy`; it answers 404), the page is
-`/settings/admin/nourax-workspace`, the server test is `tests/org-privacy-switch.sh`, and the
-audit rows have the route `org-privacy`.
+The names, exactly (since `c28642d`, 2026-10-26 04:12 UTC; they are the names of Task 6b's plan):
+
+| What | Name |
+|---|---|
+| The admin page | `/settings/admin/nourax-workspace` |
+| The switch's address | `/apps/nourax_api/settings/org-privacy` (GET the view, POST `{"state":"on"\|"off"}`). The old `/apps/nourax_api/admin/org-privacy` (main `726a196` and older) now answers 404. |
+| The audit rows | route `settings/org-privacy` with key id `admin-page` (the admin page); route `org-privacy` with key id `occ` (occ and the configure step). "Recent changes" reads both; the rows written before `c28642d` all have `org-privacy`. |
+| The server test | `sudo tests/privacy-switch.sh`, which runs `tests/org-privacy-switch.sh` |
+| The PHP tests | `sudo docker compose exec -T -u www-data app php < tests/org-privacy-switch.php` (or without `-u www-data`: started as root, it becomes www-data first), the same for `tests/org-privacy-route.php`. occ itself also works as root in 35.0.2: its `occ` file switches to the owner of config.php before anything runs (`console.php` would otherwise stop with "Console has to be executed with the user that owns the file config/config.php"); the scripts pass `-u www-data` anyway. |
 
 **Runs** (UTC, 2026-10-26, privacy on throughout):
 
@@ -743,24 +776,37 @@ audit rows have the route `org-privacy`.
 | `tests/org-privacy-page.sh normal`, 03:35 | `0a0a8d1` | All passed: as before, plus a POST without the token but with `OCS-APIRequest: true` 403 for a normal account. `qa-t6b-admin` was enabled (no group) for this run only and disabled again at 03:35. |
 | `sudo tests/privacy.sh`, 03:35–03:36, and `sudo tests/privacy-apps.sh`, 03:36–03:39 | `0a0a8d1` | Both passed (exit 0): 104 and 376 PASS, no FAIL and no LEAK line, "no cross-organisation grant left". |
 | `scripts/check-branding.sh` (owner's PC, as `qa-t6b-2`, `--only pages,l10n,theming,dav,errors`), 03:39 | `0a0a8d1` | `RESULT PASS (0 hits)`: pages 92, l10n 124, theming 92, dav 4, errors 21. |
+| Deploy, 04:12: `git pull` and a graceful Apache restart in `app` under the lock (no recreate) | `c28642d` | From the server, without a session: `/apps/nourax_api/settings/org-privacy` GET and POST 401 (before: 404), `/apps/nourax_api/admin/org-privacy` GET and POST 404 (before: 401). |
+| `sudo tests/privacy-switch.sh`, 04:12 | `c28642d` | 2 FAIL, faults of the new checks: the router keeps route names in lower case (`setstate`), and the root-started PHP test printed its "now running as www-data" line before the server read its config, which the server takes for leading content in config.php (`headers_sent()` in `Config::readData`) and stops. Fixed in `c3118e5`; nothing was written as root (no root-owned file in config, data or /tmp since 04:00). |
+| `sudo tests/privacy-switch.sh`, 04:14 | `c3118e5` | All passed (exit 0), 91 PASS: the router and the page's link at the new address, the old one matching nothing, the switch's call with route `settings/org-privacy`, both audit routes, the list test as www-data and piped in as root, 401 / 403 / 403 at the new address through Cloudflare, 404 at the old one, `ORG_PRIVACY=bogus` refused, `nourax_api:status` on on on. |
+| `sudo docker compose exec -T app php < tests/org-privacy-switch.php`, 04:15 (the plan's command, no `-u www-data`) | `c3118e5` | exit 0, 37 PASS, 0 FAIL: "started as root, now running as www-data, the owner of config.php", "all org-privacy-switch checks passed". |
+| `tests/org-privacy-admin-run.sh --check` (owner's PC), 04:15 | `c3118e5` | `ready`: ssh, both checkouts at `origin/main`, python, the sign-in page 200, the switch's address 401, and on the server privacy on, `qa-t6b-admin` disabled and in no group, `admin` = `nodrive` only, its `.pass` and `.totp` there (0600 root), no window, the admin key there, the lock free. Without a flag it refuses (exit 1). |
+| `sudo tests/privacy.sh`, 04:16–04:17, and `sudo tests/privacy-apps.sh`, 04:17–04:20 | `c3118e5` | Both passed (exit 0): 104 and 376 PASS, no FAIL and no LEAK line, "no cross-organisation grant left". |
+| `sudo scripts/check-branding.sh /etc/nourax/qa/qa-t6b-2.netrc --server --only pages,l10n,theming,dav,errors,config,mail`, 04:20–04:21 | `c3118e5` | `RESULT PASS (0 hits)`: pages 44 (37 SKIP: the locked pages, from the server), l10n 8713, theming 73, dav 4, errors 18, config 1, mail 4. |
 
 **Not run yet: the admin step and a real Off and On.** Adding `qa-t6b-admin` to the admin group
 and switching privacy off (even for a few seconds) were both refused by the permission check of
-the session that built the switch, so they wait for the owner's yes; the fix round of 03:20–03:40
-did not ask again. Until then the switch's writes (the settings, and disabling and enabling
-`federation` and `circles`) are checked as dry runs and as on while on; the configure step it
-replaces made the same writes with occ on 2026-10-25. The admin's side of the route (412 without
-the token, also with the header; through with it) is checked in process by
-`tests/org-privacy-route.php`, with the server's own security check. `qa-t6b-admin` was never in
-the admin group; it is disabled.
+the session that built the switch, so they wait for the owner's yes; the fix rounds of 03:20–03:40
+and 04:05–04:25 did not ask again. At 04:15 the same check also refused enabling `qa-t6b-admin`
+without any group and copying its login files, which the normal step at the new address needed,
+so that step ran only at the old address (03:35; QA at 03:49 as `qa-t6b-1`). At the new address a
+normal person is covered by `qa-t6b-2`'s app password through Cloudflare (403) and by
+`tests/org-privacy-route.php` in process (403 with the page's token). Until then the switch's
+writes (the settings, and disabling and enabling `federation` and `circles`) are checked as dry
+runs and as on while on; the configure step it replaces made the same writes with occ on
+2026-10-25. The admin's side of the route (412 without the token, also with the header; through
+with it) is checked in process by `tests/org-privacy-route.php`, with the server's own security
+check. `qa-t6b-admin` was never in the admin group; it is disabled.
 
 With the owner's yes, the run is one command on the owner's PC, from the repo at `origin/main`:
 
 ```
+tests/org-privacy-admin-run.sh --check        # read only, needs no yes: "ready" or what is missing
 tests/org-privacy-admin-run.sh --owner-yes
 ```
 
-It opens the window on the server (`tests/org-privacy-admin-window.sh start`: it waits for the
+It runs the checks of `--check` first and stops before changing anything when one fails. Then it
+opens the window on the server (`tests/org-privacy-admin-window.sh start`: it waits for the
 server-change lock and holds it for the whole window, 10 minutes at most, and opens only while
 privacy is on), copies `qa-t6b-admin`'s password and TOTP file into a private temporary folder by
 piping ssh into the files, runs `tests/org-privacy-page.sh admin`, and then always, also after a
@@ -778,7 +824,7 @@ ssh … 'cd /opt/nourax/basic-office-infra && sudo tests/org-privacy-admin-windo
 **Undo** is built in: `stop`, or the window's time limit, switches privacy on and takes the
 account out of the admin group and disables it. To check afterwards:
 `sudo bash -c '. tests/lib.sh; need_admin_key; admin_api GET "/v1/admin/audit?target=qa-t6b-admin"; jq .rows "$T_OUT/body"'`
-on the server lists the two `admin-page` rows.
+on the server lists the two `admin-page` rows (route `settings/org-privacy`).
 
 ### The test
 

@@ -77,8 +77,9 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Routing\RequestContext;
 
 // Piped in as root (docker compose exec without -u www-data): become the owner of config.php
-// first, as occ asks, so nothing the server writes belongs to root. Nothing may be printed before
-// the server has read its config: it takes any earlier output for "leading content" in config.php.
+// first, as the server's own occ file does (35.0.2), so nothing is written as root. Nothing may
+// be printed before the server has read its config: it takes any earlier output for "leading
+// content" in config.php.
 $startedAsRoot = null;
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
 	$owner = fileowner('/var/www/html/config/config.php');

@@ -24,9 +24,9 @@
 #   -> 401, a normal QA person's app password (qa-t6b-2) -> 403 for both the GET and the POST,
 #   even with the OCS header that passes the CSRF check; or, once the address is locked to the
 #   owner's address in Cloudflare's rule 1, Cloudflare's block for all of them. The old address
-#   /apps/nourax_api/admin/org-privacy (main 726a196 and older) -> 404. (The page itself, a real switch and the CSRF
-#   refusal are checked from the owner's PC by tests/org-privacy-page.sh: the settings pages are
-#   open only there.)
+#   /apps/nourax_api/admin/org-privacy (main 726a196 and older) -> 404. (The page itself, a real
+#   switch and the CSRF refusal are checked from the owner's PC by tests/org-privacy-page.sh: the
+#   settings pages are open only there.)
 #
 # It takes the server-change lock. It changes nothing but audit rows (on, already on). Keys and
 # passwords are never printed. Exit 0 when every check passes.
