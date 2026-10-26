@@ -661,7 +661,13 @@ federation and Teams (circles) apps come back. Then:
   (`GET` of the same address answers the page's view as JSON);
 - **admins only**: anyone else gets 403 before the switch runs; the form is not one that can be
   delegated to other groups;
-- **CSRF**: without the page's token the answer is 412 and nothing changes;
+- **CSRF**: without the page's token the answer is 412 and nothing changes. The server's own CSRF
+  check lets through any request that has an `OCS-APIRequest` header, with or without a token
+  (`Request::passesCSRFCheck` in 35.0.2), so the route refuses that header itself: 412
+  `csrf_check_failed`, for the GET and the POST. The page never sends it. Before this
+  (main `89eac21` and older) an admin's session without the token but with the header reached the
+  switch; `tests/org-privacy-route.php` showed it at 03:28 on 2026-10-26 with a stand-in switch,
+  so nothing was switched;
 - **password**: the server's own password confirmation (signing in counts for 30 minutes; after
   that the page asks for the password first). So an app password, which never confirms a
   password, cannot switch.
@@ -696,9 +702,31 @@ again. Nothing needs a restart: every setting is read on the next request.
   nothing, the page's texts), then the occ command (status, a dry run of off, on while on, the
   audit row, wrong arguments), the configure step (a dry run of off, a plain run, a wrong value)
   and the page's address through Cloudflare (401 without a session; 403 for a normal QA person's
-  app password, even with the header that passes the CSRF check).
+  app password, even with the header that passes the CSRF check). It also runs
+  `tests/org-privacy-route.php`: the server's installed security check, then the controller, on
+  real requests, with a stand-in switch that only notes its calls (its lock refuses, so nothing
+  can switch) and without any admin account (the check object's own "is an admin" answer is set
+  for the test): a normal person with the token 403; an admin without the token 412; an admin
+  without the token but with `OCS-APIRequest: true` (or `1`), and with the token plus that header,
+  412 `csrf_check_failed`, for the POST and the GET, and none of these reach the switch; an admin
+  with the token gets through, and the switch gets one call (off, key id `admin-page`, POST, the
+  client's address); every setting, the apps, the step and the audit rows are the same after.
 - `tests/org-privacy-page.sh normal|admin <creds-dir>` on the owner's PC: the real page and a real
-  Off and back On through it, as a temporary QA admin (see the runs below).
+  Off and back On through it, as a temporary QA admin (see the runs below). The admin step also
+  sends the POST and the GET without the token but with `OCS-APIRequest: true` (412
+  `csrf_check_failed`, still on), and fails when privacy was off for 20 s or more.
+- `sudo tests/org-privacy-audit.sh SINCE [UID]` on the server: the audit rows of that Off and On,
+  read through the signed admin API as NoMail would: exactly `switched_off` then `switched_on`
+  since SINCE, both key id `admin-page`, POST, 200, by `qa-t6b-admin`, with their times and the
+  client's own address (not empty, private, local or the tunnel's), less than 20 s apart.
+  `tests/org-privacy-admin-window.sh` runs it at the end of its window.
+- `tests/org-privacy-admin-run.sh --owner-yes` on the owner's PC: the whole admin run in one
+  command, only with the owner's yes (below).
+
+The names, exactly: the switch's address is `/apps/nourax_api/admin/org-privacy` (there is no
+`/apps/nourax_api/settings/org-privacy`; it answers 404), the page is
+`/settings/admin/nourax-workspace`, the server test is `tests/org-privacy-switch.sh`, and the
+audit rows have the route `org-privacy`.
 
 **Runs** (UTC, 2026-10-26, privacy on throughout):
 
@@ -717,15 +745,31 @@ writes (the settings, and disabling and enabling `federation` and `circles`) are
 runs and as on while on; the configure step it replaces made the same writes with occ on
 2026-10-25. `qa-t6b-admin` was never in the admin group; it is disabled.
 
-With the owner's yes, the run is three commands. `tests/org-privacy-admin-window.sh` holds the
-server-change lock for the whole window (10 minutes at most) and, at its end, switches privacy on
-(whatever the PC test did), takes `qa-t6b-admin` out of the admin group and disables it again:
+With the owner's yes, the run is one command on the owner's PC, from the repo at `origin/main`:
+
+```
+tests/org-privacy-admin-run.sh --owner-yes
+```
+
+It opens the window on the server (`tests/org-privacy-admin-window.sh start`: it waits for the
+server-change lock and holds it for the whole window, 10 minutes at most, and opens only while
+privacy is on), copies `qa-t6b-admin`'s password and TOTP file into a private temporary folder by
+piping ssh into the files, runs `tests/org-privacy-page.sh admin`, and then always, also after a
+failure or Ctrl+C, closes the window (`stop`: privacy on whatever the PC test did,
+`qa-t6b-admin` out of the admin group and disabled, `tests/org-privacy-audit.sh` on the window's
+rows) and runs `occ nourax_api:org-privacy status`, `occ nourax_api:status`, `tests/privacy.sh`
+and `tests/privacy-apps.sh`. It exits 0 only when all of these pass. The same by hand:
 
 ```
 ssh … 'cd /opt/nourax/basic-office-infra && sudo tests/org-privacy-admin-window.sh start'
 tests/org-privacy-page.sh admin <creds-dir>     # on the owner's PC; creds: qa-t6b-admin.pass and .totp from /etc/nourax/qa
 ssh … 'cd /opt/nourax/basic-office-infra && sudo tests/org-privacy-admin-window.sh stop && sudo tests/privacy.sh && sudo tests/privacy-apps.sh'
 ```
+
+**Undo** is built in: `stop`, or the window's time limit, switches privacy on and takes the
+account out of the admin group and disables it. To check afterwards:
+`sudo bash -c '. tests/lib.sh; need_admin_key; admin_api GET "/v1/admin/audit?target=qa-t6b-admin"; jq .rows "$T_OUT/body"'`
+on the server lists the two `admin-page` rows.
 
 ### The test
 

@@ -9,14 +9,18 @@ declare(strict_types=1);
  *
  * Both are for admins only: no NoAdminRequired, so the server answers 403 to anyone else before
  * this code runs; no NoCSRFRequired, so a request without the page's CSRF token gets 412. The
+ * server's own CSRF check (Request::passesCSRFCheck in 35.0.2) also lets through any request with
+ * an OCS-APIRequest header, token or not, so both routes refuse that header themselves (412
+ * csrf_check_failed): the page never sends it, and the page's token stays the only way in. The
  * POST also needs a password confirmation from the last 30 minutes (PasswordConfirmationRequired:
  * signing in counts, and the page asks for the password when it is older), so neither an app
  * password nor a session left open for long can switch. Each switch writes an audit row with the
  * admin's account id (OrgPrivacySwitch).
  *
  * Answers: 200 with {result, changed, status, effects, on_note, off_warning, history};
- * 400 invalid_state; 409 app_needs_upgrade; 423 busy; 500 failed (with the view, since a switch
- * that stopped half-way may have changed some settings). Errors are {error, message}.
+ * 400 invalid_state; 409 app_needs_upgrade; 412 csrf_check_failed; 423 busy; 500 failed (with
+ * the view, since a switch that stopped half-way may have changed some settings). Errors are
+ * {error, message}.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -45,11 +49,15 @@ class PrivacySettingsController extends Controller {
 	}
 
 	public function status(): JSONResponse {
-		return $this->json(PrivacySettings::view($this->switch));
+		return $this->refusedHeader() ?? $this->json(PrivacySettings::view($this->switch));
 	}
 
 	#[PasswordConfirmationRequired]
 	public function setState(string $state = ''): JSONResponse {
+		$refused = $this->refusedHeader();
+		if ($refused !== null) {
+			return $refused;
+		}
 		if ($state !== 'on' && $state !== 'off') {
 			return $this->json(['error' => 'invalid_state', 'message' => 'The state must be on or off.'], 400);
 		}
@@ -74,6 +82,18 @@ class PrivacySettingsController extends Controller {
 				+ PrivacySettings::view($this->switch), 500);
 		}
 		return $this->json(['result' => $done['result'], 'changed' => $done['changed']] + PrivacySettings::view($this->switch));
+	}
+
+	/**
+	 * 412 for a request with an OCS-APIRequest header (any value), which the server's CSRF check
+	 * would let through without the page's token; null otherwise.
+	 */
+	private function refusedHeader(): ?JSONResponse {
+		if ($this->request->getHeader('OCS-APIRequest') === '') {
+			return null;
+		}
+		return $this->json(['error' => 'csrf_check_failed',
+			'message' => 'Nothing was changed: the request must carry the page\'s token, not the OCS-APIRequest header.'], 412);
 	}
 
 	private function json(array $data, int $status = 200): JSONResponse {

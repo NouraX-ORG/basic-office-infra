@@ -6,6 +6,9 @@
 # nourax_api:org-privacy, the configure step scripts/configure.d/60-org-privacy.sh and the admin
 # page "Nourax Workspace". This checks:
 # - tests/org-privacy-switch.php (the list, status, dry runs, the lock, the page's texts);
+# - tests/org-privacy-route.php (the server's security check and the route, in process, with a
+#   stand-in switch: a normal person 403, an admin without the token 412, also with the
+#   OCS-APIRequest header that the server's CSRF check lets through, and with the token through);
 # - occ nourax_api:org-privacy status: on, the stored step on, sharing limited, every setting on,
 #   federation and circles disabled; nourax_api:status says the same;
 # - occ ... off --dry-run lists the changes and changes nothing; on (already on) changes nothing
@@ -39,13 +42,18 @@ step_run() { # runs the configure step in a subshell with the given environment;
 	env "$@" bash -c '. "$1/scripts/lib.sh"; load_env; . "$1/scripts/configure.d/60-org-privacy.sh"' _ "$REPO_DIR" 2>&1
 }
 
-log "--- the service, inside the app container"
-if dc exec -T -u www-data app php < "$REPO_DIR/tests/org-privacy-switch.php" > "$T_OUT/php.log" 2>&1; then
-	check "tests/org-privacy-switch.php" pass pass
-else
-	check "tests/org-privacy-switch.php" pass fail
-fi
-sed 's/^/  /' "$T_OUT/php.log"
+log "--- the service and the route, inside the app container"
+# Each PHP test passes when it exits 0 and printed its last line (the server's error handler can
+# end a script with status 0 after an uncaught error).
+for name in org-privacy-switch org-privacy-route; do
+	if dc exec -T -u www-data app php < "$REPO_DIR/tests/$name.php" > "$T_OUT/php.log" 2>&1 \
+		&& grep -qx "all $name checks passed" "$T_OUT/php.log"; then
+		check "tests/$name.php" pass pass
+	else
+		check "tests/$name.php" pass fail
+	fi
+	sed 's/^/  /' "$T_OUT/php.log"
+done
 
 log "--- occ nourax_api:org-privacy status"
 privacy status > "$T_OUT/status.json"

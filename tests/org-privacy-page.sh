@@ -12,17 +12,23 @@
 # its secret in CREDS-DIR/qa-t6b-admin.totp; the admin step signs in with password and code.
 #
 # normal: signs in with the sign-in form, then the admin page answers 403, and the switch's GET
-#   and POST (with the page's CSRF token) answer 403: a normal person cannot see or switch it.
+#   and POST (with the page's CSRF token, and without it but with "OCS-APIRequest: true") answer
+#   403: a normal person cannot see or switch it.
 # admin: signs in (the second factor is asked for, as for every admin), then
 #   - the page /settings/admin/nourax-workspace: the section, its title, the state On, what On
 #     changes, what Off means, the menu entry "Nourax Workspace" with its icon, the page's script
 #     and styles; no upstream name, link or blue in the section, its script, styles and icon
 #     (nourax_branding's rules.json, as scripts/check-branding.sh reads them);
-#   - the switch's GET: on; a POST without the CSRF token: 412 and still on; a wrong state: 400;
+#   - the switch's GET: on; a POST without the CSRF token: 412 and still on; the same with
+#     "OCS-APIRequest: true" (which the server's own CSRF check lets through): 412
+#     csrf_check_failed and still on, and a GET with that header 412 too; a wrong state: 400;
 #   - Off, then straight back On through the POST, each answered with the new state (Off: both
 #     apps enabled; On: both disabled), and the two switches at the top of "Recent changes",
-#     by qa-t6b-admin. It prints how long privacy was off. If switching back on fails, it tries
-#     again, and on any exit after Off it switches on again before it stops.
+#     by qa-t6b-admin. Privacy must be off for less than 20 s, from sending Off to the answer of
+#     On; it prints the time and the UTC clock times. If switching back on fails, it tries again,
+#     and on any exit after Off it switches on again before it stops.
+#   The audit rows of the two switches (key id admin-page, the client's address) are read on the
+#   server by tests/org-privacy-audit.sh, which tests/org-privacy-admin-window.sh runs at its end.
 # Both sign out at the end. Nothing secret is printed; the password, the TOTP secret and codes
 # reach curl only through files in CREDS-DIR and a private temporary folder.
 # Exit 0 when every check passes.
@@ -116,7 +122,11 @@ route() { # method out-file [curl options...]
 	[ "${NO_TOKEN:-0}" = 1 ] || token=(-H "requesttoken: $TOKEN")
 	C -X "$method" -H 'Accept: application/json' -H "Origin: $BASE" "${token[@]}" -o "$out" -w '%{http_code}' "$@" "$ROUTE"
 }
-post_state() { route POST "$T/post.json" -H 'Content-Type: application/json' --data-binary "{\"state\":\"$1\"}"; }
+post_state() { # state [curl options...]
+	local state="$1"
+	shift
+	route POST "$T/post.json" -H 'Content-Type: application/json' --data-binary "{\"state\":\"$state\"}" "$@"
+}
 
 # The sign-in form, as a browser sends it. Leaves the answer's headers in $T/h-login.
 sign_in() {
@@ -178,6 +188,8 @@ if [ "$MODE" = normal ]; then
 	check "a normal person: GET of the switch -> 403" 403 "$(route GET "$T/get.json")"
 	check "a normal person: POST off with the CSRF token -> 403" 403 "$(post_state off)"
 	log "  the answer: $(head -c 120 "$T/post.json")"
+	check "a normal person: POST off without the token, with OCS-APIRequest: true -> 403" 403 \
+		"$(NO_TOKEN=1 post_state off -H 'OCS-APIRequest: true')"
 
 	if [ ! -s "$CREDS/$QA_ADMIN.totp" ]; then
 		# The second factor every admin has here (two-factor sign-in is enforced for "admin").
@@ -344,6 +356,12 @@ check "GET of the switch -> 200" 200 "$(route GET "$T/get.json")"
 check "GET: on" on "$(field "$T/get.json" status.state)"
 check "POST off without the CSRF token -> 412" 412 "$(NO_TOKEN=1 post_state off)"
 check "after it: still on" on "$(route GET "$T/get.json" >/dev/null; field "$T/get.json" status.state)"
+# The server's own CSRF check lets any request with this header through; the route refuses it.
+code="$(NO_TOKEN=1 post_state off -H 'OCS-APIRequest: true')"
+check "POST off without the CSRF token, with OCS-APIRequest: true -> 412 csrf_check_failed" "412 csrf_check_failed" \
+	"$code $(field "$T/post.json" error)"
+check "after it: still on" on "$(route GET "$T/get.json" >/dev/null; field "$T/get.json" status.state)"
+check "GET without the CSRF token, with OCS-APIRequest: true -> 412" 412 "$(NO_TOKEN=1 route GET "$T/get-ocs.json" -H 'OCS-APIRequest: true')"
 check "POST a wrong state -> 400 invalid_state" "400 invalid_state" "$(post_state maybe) $(field "$T/post.json" error)"
 
 # Off, then straight back On.
@@ -364,7 +382,9 @@ check "POST on -> 200 switched_on, state on" "200 switched_on on" "$code $(field
 [ "$(field "$T/post.json" status.state)" = on ] && switched_off=0
 check "On: federation and circles disabled" "false false" \
 	"$(field "$T/post.json" status.apps.federation.enabled) $(field "$T/post.json" status.apps.circles.enabled)"
-log "  privacy was off for $(awk -v a="$off_at" -v b="$on_at" 'BEGIN { printf "%.1f", b - a }') s"
+off_for="$(awk -v a="$off_at" -v b="$on_at" 'BEGIN { printf "%.1f", b - a }')"
+log "  privacy was off for $off_for s: Off sent at $(date -u -d "@${off_at%.*}" '+%H:%M:%S'), On answered at $(date -u -d "@${on_at%.*}" '+%H:%M:%S') UTC"
+check "privacy was off for less than 20 s" yes "$(awk -v s="$off_for" 'BEGIN { print (s < 20 ? "yes" : "no") }')"
 log "  Off changed: $(field "$T/off.json" changed | tr -d '[]"' | sed 's/,/, /g')"
 check "Recent changes: on, then off, by $QA_ADMIN (admin page)" \
 	"Switched on by $QA_ADMIN (admin page)|Switched off by $QA_ADMIN (admin page)" \
