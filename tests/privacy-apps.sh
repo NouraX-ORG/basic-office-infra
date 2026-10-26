@@ -699,10 +699,12 @@ fi
 checkw "card people: $QA3 (org B) is refused" yes \
 	"$(code="$(json "$QA1" PUT "$DECK/boards/$board/stacks/$stack/cards/$card/assignUser" "$(jq -cn --arg u "$QA3" '{userId: $u}')")"; [[ "$code" =~ ^40[03]$ ]] && echo yes || echo "no ($code)")"
 # Imports name people and groups that Deck writes as they are (BoardImportService). The config must
-# be a JSON object for Deck ({} arrives as an empty list, which its schema refuses with 409).
+# be a JSON object for Deck ({} arrives as an empty list, which its schema refuses with 409). The
+# board keeps the export's lastModified, and Deck's board list leaves out a board whose
+# lastModified is 0, so the export says now.
 import_json() { # acl-type participant
 	jq -cn --arg o "$QA1" --argjson t "$1" --arg p "$2" '{system: "DeckJson", config: {owner: $o}, data: {boards: [{title: "QA t6b import", owner: $o,
-		color: "2563eb", archived: false, deletedAt: 0, lastModified: 0, labels: [], stacks: [],
+		color: "2563eb", archived: false, deletedAt: 0, lastModified: (now | floor), labels: [], stacks: [],
 		acl: [{type: $t, participant: {primaryKey: $p, uid: $p, type: $t}, permissionEdit: false, permissionShare: false, permissionManage: false}]}]}}'
 }
 imports() { call "$1" GET "$DECK/boards" >/dev/null; jq -r '[.[]? | select(.title == "QA t6b import")] | length' "$T_OUT/r"; }
