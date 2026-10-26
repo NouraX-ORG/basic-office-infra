@@ -48,7 +48,9 @@ use OCP\Settings\IDelegatedSettings;
 use OCP\Settings\IManager as ISettingsManager;
 
 // Piped in as root (docker compose exec without -u www-data): become the owner of config.php
-// first, as occ asks, so nothing the server writes belongs to root.
+// first, as occ asks, so nothing the server writes belongs to root. Nothing may be printed before
+// the server has read its config: it takes any earlier output for "leading content" in config.php.
+$startedAsRoot = null;
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
 	$owner = fileowner('/var/www/html/config/config.php');
 	$account = $owner === false ? false : posix_getpwuid($owner);
@@ -57,10 +59,13 @@ if (function_exists('posix_getuid') && posix_getuid() === 0) {
 		echo "FAIL could not become the owner of config.php; run it with -u www-data\n";
 		exit(1);
 	}
-	echo 'started as root, now running as ' . $account['name'] . ", the owner of config.php\n";
+	$startedAsRoot = $account['name'];
 	unset($owner, $account);
 }
 require_once '/var/www/html/lib/base.php';
+if ($startedAsRoot !== null) {
+	echo "started as root, now running as $startedAsRoot, the owner of config.php\n";
+}
 Server::get(IAppManager::class)->loadApp('nourax_api');
 
 $fails = 0;

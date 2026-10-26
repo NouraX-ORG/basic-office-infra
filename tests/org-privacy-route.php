@@ -77,7 +77,9 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Routing\RequestContext;
 
 // Piped in as root (docker compose exec without -u www-data): become the owner of config.php
-// first, as occ asks, so nothing the server writes belongs to root.
+// first, as occ asks, so nothing the server writes belongs to root. Nothing may be printed before
+// the server has read its config: it takes any earlier output for "leading content" in config.php.
+$startedAsRoot = null;
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
 	$owner = fileowner('/var/www/html/config/config.php');
 	$account = $owner === false ? false : posix_getpwuid($owner);
@@ -86,10 +88,13 @@ if (function_exists('posix_getuid') && posix_getuid() === 0) {
 		echo "FAIL could not become the owner of config.php; run it with -u www-data\n";
 		exit(1);
 	}
-	echo 'started as root, now running as ' . $account['name'] . ", the owner of config.php\n";
+	$startedAsRoot = $account['name'];
 	unset($owner, $account);
 }
 require_once '/var/www/html/lib/base.php';
+if ($startedAsRoot !== null) {
+	echo "started as root, now running as $startedAsRoot, the owner of config.php\n";
+}
 Server::get(IAppManager::class)->loadApp('nourax_api');
 
 $fails = 0;
@@ -154,18 +159,21 @@ $standIn = new class(Server::get(IConfig::class), Server::get(IAppConfig::class)
 check('the page\'s link to the switch is /apps/nourax_api/settings/org-privacy', true,
 	str_ends_with(Server::get(IURLGenerator::class)->linkToRoute('nourax_api.privacy_settings.setState'), '/apps/nourax_api/settings/org-privacy'));
 $router = Server::get(Router::class);
-/** The route the server's router picks for a method and path, or the exception's name. */
+/**
+ * The route the server's router picks for a method and path (the router keeps route names in
+ * lower case), or the exception's name.
+ */
 function routeOf(Router $router, string $method, string $path): string {
 	$router->setContext(new RequestContext('', $method));
 	try {
-		return (string)($router->findMatchingRoute($path)['_route'] ?? 'none');
+		return strtolower((string)($router->findMatchingRoute($path)['_route'] ?? 'none'));
 	} catch (\Exception $e) {
 		return (new \ReflectionClass($e))->getShortName();
 	}
 }
 check('GET /apps/nourax_api/settings/org-privacy -> privacy_settings.status', 'nourax_api.privacy_settings.status',
 	routeOf($router, 'GET', '/apps/nourax_api/settings/org-privacy'));
-check('POST /apps/nourax_api/settings/org-privacy -> privacy_settings.setState', 'nourax_api.privacy_settings.setState',
+check('POST /apps/nourax_api/settings/org-privacy -> privacy_settings.setState', 'nourax_api.privacy_settings.setstate',
 	routeOf($router, 'POST', '/apps/nourax_api/settings/org-privacy'));
 check('the old address /apps/nourax_api/admin/org-privacy matches no route (GET, POST)',
 	'ResourceNotFoundException ResourceNotFoundException',
