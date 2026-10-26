@@ -490,9 +490,9 @@ see [The test](#the-test) for the run of the reply to NoMail.
 | Suggestions in the share dialog, autocomplete (@-mentions in comments and documents), the contacts menu, calendar invitees and DAV principal search | Only people who share a group (an organisation or a team) | core `shareapi_allow_share_dialog_user_enumeration=yes`, `shareapi_restrict_user_enumeration_to_group=yes`, `shareapi_restrict_user_enumeration_to_phone=no` |
 | Typing someone's exact name, email address or account id | Finds nobody outside those groups | core `shareapi_restrict_user_enumeration_full_match=no`, and `..._full_match_user_id`, `..._full_match_email`, `..._full_match_displayname` = `no` |
 | Sharing a file or folder with a person or a group | Only with people who share a group, and only with one's own groups ("Sharing is only allowed with group members.") | core `shareapi_only_share_with_group_members=yes`; `shareapi_only_share_with_group_members_exclude_group_list=["admin"]`, so being in `admin` together never counts |
-| Sharing a calendar or an address book (NoCalendar, NoContacts, any CalDAV or CardDAV app) | The same rule: 403 "Sharing is only allowed with people of your organisation." and nothing is shared. The server itself checks only `mailto:` targets here, not account or group ids. | nourax_api `lib/Dav/OrgSharePlugin.php` (a DAV plugin on `/remote.php/dav`, before the server's sharing plugin) |
+| Sharing a calendar or an address book (NoCalendar, NoContacts, any CalDAV or CardDAV app) | The same rule: 403 "Sharing is only allowed with people of your organisation." and nothing is shared. The server itself checks only `mailto:` targets here, not account or group ids. A target is read exactly as the server's sharing backend reads it (`principal:principals/users/<id>` or `.../groups/<id>`); an id that does not exist, a `mailto:` address and an address written another way (`principals//users/...`, capitals, `/remote.php/dav/principals/...`), which the server would share with nobody, get the same 403, so the answer never tells whether an account exists. | nourax_api `lib/Dav/OrgSharePlugin.php` (a DAV plugin on `/remote.php/dav`, before the server's sharing plugin) |
 | Sharing a board (NoBoard, in the app or through its REST and OCS APIs) | The same rule: 403 with the same message. Deck itself takes any account or group id. | nourax_api `lib/Middleware/OrgShareMiddleware.php` (looks only at Deck's three "add a board share" actions) |
-| Sharing or handing over in the other apps: a NoGantt project share or planning person (resource), a NoForms share or new form owner, a new board owner or a board import (NoBoard), asking someone to take over one's files (NoDrive), a Photos album collaborator, a team folder rule (a lead's advanced permissions) | The same rule: 403 "Sharing is only allowed with people of your organisation." (for a group: "... with your own organisation and teams.") and nothing is shared or handed over. An id that does not exist gets the same 403, so the answer never tells whether an account exists. The apps themselves only check that the account exists (Deck's import not even that). | nourax_api `lib/Middleware/OrgShareMiddleware.php` (the apps' own actions) and `lib/Dav/OrgPeoplePlugin.php` (the album and team folder PROPPATCH) |
+| Sharing or handing over in the other apps: a NoGantt project share or planning person (resource), a NoForms share or new form owner, a new board owner or a board import (NoBoard), asking someone to take over one's files (NoDrive), a Photos album collaborator, a team folder rule (a lead's advanced permissions) | The same rule: 403 "Sharing is only allowed with people of your organisation." (for a group: "... with your own organisation and teams.") and nothing is shared or handed over. An id that does not exist gets the same 403, so the answer never tells whether an account exists. An album collaborator or a team folder rule (a WebDAV PROPPATCH) is refused the WebDAV way for one property: HTTP 207 Multi-Status with a 403 propstat for that property, and nothing in that PROPPATCH is saved (any other property in it is answered 424). The apps themselves only check that the account exists (Deck's import not even that). | nourax_api `lib/Middleware/OrgShareMiddleware.php` (the apps' own actions) and `lib/Dav/OrgPeoplePlugin.php` (the album and team folder PROPPATCH) |
 | Who a person is, given their exact id: their own DAV address (`/remote.php/dav/principals/users/<id>/`, and `.../groups/<id>/` for a group), the names the ONLYOFFICE editor asks for, the name in a file or card comment that mentions "@<id>", their avatar picture, online status and out of office, and NoCalendar's public appointments page | Only for people who share a group, and one's own groups. For anyone else the address answers no name, email address, groups or language; the editor gets no name; a comment shows the id that was typed; the avatar, status and out of office answer as for an account that does not exist (404); the appointments page is the "not found" page unless the person has a public booking page. | nourax_api `lib/Dav/OrgPeoplePlugin.php` and `lib/Middleware/OrgShareMiddleware.php` (with `lib/Service/MentionNames.php` for card comments) |
 | The "Accounts" address book of every account on the server | Not offered in anyone's address books. Asked for at its own address, it lists only people who share a group. Each organisation has its own directory instead. | dav `system_addressbook_exposed=false` |
 | Profile pages (`/u/<uid>`) | Off for everyone, signed in or not: every address shows the "Profile not found" page (the server answers it with HTTP 200, the same as for an account that does not exist), with no name or other field | system `profile.enabled=false` |
@@ -523,7 +523,7 @@ all of it; [The test](#the-test) has the runs.
 | NoDrive | Asking someone to take over one's files (`files/api/v1/transferownership`) | Was a leak: any account got the request, with the sender's name. Now 403. |
 | NoDrive | Comments: "@<id>" in a comment | The mentioned person gets no notification (the server drops it: they cannot open the file). Was a leak: the comment answered their name to everyone who reads it. Now the id. |
 | NoCalendar | Attendee suggestions, photos, contact groups, principal search, free/busy | Nobody of the other organisation; free/busy answers "could not find principal" (3.7). |
-| NoCalendar | Sharing a calendar; inviting someone | Shares: 403 (above). An invitation to someone of another organisation goes out as an email to their address; it never reaches their calendar inbox. |
+| NoCalendar | Sharing a calendar; inviting someone | Shares: 403 (above), also for an id that does not exist and for any other way of writing the address. An invitation to someone of another organisation goes out as an email to their address; it never reaches their calendar inbox. |
 | NoCalendar | The public appointments page (`/apps/calendar/appointments/<id>`) | Was a leak, to anyone, even a visitor who is not signed in: the page held the name of any account id ("Karim (Marketing)" for `demo-b01`, who has no booking page). Now, for an account without a public booking page, people outside its organisation and visitors who are not signed in get the page of an account that does not exist. A public booking page is the person's own choice to be found, like a public link, and stays. |
 | Out of office | A person's absence asked by id (`/ocs/v2.php/apps/dav/api/v1/outOfOffice/<id>` and `.../now`); naming one's replacement | Was a leak: anyone could read the dates, message and replacement of anyone's absence, and naming any account as one's replacement answered that person's name. Now 404 (no data) for someone outside the organisation, and 403 for such a replacement (or an id that does not exist). |
 | Online status | A person's status asked by id (`/ocs/v2.php/apps/user_status/api/v1/statuses/<id>`) | Was a leak: the status and its message. Now 404 "No status for the requested userId", as for someone without a status. The list of everyone's statuses was already empty (the server gives none while people search is limited to groups). |
@@ -536,12 +536,12 @@ all of it; [The test](#the-test) has the runs.
 | NoBoard | Board imports (the import API and the upload) | Was a leak: the shares, card people, comment authors, card editors and attachment authors of an import were written as they are (the import API answered 200 with a `uidRelation` that named `qa-t6b-3`, and the upload 200 with a share to `qa-t6b-3`). Now an import that names someone of another organisation, or another organisation's group, gets 403 (the import API answers through `/index.php` in OCS version 1: HTTP 200 with status 403 and the message in the answer; the upload answers HTTP 403). Each field is read exactly as Deck 1.19.1 reads it (a share by `participant.primaryKey`, a card person by `participant.uid`, the export's owner becomes the importing person, comment authors never), so an export cannot say one thing to the check and another to Deck. |
 | NoBoard | Card people, @-mentions on cards | Only the board's people (Deck's own rule). |
 | NoBoard | Card comments that mention "@<id>" | Was a leak: Deck answered the mentioned person's name to everyone who reads the card. Now the id that was typed, in the JSON and the XML answers. The person is not notified (Deck notifies only the board's people). |
-| NoForms | Sharing a form, a new form owner | Was a leak: any account or group. Now 403. The "all accounts" options stay off (`50-apps.sh`). |
+| NoForms | Sharing a form, a new form owner | Was a leak: any account or group. Now 403. Within the organisation nothing changes: a new share answers 201 Created (NoForms' own answer for a share it made) and a new owner 200. The "all accounts" options stay off (`50-apps.sh`). |
 | NoGantt | Its own sharee search, people search and email match | Nobody of the other organisation (they use the server's search); the email match answers `not_found`. |
 | NoGantt | Sharing a project, a planning person (resource) | Was a leak (Task 1's lane G found it too): a project share with any account, and a resource for any account answered that person's name and could send them notifications. Now 403. |
 | ONLYOFFICE | The editor's people list (mentions, protected ranges), its names for account ids, mentions by email | The list holds the organisation's people only. Was a leak: the editor's name lookup answered any account's name. Now only names of people one shares a group with. A mention by email of someone of another organisation shares nothing and notifies nobody (ONLYOFFICE's own check). |
-| Team folders | The lead's people search; a lead's advanced permissions | The search holds the team only. Was a leak: a rule could name anyone, and then showed their name. Now a new rule for someone outside the organisation, or for a group the lead is not in, gets 403. Rules the folder already has are not checked again, so an old rule (for someone who has since left) never blocks the lead's other changes. |
-| Photos | Album collaborators | Was a leak: any account or group (Photos checks only that it exists). Now a new collaborator outside the organisation gets 403; collaborators the album already has are not checked again. Public links stay possible. |
+| Team folders | The lead's people search; a lead's advanced permissions | The search holds the team only. Was a leak: a rule could name anyone, and then showed their name. Now a new rule for someone outside the organisation, or for a group the lead is not in, is refused: 207 with a 403 propstat for the rules, and the rules stay as they were. Rules the folder already has are not checked again, so an old rule (for someone who has since left) never blocks the lead's other changes. |
+| Photos | Album collaborators | Was a leak: any account or group (Photos checks only that it exists). Now a new collaborator outside the organisation (or an id that does not exist) is refused: 207 with a 403 propstat for the collaborators, and the album's collaborators stay as they were. Collaborators the album already has are not checked again. Public links stay possible. |
 | NoNotes | — | No people list of its own: notes are files and are shared as files. |
 | Text documents | @-mentions | The suggestions are the server's people search plus the people in the document, so nobody of the other organisation (checked live: a session on a QA file, the list for "qa-t6b", the id and the name). A mention of them notifies nobody: Text's Notifier drops a notification for someone who cannot open the file (text 9.0.1). |
 | Activity | The activity stream | Names nobody of the other organisation. |
@@ -569,9 +569,12 @@ all of it; [The test](#the-test) has the runs.
 ### Known limits
 
 - Someone who already knows the exact account id of a person in another organisation (a random
-  36-character id they cannot find through Drive) can still tell that the account exists: its
-  DAV address answers "a principal" with no name. They cannot find it, share with it, hand it
-  anything, or see its name, picture, status, absence, email address, groups or profile.
+  36-character id they cannot find through Drive) can still tell that the account exists, from
+  two of the server's own WebDAV addresses: `principals/users/<id>/` answers "a principal" with
+  no name, and a PROPFIND of `files/<id>/` answers 207 with an empty folder (404 for an id that
+  does not exist; the server shows nobody another person's files at that address). They cannot
+  find it, share with it, hand it anything, or see its name, picture, status, absence, email
+  address, groups, files or profile.
 - A visitor who is **not signed in** and knows an exact id still gets its avatar picture
   (`/avatar/<id>/64`: the first letters of the name, when no picture was uploaded). Pages made
   for visitors, such as a public booking page, show the person's picture, so pictures are limited
@@ -582,6 +585,10 @@ all of it; [The test](#the-test) has the runs.
   server's display-name lookup, which no app can change. Only the comment's author sees it, and
   only for an id they typed themselves; the comment itself and everyone else show the id, and the
   person is not notified.
+- A comment keeps its author's name. On a board that someone of another organisation once
+  commented on (they were a member before they moved, or, before the import fix, an import wrote
+  the comment in their name), the board's people still see that author's name on it; the author
+  cannot open the board.
 - Opening NoNotes for the first time makes an empty "Notes" folder in one's files (the app's own
   behaviour, not a privacy matter).
 - The old addresses `/remote.php/caldav` and `/remote.php/carddav` have no sharing at all, so
@@ -630,23 +637,59 @@ exact id, email and name of `qa-t6-3` found nobody; the system book at its own a
 sync report held 2 cards, none outside organisation A; every profile page was "not found".
 
 **App by app** (`sudo tests/privacy-apps.sh`, the table [Every place people meet, app by
-app](#every-place-people-meet-app-by-app)), with privacy on, 2026-10-25 (UTC):
+app](#every-place-people-meet-app-by-app)), with privacy on.
+
+**Leaks are undone by the test itself.** `tests/org-grants.sql` (read only) lists every grant of
+the test accounts that crosses organisations, as the apps store it: board, form and project
+shares, board and form owners, card people, NoGantt resources, album collaborators, team folder
+rules, file ownership requests, file, calendar and address book shares, out of office
+replacements, and notifications that name someone of the other organisation. The test reads it
+before the write checks (for anything an earlier run left) and again after each check that tries
+another organisation. Each grant found is a `FAIL` line naming it, followed by `LEAK (undone)`
+once the test has taken it back through the app's own API, as the QA account that made or
+received it (unshare, remove the collaborator or rule, unassign, turn down the transfer request,
+dismiss the notification, clear the resource's account). A board or form handed to another
+organisation goes back to `qa-t6b-4` with Deck's own `occ deck:transfer-ownership --remap`, or by
+writing the owner back the way NoForms' own owner change does, since the apps' APIs now refuse
+the way back across organisations. Only the test's own QA objects are ever changed: a grant of
+any other account (a demo account) would be logged `LEAK (not undone)` and left alone. The last
+check, "no cross-organisation grant left", reads the list again.
+
+The runs (UTC; the logs are in [`tests/runs/privacy-apps/`](../tests/runs/privacy-apps/)):
 
 | Run | Commit | Result |
 |---|---|---|
+| Before the first fixes, 2026-10-25 16:54–16:58 | `71b1bc2` | 286 PASS, 45 FAIL: the first picture of the leaks (DAV addresses, the ONLYOFFICE names, NoGantt, NoForms, board owners, imports and card people, file ownership transfers, albums, team folder rules, the name in a comment), plus a few faults of the test itself fixed in `431a073` |
 | Before the first fixes, 22:25–22:28 | `431a073` | 286 PASS, 42 FAIL: the leaks of commit `11e251f` (DAV addresses and the ONLYOFFICE names, both ways; NoGantt shares and resources; NoForms shares and owners; board owners, imports and card people; file ownership transfers; albums; team folder rules; the name in a comment) |
 | After them, 22:33–22:36 | `11e251f` | 7 FAIL: the 5 import API checks read the HTTP code, but that API answers OCS version 1 (HTTP 200, status 403 inside; nothing was imported), and the ONLYOFFICE names still leaked (the filter waited for a DataResponse, which the server had already made a JSONResponse) |
 | Before the second fixes, 22:59–23:03 | `cb8dcb7` | 343 PASS, 22 FAIL: avatars by id (8), the appointments page signed in and not (4), the ONLYOFFICE names (2), a status read by id, an absence read by id (2), a replacement (2), card comment names (2), and one fault of the test itself (it counted two old "card assigned to you" notifications of `qa-t6b-3` as mentions) |
-| After them, 23:04–23:07 | `0298b30` | **363 PASS, none failed** ("all privacy-apps checks passed") |
+| After them, 23:04–23:07 | `0298b30` | 363 PASS, none failed |
+| The undo step's first run, 2026-10-26 00:34–00:37 | `d2ca73b` | 376 PASS, 33 FAIL, every one of them a grant that an earlier run had left, each followed by `LEAK (undone)` (below); none of the checks themselves failed; the last check, "no cross-organisation grant left", passed |
+| After it, 00:38–00:41 | `7df3498` | **374 PASS, none failed** ("all privacy-apps checks passed", exit 0); no grant found before, during or after the checks |
 
-The runs before the fixes left what the leaks let through, all between QA accounts and nothing
-of the demo accounts: NoGantt projects shared with `qa-t6b-3` and a resource for them, forms
-shared with `qa-t6b-3` and `org:qa-t6b-org-b`, two boards handed to `qa-t6b-3` (with a card
-assigned to them on each), two file ownership transfer requests to `qa-t6b-3`, the album "QA t6b
-privacy" with `org:qa-t6b-org-b`, team folder rules for them (folders `qa-t6b-acl` and
-`qa-t6b-acl-2`), and `qa-t6b-4`'s out of office once naming `qa-t6b-3` (set back to `qa-t6b-2` in
-the same run). No board import reached them. The test never uses such an object again (it makes
-"QA t6b privacy 2", `qa-t6b-acl-3` and so on). Deleting them needs the owner's yes.
+The runs before the fixes had no undo step yet, so what their leaks let through stayed until the
+undo step's first run took it back. All of it was between QA accounts; nothing of the demo
+accounts. It was:
+
+- two boards "QA t6b privacy" handed to `qa-t6b-3` (boards 81 and 90; back to `qa-t6b-4`, with
+  their cards' people) and two forms "QA t6b privacy" handed to them (forms 4 and 6; back to
+  `qa-t6b-4`, then their shares with `qa-t6b-3` and `org:qa-t6b-org-b` removed);
+- five imported boards "QA t6b import" shared with `qa-t6b-3` and one with `org:qa-t6b-org-b`
+  (boards 83, 84, 91–94; unshared), and a card on another one assigned to them (unassigned);
+- NoGantt projects 40 and 43 shared with `qa-t6b-3` (unshared) and resource 4 standing for them
+  (its account cleared);
+- the album "QA t6b privacy" with `org:qa-t6b-org-b`, and the team folder rules for that group on
+  `qa-t6b-acl` and `qa-t6b-acl-2` (removed);
+- two file ownership requests to `qa-t6b-3` (turned down as `qa-t6b-3`), and the notifications that
+  named `qa-t6b-4` to `qa-t6b-3` (forms shared, card assigned, transfer requests) and, after the
+  requests were turned down, `qa-t6b-3` to `qa-t6b-4` (dismissed).
+
+What stays is not a grant: the imported boards themselves (owned by `qa-t6b-4`, shared with
+nobody of org B any more), and on one of them (board 96, card 177) a comment that the leaked
+import wrote in `qa-t6b-3`'s name. `qa-t6b-4`, who sent that import, still sees the author's name
+"QA t6b 3" on it; `qa-t6b-3` cannot open the card (403). Removing it is a delete, so it waits for
+the owner's yes. The older QA objects "QA t6b privacy 2", `qa-t6b-acl-2` and `qa-t6b-acl-3` are
+no longer needed (the test uses "QA t6b privacy" and `qa-t6b-acl` again) and are kept.
 
 ## What NoMail builds
 
@@ -723,6 +766,15 @@ What is in them:
   George (`demo-a09`, Engineering): the same organisation, another team.
 - Each team's calendar "Team: <team>", its board "Team: <team>" and its read-only address book, as
   for every team.
+
+What they do not have: a personal "Contacts" address book and a "Personal" calendar. The server
+makes those two only on a person's first sign-in (dav's `UserEventsListener::firstLogin`, run by
+the "first time logged in" event), and it does not count a sign-in with an app password as one:
+the demo accounts' first sign-in was a WebDAV request with their key (`tests/demo-accounts.sh`),
+so their only own book is "Recently contacted". Nothing is broken: the owner can add an address
+book or a calendar in NoContacts or NoCalendar as a demo person. The same is true of any account
+made through `/v1/provision` whose first use is NoMail's app password (an open item for the
+NoMail API, not a privacy matter).
 
 **Making and checking them:** `sudo tests/demo-accounts.sh` on the server. It takes the
 server-change lock itself (never wrap it in `flock`; set `NOURAX_LOCK_HELD=1` if you already hold
@@ -821,7 +873,7 @@ and writes it to the server file. Then copy the file to the PC again (above).
 | Teams | `qa-t6-team-a1` and `qa-t6-team-a2` (both "Sales", org A: folders "Sales" and "Sales 2"), `qa-t6-team-b1` ("Sales", org B: folder "Sales") |
 | Member (part 1) | `qa-t6-5`, put into `org:qa-t6-org-a` and `team:qa-t6-team-a1` with `occ group:adduser` |
 | People (part 2, `tests/admin-people.sh`) | `qa-t6-1` (A1 member, then moved to A2), `qa-t6-2` (A1 lead), `qa-t6-3` (B1; leaves the organisation and comes back), `qa-t6-4` (added to A1 with occ, taken out by the reconcile) |
-| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy 2" (with `qa-t6b-2`; "QA t6b privacy" is an earlier leak's), the folder `qa-t6b-acl-3` in the team folder (a rule for `qa-t6b-2`; `qa-t6b-acl` and `qa-t6b-acl-2` are earlier leaks'), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. The run before the fixes also left what the leaks let through, all between QA accounts: see [The test](#the-test). Kept for the next run. |
+| People and objects (`tests/privacy-apps.sh`) | Organisations `qa-t6b-org-a` ("QA t6b Org A", team `qa-t6b-team-a1`) and `qa-t6b-org-b` (team `qa-t6b-team-b1`); `qa-t6b-4` (A1 lead), `qa-t6b-2` (A1), `qa-t6b-3` (B1). Of `qa-t6b-4`: a folder `qa-t6b-privacy` (with `probe.txt`, its comment "@qa-t6b-3 privacy probe", and `transfer-me.txt`), the NoGantt project "QA t6b privacy" (shared with `qa-t6b-2`) and a resource for `qa-t6b-2`, the forms "QA t6b privacy" (shared with `qa-t6b-2`) and "QA t6b transfer", the boards "QA t6b privacy" (a list and a card with the comments "@qa-t6b-3 privacy probe" and "@qa-t6b-2 privacy probe"), "QA t6b transfer" and "QA t6b import (same organisation)", the album "QA t6b privacy" (with `qa-t6b-2`), the folder `qa-t6b-acl` in the team folder (a rule for `qa-t6b-2`; the album "QA t6b privacy 2" and the folders `qa-t6b-acl-2` and `qa-t6b-acl-3` are from earlier runs and kept), the task list "QA t6b tasks" (shared with `qa-t6b-2`), the calendar "QA t6b events" (one invitation a day to `qa-t6b-3`'s address), and one ownership transfer request to `qa-t6b-2` (never accepted); an out of office for today and tomorrow with `qa-t6b-2` as replacement. `qa-t6b-2` and `qa-t6b-3` keep a status message ("... status probe") and an out of office for today and tomorrow, set again each run. What the runs before the fixes let through (all between QA accounts) was taken back by the test's undo step: see [The test](#the-test). Kept for the next run. |
 | People and objects (`tests/privacy.sh`) | `qa-t6-1` (A2), `qa-t6-2` (A1), `qa-t6-3` and `qa-t6-5` (B1); a folder `qa-t6-privacy` in `qa-t6-1`'s and `qa-t6-3`'s files, a calendar and an address book `qa-t6-privacy` and a board "QA t6 privacy" of `qa-t6-1`, each shared with `qa-t6-2` only. Kept for the next run. |
 
 `tests/admin-people.sh` names the teams "QA t6 Team A1 Renamed", "QA t6 Team A2" and "QA t6 Team
