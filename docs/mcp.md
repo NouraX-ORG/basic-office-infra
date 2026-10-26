@@ -13,9 +13,10 @@ sees only what that person can see.
 | Protocol | MCP Streamable HTTP, protocol versions 2024-11-05 to 2026-07-28; OAuth 2.1 with PKCE |
 | Cost | No AI budget: the connector itself never calls an AI model |
 
-**Status (2026-10-25).** The Worker is built and can be uploaded with no route. People can't reach
-it until the owner adds the custom domain `mcp.nourax.org` (section 10, step 1). Until then every
-address on this page answers nothing.
+**Status (2026-10-26).** The Worker is uploaded (version `d88d6c67`, build `4e4eab17156c`) with
+no route, no custom domain and no `workers.dev` address. People can't reach it until the owner adds
+the custom domain `mcp.nourax.org` (section 10, step 1). Until then every address on this page
+answers nothing.
 
 Contents:
 1. [Before you connect](#1-before-you-connect)
