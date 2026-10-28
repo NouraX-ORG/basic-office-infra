@@ -230,7 +230,7 @@ shown, never on a command line on the server and never in the clipboard.
 | `NODRIVE_API_URL` | `https://drive.nourax.org/apps/nourax_api` (no trailing slash) | Now |
 | `NODRIVE_API_KEY` | The file `nodrive_api_key` | Now: NoMail's account set-up (`drive-provision`) and attachment scans (`scan-attachments`) switch on |
 | `NODRIVE_ADMIN_API_KEY` | The file `nodrive_admin_api_key` | Now; used only by NoMail's admin-only function for organisations and teams ([teams.md](teams.md#what-nomail-builds)) |
-| `DRIVE_UPLOAD_TICKET_KEY` | The file `upload_ticket_key` (the Worker's `UPLOAD_TICKET_KEY`) | Only after the route `drive.nourax.org/nomail-upload/*` is live ([nomail-contract.md](nomail-contract.md#the-route-waits-for-the-owners-yes)) |
+| `DRIVE_UPLOAD_TICKET_KEY` | The file `upload_ticket_key` (the Worker's `UPLOAD_TICKET_KEY`) | Only after the route `drive.nourax.org/nomail-upload/*` is live ([nomail-contract.md](nomail-contract.md#the-route-on-since-2026-10-28)) |
 
 ## Limits and protection
 

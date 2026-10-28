@@ -286,17 +286,17 @@ format is v1, unchanged: NoMail seals `uid`, `login` and the "NoMail" app passwo
 `/v1/provision` with `DRIVE_UPLOAD_TICKET_KEY`; the Worker opens it with the same value
 (`UPLOAD_TICKET_KEY`).
 
-### State on 2026-10-25
+### State on 2026-10-28
 
 | | |
 |---|---|
-| Script | `nodrive-upload` deployed with `npx wrangler deploy` (wrangler 4.152.0): "No targets deployed". Current version `4730d701-9b74-4004-b4af-8958714a49b6`, deployed 2026-10-25 12:09:06 UTC (the 415 pass-through below); the one before was `92671026-32aa-4af0-a852-aaed05f78e67` (09:07 UTC) |
-| Route | **None.** The Cloudflare API lists only `office.nourax.org/nourax-ai/*` (`nourax-office-ai`) for the zone |
+| Script | `nodrive-upload` deployed with `npx wrangler deploy` (wrangler 4.152.0). Current version `1ac4bf36-d0c1-4c41-a265-a1d02a4c2f83`, deployed 2026-10-28 21:24:43 UTC with the route (same code as before). Earlier: `4730d701-9b74-4004-b4af-8958714a49b6` (2026-10-25 12:09 UTC, the 415 pass-through below, no route) and `92671026-32aa-4af0-a852-aaed05f78e67` (09:07 UTC) |
+| Route | `drive.nourax.org/nomail-upload/*` → `nodrive-upload`, route id `4b377ec8ebfb4ad8b6c0c3042987f411`, on since 2026-10-28 21:24 UTC ([below](#the-route-on-since-2026-10-28)). The zone's only other Worker route is `office.nourax.org/nourax-ai/*` (`nourax-office-ai`) |
 | `workers.dev`, previews | Off: `GET …/workers/scripts/nodrive-upload/subdomain` gives `{"enabled":false,"previews_enabled":false}` |
 | Custom domains | None |
-| Secret | `UPLOAD_TICKET_KEY` set (43 characters), piped from `/etc/nourax/secrets/upload_ticket_key` on the server. **Not proven to be the same value as the server file:** `wrangler secret list` shows only the name, and `tests/worker-local.sh` runs with a throwaway key. Only the route test after the owner's yes (tickets sealed with the server file's key, `/finish` 201) proves it. |
+| Secret | `UPLOAD_TICKET_KEY` set (43 characters), piped from `/etc/nourax/secrets/upload_ticket_key` on the server on 2026-10-25. **Proven to be the same value as the server file** on 2026-10-28: the live route test sealed every ticket with the server file's key (piped over SSH into `mint-ticket.mjs`), and the Worker opened them all (`/start` 201, `/finish` 201); a ticket sealed with another key got 401 `bad_ticket` |
 | Settings | `ORIGIN_BASE=https://drive.nourax.org`, `ALLOWED_ORIGINS=https://mail.nourax.org`, chunks up to 50 MiB, files up to 10 GiB |
-| Live check | `https://drive.nourax.org/nomail-upload/health` answers 404 (the Drive's own page) |
+| Live check | `https://drive.nourax.org/nomail-upload/health` answers 200 `{"status":"ok"}` |
 
 ### Tested without the route
 
@@ -361,38 +361,55 @@ retry, with a plain message:
 
 Only a new upload can follow. NoMail's page already sends `DELETE /` when an upload fails.
 **Tested** with 6 new unit tests that feed the Worker the Drive's 415 answer (`npm test` in
-`worker/`: 56 tests pass; `tsc --noEmit` clean). **Not tested live** through the Worker: there is
-no route yet, and the local run (`tests/worker-local.sh`) has no EICAR step.
+`worker/`: 56 tests pass; `tsc --noEmit` clean), and **live through the route** on 2026-10-28
+(R4 [below](#the-route-on-since-2026-10-28)): the EICAR string (68 bytes, one chunk) gave
+`PUT /chunks/1` 201 (the Drive does not scan chunks), then `POST /finish` **415** `virus_found`
+with `signature` `Eicar-Test-Signature`; no file at the destination, nothing in Deleted files;
+the `DELETE /` that NoMail's page sends afterwards answered 204, and the upload session was gone
+(`PROPFIND` 404).
 
-### The route (waits for the owner's yes)
+### The route (on since 2026-10-28)
 
-Route `drive.nourax.org/nomail-upload/*` → `nodrive-upload`.
+Route `drive.nourax.org/nomail-upload/*` → `nodrive-upload`, route id
+`4b377ec8ebfb4ad8b6c0c3042987f411`. Switched on 2026-10-28 21:24 UTC with the owner's yes
+(NoMail's handoff `2026-10-28-nomail-to-drive-upload-route.md`), by putting the `routes` line into
+`worker/wrangler.jsonc` and running `npx wrangler deploy` in `worker/` (version
+`1ac4bf36-d0c1-4c41-a265-a1d02a4c2f83`, the same code as `4730d701-…`). Later deploys keep the
+route because the line is in the file.
 
-- **Do (Git Bash, in `worker/`):** put the line back into `wrangler.jsonc` (it is there as a
-  comment): `"routes": [{ "pattern": "drive.nourax.org/nomail-upload/*", "zone_name": "nourax.org" }],`
-  and run `npx wrangler deploy`. Or with the API:
-  `POST https://api.cloudflare.com/client/v4/zones/b5ad28d80272c1af478450bab1a2356c/workers/routes`
-  with `{"pattern":"drive.nourax.org/nomail-upload/*","script":"nodrive-upload"}`, and then put the
-  line back into `wrangler.jsonc` as well.
 - **What it changes:** only that path runs the Worker; everything else on `drive.nourax.org` still
   goes to the Drive. No WAF rule covers the path ([cloudflare/waf-rule.md](../cloudflare/waf-rule.md)
-  lists it as open, protected by the sealed ticket).
-- **Undo:** `DELETE https://api.cloudflare.com/client/v4/zones/b5ad28d80272c1af478450bab1a2356c/workers/routes/<route_id>`
-  (the id comes from `GET …/workers/routes`), or the dashboard → Workers Routes → delete. Then take
-  the line out of `wrangler.jsonc` again.
-- **Test:**
-  - `curl -si https://drive.nourax.org/nomail-upload/health -H 'Origin: https://mail.nourax.org'`
-    gives 200 `{"status":"ok"}` with `Access-Control-Allow-Origin: https://mail.nourax.org`.
-  - The same with `-H 'Origin: https://evil.example'` gives 403 `origin_not_allowed`.
-  - A real 120 MiB upload through the route, with every check of the local test (Git Bash, from
-    the repo): `WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch-dir>`.
-    It seals the tickets with the real key, piped from the server into `mint-ticket.mjs` on stdin
-    (never into a file), and ends with "all worker-local checks passed (live route)". `/finish`
-    must answer 201. Before the route it stops at once ("the route is not on yet"; tested).
-  - That run also shows that 50 MiB chunks stay inside the Workers CPU limit (10 ms on the Free
-    plan; the chunk body is piped through, not read by the script). A chunk over the limit would
-    answer Cloudflare error 1102 instead of 201.
+  lists it as open, protected by the sealed ticket). Checked through the Cloudflare API before the
+  switch: the zone's three custom rules (NoMail's `318d…`, `1f4cc937…` with its IP lock on login,
+  settings and the user/group API only, `4b382b6c…` on `office.nourax.org` only) do not match
+  `/nomail-upload/…`; Bot Fight Mode is off; there are no rate-limit, managed, redirect,
+  transform or configuration rules. Security level "medium" and Browser Integrity Check apply as
+  for the rest of the Drive (a normal browser passes both).
+- **Undo:** take the line out of `wrangler.jsonc` and delete the route:
+  `DELETE https://api.cloudflare.com/client/v4/zones/b5ad28d80272c1af478450bab1a2356c/workers/routes/4b377ec8ebfb4ad8b6c0c3042987f411`
+  (or the dashboard → Workers Routes → delete). A deploy without the line does not remove it.
+- **Key:** NoMail's `DRIVE_UPLOAD_TICKET_KEY` must be the value of the server file
+  `/etc/nourax/secrets/upload_ticket_key` (43 characters, no newline). The Worker's
+  `UPLOAD_TICKET_KEY` is proven to be that value (R3). Until NoMail has it, NoMail's big uploads
+  get 401 `bad_ticket` and NoMail says the Drive is being set up; nothing else breaks.
 
-After the route, NoMail needs the same key as its `DRIVE_UPLOAD_TICKET_KEY` (an owner-yes step for
-NoMail's Supabase project, prepared with the other NoMail secrets). Until both match, NoMail's big
-uploads get 401 `bad_ticket` and NoMail says the Drive is being set up; nothing else breaks.
+**Tests on 2026-10-28** (owner's PC, Git Bash; `qa-t6-2` switched on for the test and off again
+afterwards):
+
+| # | Test | Result |
+|---|---|---|
+| R1 | `curl -sS https://drive.nourax.org/nomail-upload/health` | 200 `{"status":"ok"}`, `Content-Type: application/json`, `Cache-Control: no-store` |
+| R2 | Preflight (`OPTIONS /chunks/1`, `Access-Control-Request-Headers: x-upload-ticket`) | From `https://mail.nourax.org`: 204 with `Access-Control-Allow-Origin: https://mail.nourax.org`, allow-headers `X-Upload-Ticket, Content-Type`, methods `GET, POST, PUT, DELETE, OPTIONS`, max-age 86400. From `https://evil.example`: 403 `origin_not_allowed`, no `Access-Control-*` header |
+| R3 | `WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch-dir>`, every ticket sealed with the server file's key | **All 71 checks passed** (21:26:44–21:28:16 UTC). 120 MiB (`125829120` bytes, chunks 50 + 50 + 20 MiB, 13 s, 14 s and 7 s): `/start` 201, three `PUT` 201, `/finish` **201** (17 s) with file id 22452; WebDAV `PROPFIND` 125829120 bytes and the same id; SHA-256 of a WebDAV `GET` = SHA-256 sent (`4f0061b4…41753`). Also: wrong-key ticket 401, no ticket 401, chunk 4 of 3 → 400, short chunk → 400, same name → 409 `exists`, cancel → 204 then 404, early finish → 409 `incomplete` (no file), finish twice → 201 with the same file |
+| R4 | The EICAR string (68 bytes, built in memory from two halves) through the route | `PUT /chunks/1` 201, `POST /finish` **415** `{"error":{"code":"virus_found","message":"the Drive's virus scanner found Eicar-Test-Signature in this file, so it was not saved","signature":"Eicar-Test-Signature"}}`; destination `PROPFIND` 404; not in Deleted files; `DELETE /` afterwards 204; upload session `PROPFIND` 404 |
+| R5 | `wrangler tail nodrive-upload` during R3 and R4 (headers never kept) | 31 requests, all outcome `ok`, version `1ac4bf36…`; no 5xx, no exception, no `exceededCpu`/1102. CPU per request: 50 MiB chunk 1–2 ms, `/start` 3–4 ms, `/finish` 7 ms (the most; the Free plan allows 10 ms) |
+| R5+ | 205 MiB in **41** chunks of 5 MiB through the route, read back over WebDAV | All 41 `PUT` 201 (88 s), `GET /chunks` lists 41, `/finish` 201 (40 s), SHA-256 equal. 44 requests, all `ok`; chunk `PUT` at most 3 ms CPU, `GET /chunks` 2 ms, `/finish` 8 ms: the chunk count hardly changes the CPU time |
+| R6 | The rest of `drive.nourax.org`, before and after | Unchanged: `/apps/nourax_api/v1/health` 401, `/remote.php/dav/files/x/` 401, `/status.php` 200 (installed, no maintenance, "Nourax Workspace"), `/` 302 to `/login`, `/login` 200, `/s/<unknown>` 404, `/nomail-uploadx` 404. Only `/nomail-upload/health` changed (404 → 200) |
+
+**Watch:** `/finish` takes 7–8 ms of the Free plan's 10 ms CPU per request. Cloudflare allows a
+Worker to go over now and then ("some built-in flexibility"), but a steady overrun would answer
+1102. If NoMail ever sees 1102 on `/finish`, the fix is the Workers Paid plan (an owner purchase) or
+less work in `/finish`; the chunks themselves use 1–3 ms.
+
+Files left in `qa-t6-2`'s `/NoMail/Sent/2026-10/` (a QA account, switched off again):
+`worker-120m-live.bin`, `worker-gaps-live.bin`, `worker-41chunks-live-20261028213000.bin`.

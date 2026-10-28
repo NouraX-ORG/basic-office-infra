@@ -36,7 +36,7 @@ because it starts the upload Worker with `wrangler dev`:
 
 ```
 tests/worker-local.sh <scratch-dir>                                                  # local Worker
-WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch-dir>  # after the route's yes
+WORKER_URL=https://drive.nourax.org/nomail-upload tests/worker-local.sh <scratch-dir>  # the live route (on since 2026-10-28)
 ```
 
 And one checks, from the owner's PC, how the owner signs in as a demo person (the sign-in page is

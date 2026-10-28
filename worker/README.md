@@ -10,7 +10,7 @@ upload (WebDAV chunked upload v2) with the person's app password. It stores noth
 NoMail page (browser, mail.nourax.org)
    │  X-Upload-Ticket: v1.…   (sealed by NoMail's server; the browser cannot read it)
    ▼
-Worker nodrive-upload, on drive.nourax.org/nomail-upload/*   (route: after the owner's yes)
+Worker nodrive-upload, on drive.nourax.org/nomail-upload/*   (route on since 2026-10-28)
    │  Basic auth with the login + app password inside the ticket
    ▼
 Drive  /remote.php/dav/uploads/<uid>/<upload-id>/00001 …  then MOVE .file → /remote.php/dav/files/<uid>/NoMail/…
@@ -23,14 +23,14 @@ to `MAX_UPLOAD_BYTES` (10 GiB) get through.
 
 | | |
 |---|---|
-| Script | `nodrive-upload`, deployed 2026-10-25 with `npx wrangler deploy` |
-| Route | **None yet.** `drive.nourax.org/nomail-upload/*` is added only after the owner's yes; see [docs/nomail-contract.md](../docs/nomail-contract.md#upload-worker). Until then `https://drive.nourax.org/nomail-upload/…` is the Drive's own "Page not found" (404). |
+| Script | `nodrive-upload`, deployed with `npx wrangler deploy` (first 2026-10-25; with its route 2026-10-28, version `1ac4bf36-d0c1-4c41-a265-a1d02a4c2f83`) |
+| Route | `drive.nourax.org/nomail-upload/*`, on since 2026-10-28 21:24 UTC with the owner's yes; see [docs/nomail-contract.md](../docs/nomail-contract.md#the-route-on-since-2026-10-28). Every other path on `drive.nourax.org` goes straight to the Drive. |
 | `workers.dev`, preview URLs | Off (`"workers_dev": false`, `"preview_urls": false`) |
 
-When the route is switched on, its line goes back into `wrangler.jsonc` (it is there as a comment),
-so the file says what is live. wrangler 4.152 touches routes only when the list is not empty: then
-it replaces the script's routes with the list (`PUT …/workers/scripts/nodrive-upload/routes`). So a
-deploy without the line leaves a live route alone, and a deploy with it keeps exactly that route.
+The route's line is in `wrangler.jsonc`, so the file says what is live. wrangler 4.152 touches
+routes only when the list is not empty: then it replaces the script's routes with the list
+(`PUT …/workers/scripts/nodrive-upload/routes`). So a deploy keeps exactly that route, and a
+deploy from an older copy without the line leaves the live route alone.
 
 ## Requests
 
